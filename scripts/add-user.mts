@@ -2,11 +2,13 @@
 // this is a private household tool with no self-signup flow.
 //
 // Usage: npx tsx scripts/add-user.mts <email> <name> <password>
-import "dotenv/config";
+import { config } from "dotenv";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import bcrypt from "bcryptjs";
 import { users } from "../src/lib/db/schema";
+
+config({ path: ".env.local" });
 
 async function main() {
   const [email, name, password] = process.argv.slice(2);
