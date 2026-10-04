@@ -71,7 +71,13 @@ npm run db:add-user -- you@example.com "Your Name" "a-strong-password"
 
 ### 5. Cron job
 
-`vercel.json` defines a cron hitting `/api/cron/tick` every 5 minutes. **Check your Vercel plan** — Hobby plans have historically limited cron frequency (sometimes to once/day); if 5-minute crons aren't available on your plan, either upgrade or reduce the schedule's precision expectations accordingly.
+Vercel Hobby plan caps cron jobs at once/day (and a `vercel.json` declaring anything more frequent will fail to deploy), so this project doesn't use Vercel Cron. Instead, `.github/workflows/scheduler-tick.yml` hits `/api/cron/tick` every 5 minutes from GitHub Actions. To enable it:
+
+1. Make this repo **public** — GitHub Actions minutes are free/unlimited on public repos; at a 5-minute interval a private repo would blow through the 2,000 free minutes/month.
+2. Add repo secrets (Settings → Secrets and variables → Actions): `APP_URL` (your deployed app's base URL) and `CRON_SECRET` (must match the value set on Vercel).
+3. Uncomment the `schedule` trigger in the workflow file.
+
+If you're on Vercel Pro and would rather use Vercel Cron instead, re-add a `crons` block to `vercel.json` and drop the workflow.
 
 ### 6. Zaptec Portal webhook (optional, for session history)
 
