@@ -2,10 +2,13 @@ import "server-only";
 import { getZaptecAccessToken } from "./auth";
 import { ZAPTEC_API_BASE, ObservationId } from "./constants";
 import type {
-  ZaptecChargerListResponse,
+  ZaptecChargerListApiResponse,
   ZaptecStateObservation,
+  ZaptecStateObservationApi,
   ChargerState,
   ZaptecCharger,
+  ChargeHistoryEntry,
+  ZaptecChargeHistoryApiResponse,
 } from "./types";
 
 export { isCurrentlyCharging, isPausedAndResumable } from "./state";
@@ -28,8 +31,35 @@ export async function listChargers(): Promise<ZaptecCharger[]> {
   if (!response.ok) {
     throw new Error(`Failed to list chargers: ${response.status}`);
   }
-  const data = (await response.json()) as ZaptecChargerListResponse;
-  return data.data;
+  const data = (await response.json()) as ZaptecChargerListApiResponse;
+  return data.Data.map((charger) => ({
+    id: charger.Id,
+    name: charger.Name,
+    deviceId: charger.DeviceId,
+    isOnline: charger.IsOnline,
+    operatingMode: charger.OperatingMode,
+    installationId: charger.InstallationId,
+    installationName: charger.InstallationName,
+  }));
+}
+
+// Only the most recent 100 sessions per charger; fine for a household charger,
+// but would need real pagination to show a multi-year history.
+export async function getChargeHistory(chargerId: string): Promise<ChargeHistoryEntry[]> {
+  const response = await zaptecFetch(`/api/chargehistory?ChargerId=${chargerId}&PageSize=100`);
+  if (!response.ok) {
+    throw new Error(`Failed to read charge history: ${response.status}`);
+  }
+  const data = (await response.json()) as ZaptecChargeHistoryApiResponse;
+  return data.Data.map((entry) => ({
+    id: entry.Id,
+    chargerId: entry.ChargerId,
+    deviceName: entry.DeviceName,
+    startedAt: entry.StartDateTime,
+    endedAt: entry.EndDateTime,
+    energyKwh: entry.Energy,
+    userFullName: entry.UserFullName,
+  }));
 }
 
 function findObservation(
@@ -47,7 +77,14 @@ export async function getChargerState(
   if (!response.ok) {
     throw new Error(`Failed to read charger state: ${response.status}`);
   }
-  const observations = (await response.json()) as ZaptecStateObservation[];
+  const rawObservations = (await response.json()) as ZaptecStateObservationApi[];
+  const observations: ZaptecStateObservation[] = rawObservations.map((raw) => ({
+    chargerId: raw.ChargerId,
+    stateId: raw.StateId,
+    stateName: raw.StateName ?? null,
+    timestamp: raw.Timestamp,
+    valueAsString: raw.ValueAsString,
+  }));
 
   const operationModeObs = findObservation(
     observations,
