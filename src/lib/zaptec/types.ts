@@ -12,6 +12,7 @@ export interface ZaptecCharger {
   operatingMode: number;
   installationId: string;
   installationName: string;
+  circuitId: string;
 }
 
 export interface ZaptecStateObservation {
@@ -33,12 +34,21 @@ export interface ZaptecChargerApi {
   OperatingMode: number;
   InstallationId: string;
   InstallationName: string;
+  CircuitId: string;
 }
 
 export interface ZaptecChargerListApiResponse {
   Pages: number;
   TotalCount: number;
   Data: ZaptecChargerApi[];
+}
+
+export interface ZaptecCircuitApiResponse {
+  Id: string;
+  Name: string;
+  MaxCurrent: number;
+  InstallationId: string;
+  Active: boolean;
 }
 
 export interface ZaptecStateObservationApi {
@@ -99,4 +109,8 @@ export interface ChargerState {
   // The last session the charger finished, independent of any session in
   // progress right now — only updates when a session ends.
   lastCompletedSession: LastCompletedSession | null;
+  // The real maximum this charger can deliver right now: min(charger's own
+  // current limit, its circuit's current limit) x active phases x 230V.
+  // Null only if either reading is unavailable.
+  maxPowerKw: number | null;
 }

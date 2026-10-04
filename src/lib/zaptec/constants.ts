@@ -24,6 +24,11 @@ export const ObservationId = {
   // The most recently *completed* session (JSON blob); only updates when a
   // session ends, so it reflects the last connection, not the current one.
   CompletedSession: 723,
+  // The charger's own configured current limit (amps).
+  ChargerMaxCurrent: 510,
+  // Bitmask from the Phases constant (1/2/4, or 7 for all three) — for this
+  // single-phase household installation it's always 1.
+  MaxPhases: 520,
 } as const;
 
 // ChargerOperationMode values — all 4 documented values (there's no 4).
@@ -33,3 +38,8 @@ export const ChargerOperationMode = {
   Charging: 3,
   StoppedOrIdle: 5,
 } as const;
+
+// Norway's standard residential phase-to-neutral voltage (TN network) — used
+// to convert a current limit (amps) into a power ceiling (kW), since Zaptec
+// doesn't report voltage until a session is actively drawing power.
+export const NOMINAL_VOLTAGE = 230;

@@ -22,7 +22,7 @@ export default async function DashboardPage() {
   ]);
 
   const chargerStates = await Promise.all(
-    chargers.map((charger) => getChargerState(charger.id, charger.isOnline)),
+    chargers.map((charger) => getChargerState(charger.id, charger.isOnline, charger.circuitId)),
   );
 
   return (

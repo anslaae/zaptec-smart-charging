@@ -19,6 +19,30 @@ export function ChargingStats({ sessions }: { sessions: ChargeHistoryEntry[] }) 
     return Math.max(max, durationMs);
   }, 0);
 
+  // Average power actually achieved per session (energy / duration), to show
+  // how consistent real-world charging rate is — and as a sanity check
+  // against the circuit-derived theoretical max shown on the dashboard.
+  // Sessions under 5 minutes are excluded: a session that barely started
+  // skews the rate wildly (near-zero duration, nonzero energy).
+  const MIN_SESSION_DURATION_MS = 5 * 60_000;
+  const sessionPowersKw = sessions
+    .map((s) => {
+      if (!s.endedAt) return null;
+      const durationHours = (new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) / 3_600_000;
+      if (durationHours * 3_600_000 < MIN_SESSION_DURATION_MS) return null;
+      return s.energyKwh / durationHours;
+    })
+    .filter((p): p is number => p != null);
+
+  let avgPowerKw: number | null = null;
+  let powerStdDevKw: number | null = null;
+  if (sessionPowersKw.length > 0) {
+    avgPowerKw = sessionPowersKw.reduce((sum, p) => sum + p, 0) / sessionPowersKw.length;
+    const variance =
+      sessionPowersKw.reduce((sum, p) => sum + (p - avgPowerKw!) ** 2, 0) / sessionPowersKw.length;
+    powerStdDevKw = Math.sqrt(variance);
+  }
+
   const energyByUser = new Map<string, number>();
   for (const s of sessions) {
     const key = s.userFullName ?? "Unknown";
@@ -49,10 +73,24 @@ export function ChargingStats({ sessions }: { sessions: ChargeHistoryEntry[] }) 
           label="Longest session"
           value={longestDurationMs > 0 ? `${(longestDurationMs / 3_600_000).toFixed(1)} h` : "—"}
         />
+        {avgPowerKw != null && (
+          <Stat
+            label="Effective rate (incl. idle time)"
+            value={`${avgPowerKw.toFixed(1)} kW ${describeStability(avgPowerKw, powerStdDevKw)}`}
+            wide
+          />
+        )}
         {topUser && (
           <Stat label="Top charger" value={`${topUser[0]} — ${topUser[1].toFixed(1)} kWh`} wide />
         )}
       </dl>
+      {avgPowerKw != null && (
+        <p className="text-xs text-black/50 dark:text-white/50">
+          Effective rate is energy delivered ÷ total time plugged in, not the charger&apos;s actual
+          charging speed — sessions often sit idle (car finished, or still plugged in) for part of
+          that time, so this will read well below the charger&apos;s real max output.
+        </p>
+      )}
 
       <div>
         <p className="mb-2 text-xs text-black/50 dark:text-white/50">
@@ -85,6 +123,22 @@ export function ChargingStats({ sessions }: { sessions: ChargeHistoryEntry[] }) 
       </div>
     </div>
   );
+}
+
+// Coefficient of variation (stddev / mean) as a plain-language read on
+// whether the achieved charge rate is consistent session-to-session, or
+// swings around a lot (e.g. shared circuit load, weather affecting AC
+// charging efficiency, partial sessions).
+function describeStability(avgKw: number, stdDevKw: number | null): string {
+  if (stdDevKw == null) return "";
+  const coefficientOfVariation = avgKw > 0 ? stdDevKw / avgKw : 0;
+  const label =
+    coefficientOfVariation < 0.15
+      ? "stable"
+      : coefficientOfVariation < 0.35
+        ? "somewhat variable"
+        : "highly variable";
+  return `(±${stdDevKw.toFixed(1)} kW, ${label})`;
 }
 
 function Stat({ label, value, wide }: { label: string; value: string; wide?: boolean }) {

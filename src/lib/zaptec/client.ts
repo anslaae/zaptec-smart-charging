@@ -1,6 +1,6 @@
 import "server-only";
 import { getZaptecAccessToken } from "./auth";
-import { ZAPTEC_API_BASE, ObservationId } from "./constants";
+import { ZAPTEC_API_BASE, ObservationId, NOMINAL_VOLTAGE } from "./constants";
 import type {
   ZaptecChargerListApiResponse,
   ZaptecStateObservation,
@@ -9,6 +9,7 @@ import type {
   ZaptecCharger,
   ChargeHistoryEntry,
   ZaptecChargeHistoryApiResponse,
+  ZaptecCircuitApiResponse,
   LastCompletedSession,
 } from "./types";
 
@@ -52,7 +53,21 @@ export async function listChargers(): Promise<ZaptecCharger[]> {
     operatingMode: charger.OperatingMode,
     installationId: charger.InstallationId,
     installationName: charger.InstallationName,
+    circuitId: charger.CircuitId,
   }));
+}
+
+// A circuit's current limit is an electrical installation fact that
+// essentially never changes, so this is cached hard (24h) — fetching it on
+// every poll would be exactly the "aggressive polling" Zaptec's fair-use
+// policy asks integrators to avoid.
+export async function getCircuitMaxCurrentAmps(circuitId: string): Promise<number | null> {
+  const response = await zaptecFetch(`/api/circuits/${circuitId}`, {
+    next: { revalidate: 86_400 },
+  });
+  if (!response.ok) return null;
+  const data = (await response.json()) as ZaptecCircuitApiResponse;
+  return data.MaxCurrent ?? null;
 }
 
 // Only the most recent 100 sessions per charger; fine for a household charger,
@@ -107,9 +122,16 @@ function parseScheduledStart(raw: string | null | undefined): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
+// MaxPhases is a bitmask (Phase_1=1, Phase_2=2, Phase_3=4, All=7); the
+// number of set bits is how many phases are actually available.
+function countPhases(bitmask: number): number {
+  return [1, 2, 4].filter((bit) => (bitmask & bit) !== 0).length;
+}
+
 export async function getChargerState(
   chargerId: string,
   isOnline: boolean,
+  circuitId: string,
 ): Promise<ChargerState> {
   const response = await zaptecFetch(`/api/chargers/${chargerId}/state`);
   if (!response.ok) {
@@ -141,6 +163,22 @@ export async function getChargerState(
   const chargeDurationObs = findObservation(observations, ObservationId.ChargeDuration);
   const nextScheduleObs = findObservation(observations, ObservationId.NextScheduleEvent);
   const completedSessionObs = findObservation(observations, ObservationId.CompletedSession);
+  const chargerMaxCurrentObs = findObservation(observations, ObservationId.ChargerMaxCurrent);
+  const maxPhasesObs = findObservation(observations, ObservationId.MaxPhases);
+
+  const chargerMaxCurrentAmps = chargerMaxCurrentObs?.valueAsString
+    ? Number(chargerMaxCurrentObs.valueAsString)
+    : null;
+  const phases = maxPhasesObs?.valueAsString ? countPhases(Number(maxPhasesObs.valueAsString)) : null;
+  const circuitMaxCurrentAmps = await getCircuitMaxCurrentAmps(circuitId);
+  const effectiveMaxCurrentAmps =
+    chargerMaxCurrentAmps != null && circuitMaxCurrentAmps != null
+      ? Math.min(chargerMaxCurrentAmps, circuitMaxCurrentAmps)
+      : (chargerMaxCurrentAmps ?? circuitMaxCurrentAmps);
+  const maxPowerKw =
+    effectiveMaxCurrentAmps != null && phases != null
+      ? (effectiveMaxCurrentAmps * phases * NOMINAL_VOLTAGE) / 1000
+      : null;
 
   return {
     chargerId,
@@ -165,6 +203,7 @@ export async function getChargerState(
       : null,
     scheduledChargingStartAt: parseScheduledStart(nextScheduleObs?.valueAsString),
     lastCompletedSession: parseCompletedSession(completedSessionObs?.valueAsString),
+    maxPowerKw,
   };
 }
 

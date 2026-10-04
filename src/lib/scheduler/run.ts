@@ -53,7 +53,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
   }
 
   const chargers = await listChargers();
-  const onlineByChargerId = new Map(chargers.map((charger) => [charger.id, charger.isOnline]));
+  const chargerById = new Map(chargers.map((charger) => [charger.id, charger]));
   const stateCache = new Map<string, ChargerState>();
 
   for (const schedule of schedules) {
@@ -61,8 +61,12 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
     try {
       let state = stateCache.get(schedule.chargerId);
       if (!state) {
-        const isOnline = onlineByChargerId.get(schedule.chargerId) ?? false;
-        state = await getChargerState(schedule.chargerId, isOnline);
+        const charger = chargerById.get(schedule.chargerId);
+        state = await getChargerState(
+          schedule.chargerId,
+          charger?.isOnline ?? false,
+          charger?.circuitId ?? "",
+        );
         stateCache.set(schedule.chargerId, state);
       }
 
