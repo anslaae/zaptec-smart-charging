@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { chargeSchedules } from "@/lib/db/schema";
 import { listChargers, getChargerState } from "@/lib/zaptec/client";
+import { estimateChargingPlan } from "@/lib/scheduler/engine";
 import { ChargerStatusCard } from "@/components/ChargerStatusCard";
 import { ScheduleList } from "@/components/ScheduleList";
 import { LogoutButton } from "@/components/LogoutButton";
@@ -24,6 +25,19 @@ export default async function DashboardPage() {
   const chargerStates = await Promise.all(
     chargers.map((charger) => getChargerState(charger.id, charger.isOnline, charger.circuitId)),
   );
+  const chargerStateById = new Map(chargers.map((charger, index) => [charger.id, chargerStates[index]]));
+
+  const startTimes: Record<string, string> = {};
+  for (const schedule of schedules) {
+    if (schedule.status !== "pending") continue;
+    const state = chargerStateById.get(schedule.chargerId);
+    if (!state) continue;
+    const { latestStartTime } = estimateChargingPlan(
+      { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
+      state,
+    );
+    startTimes[schedule.id] = latestStartTime.toISOString();
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-8 px-6 py-8">
@@ -64,7 +78,7 @@ export default async function DashboardPage() {
             </Link>
           </div>
         </div>
-        <ScheduleList schedules={schedules} />
+        <ScheduleList schedules={schedules} startTimes={startTimes} />
       </section>
 
       <Link href="/history" className="text-sm text-black/50 underline underline-offset-2 dark:text-white/50">

@@ -11,7 +11,13 @@ const STATUS_LABEL: Record<Schedule["status"], string> = {
   cancelled: "Cancelled",
 };
 
-export function ScheduleList({ schedules }: { schedules: Schedule[] }) {
+export function ScheduleList({
+  schedules,
+  startTimes,
+}: {
+  schedules: Schedule[];
+  startTimes: Record<string, string>;
+}) {
   if (schedules.length === 0) {
     return <p className="text-sm text-black/50 dark:text-white/50">No active schedules.</p>;
   }
@@ -43,6 +49,17 @@ export function ScheduleList({ schedules }: { schedules: Schedule[] }) {
               · {STATUS_LABEL[schedule.status]}
               {schedule.lastNote ? ` · ${schedule.lastNote}` : ""}
             </p>
+            {schedule.status === "pending" && startTimes[schedule.id] && (
+              <p className="text-sm text-black/50 dark:text-white/50">
+                Starts charging around{" "}
+                {new Date(startTimes[schedule.id]).toLocaleString(undefined, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                  timeZone: HOUSEHOLD_TIME_ZONE,
+                  hour12: false,
+                })}
+              </p>
+            )}
             {schedule.lastError && (
               <p className="text-sm text-red-600">Last error: {schedule.lastError}</p>
             )}

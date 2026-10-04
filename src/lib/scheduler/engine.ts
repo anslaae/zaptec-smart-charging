@@ -23,6 +23,40 @@ const DEFAULT_ASSUMED_POWER_KW = 7.0;
 /** Extra time budgeted on top of the raw estimate, to absorb plug-in delays and power dips. */
 const SAFETY_MARGIN_MINUTES = 15;
 
+export interface ChargingPlanEstimate {
+  remainingKwh: number;
+  powerKw: number;
+  /** The latest moment charging can start and still hit readyBy, incl. safety margin. */
+  latestStartTime: Date;
+}
+
+/**
+ * The core time-budget math, shared by decideNextAction (to know whether
+ * charging must start *now*) and the UI (to show the user when that will
+ * be, before it's actually time to start).
+ */
+export function estimateChargingPlan(
+  schedule: ScheduleInput,
+  state: ChargerState,
+): ChargingPlanEstimate {
+  const sessionEnergyKwh = state.sessionEnergyKwh ?? 0;
+  const remainingKwh = Math.max(0, schedule.targetEnergyKwh - sessionEnergyKwh);
+  const observedPowerKw =
+    state.instantPowerWatts && state.instantPowerWatts > 0
+      ? state.instantPowerWatts / 1000
+      : null;
+  const powerKw = observedPowerKw ?? state.maxPowerKw ?? DEFAULT_ASSUMED_POWER_KW;
+  const estimatedHoursNeeded = remainingKwh / powerKw;
+
+  const latestStartTime = new Date(
+    schedule.readyBy.getTime() -
+      estimatedHoursNeeded * 60 * 60 * 1000 -
+      SAFETY_MARGIN_MINUTES * 60 * 1000,
+  );
+
+  return { remainingKwh, powerKw, latestStartTime };
+}
+
 export function decideNextAction(
   schedule: ScheduleInput,
   state: ChargerState,
@@ -38,20 +72,7 @@ export function decideNextAction(
     return { action: "none", reason: "Charger is offline" };
   }
 
-  const remainingKwh = schedule.targetEnergyKwh - sessionEnergyKwh;
-  const observedPowerKw =
-    state.instantPowerWatts && state.instantPowerWatts > 0
-      ? state.instantPowerWatts / 1000
-      : null;
-  const powerKw = observedPowerKw ?? state.maxPowerKw ?? DEFAULT_ASSUMED_POWER_KW;
-  const estimatedHoursNeeded = remainingKwh / powerKw;
-
-  const latestStartTime = new Date(
-    schedule.readyBy.getTime() -
-      estimatedHoursNeeded * 60 * 60 * 1000 -
-      SAFETY_MARGIN_MINUTES * 60 * 1000,
-  );
-
+  const { latestStartTime } = estimateChargingPlan(schedule, state);
   const mustBeChargingNow = now >= latestStartTime || now >= schedule.readyBy;
 
   if (mustBeChargingNow) {
