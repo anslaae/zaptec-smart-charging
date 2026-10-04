@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { chargeSchedules } from "@/lib/db/schema";
+import { HOUSEHOLD_TIME_ZONE, zonedDateTimeToUtc } from "@/lib/datetime";
 
 const CreateScheduleSchema = z.object({
   chargerId: z.string().min(1),
@@ -36,7 +37,7 @@ export async function createSchedule(
     return { error: "Check the amount to charge and the ready-by time." };
   }
 
-  const readyBy = new Date(parsed.data.readyBy);
+  const readyBy = zonedDateTimeToUtc(parsed.data.readyBy, HOUSEHOLD_TIME_ZONE);
   if (Number.isNaN(readyBy.getTime()) || readyBy.getTime() <= Date.now()) {
     return { error: "Ready-by time must be a valid time in the future." };
   }

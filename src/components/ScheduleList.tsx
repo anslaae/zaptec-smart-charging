@@ -1,4 +1,5 @@
 import { cancelSchedule } from "@/lib/schedules/actions";
+import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
 import type { chargeSchedules } from "@/lib/db/schema";
 
 type Schedule = typeof chargeSchedules.$inferSelect;
@@ -31,6 +32,8 @@ export function ScheduleList({ schedules }: { schedules: Schedule[] }) {
               {schedule.readyBy.toLocaleString(undefined, {
                 dateStyle: "medium",
                 timeStyle: "short",
+                timeZone: HOUSEHOLD_TIME_ZONE,
+                hour12: false,
               })}{" "}
               · {STATUS_LABEL[schedule.status]}
               {schedule.lastNote ? ` · ${schedule.lastNote}` : ""}

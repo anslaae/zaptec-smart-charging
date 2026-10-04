@@ -43,16 +43,26 @@ export default async function DashboardPage() {
           </p>
         )}
         {chargers.map((charger, index) => (
-          <ChargerStatusCard key={charger.id} name={charger.name} state={chargerStates[index]} />
+          <ChargerStatusCard
+            key={charger.id}
+            name={charger.name}
+            address={charger.installationName}
+            state={chargerStates[index]}
+          />
         ))}
       </section>
 
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Schedules</h2>
-          <Link href="/schedule" className="text-sm font-medium underline underline-offset-2">
-            New schedule
-          </Link>
+          <div className="flex items-center gap-3 text-sm font-medium">
+            <Link href="/schedule/quick" className="underline underline-offset-2">
+              Quick schedule
+            </Link>
+            <Link href="/schedule" className="underline underline-offset-2">
+              By kWh
+            </Link>
+          </div>
         </div>
         <ScheduleList schedules={schedules} />
       </section>

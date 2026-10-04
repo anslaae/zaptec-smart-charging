@@ -3,9 +3,11 @@ import { describeOperationMode, isCurrentlyCharging } from "@/lib/zaptec/state";
 
 export function ChargerStatusCard({
   name,
+  address,
   state,
 }: {
   name: string;
+  address: string;
   state: ChargerState;
 }) {
   const charging = isCurrentlyCharging(state);
@@ -13,7 +15,10 @@ export function ChargerStatusCard({
   return (
     <div className="rounded-xl border border-black/10 p-4 dark:border-white/15">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold">{name}</h2>
+        <div>
+          <h2 className="text-base font-semibold">{name}</h2>
+          <p className="text-xs text-black/50 dark:text-white/50">{address}</p>
+        </div>
         <span
           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
             charging
