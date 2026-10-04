@@ -75,6 +75,12 @@ export interface ZaptecChargeHistoryApiResponse {
   Data: ZaptecChargeHistoryEntryApi[];
 }
 
+export interface LastCompletedSession {
+  startedAt: string;
+  endedAt: string;
+  energyKwh: number;
+}
+
 // Derived, convenience view over the raw observation array for a single charger.
 export interface ChargerState {
   chargerId: string;
@@ -85,4 +91,12 @@ export interface ChargerState {
   instantPowerWatts: number | null;
   sessionEnergyKwh: number | null;
   observedAt: string | null;
+  // Seconds into the current session; only reported while actively charging.
+  chargeDurationSeconds: number | null;
+  // When Smart Eco Mode (or another schedule) has decided to start charging;
+  // null when no schedule is configured or the format wasn't parseable.
+  scheduledChargingStartAt: string | null;
+  // The last session the charger finished, independent of any session in
+  // progress right now — only updates when a session ends.
+  lastCompletedSession: LastCompletedSession | null;
 }

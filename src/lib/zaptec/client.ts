@@ -9,25 +9,37 @@ import type {
   ZaptecCharger,
   ChargeHistoryEntry,
   ZaptecChargeHistoryApiResponse,
+  LastCompletedSession,
 } from "./types";
 
 export { isCurrentlyCharging, isPausedAndResumable } from "./state";
 
-async function zaptecFetch(path: string, init?: RequestInit): Promise<Response> {
+async function zaptecFetch(
+  path: string,
+  init?: RequestInit & { next?: { revalidate?: number } },
+): Promise<Response> {
   const token = await getZaptecAccessToken();
   const response = await fetch(`${ZAPTEC_API_BASE}${path}`, {
+    // Zaptec's fair-use policy asks integrators not to poll aggressively;
+    // callers that pass `next.revalidate` opt into Next.js's fetch cache
+    // instead of always hitting the API fresh.
+    cache: init?.next ? undefined : "no-store",
     ...init,
     headers: {
       ...init?.headers,
       Authorization: `Bearer ${token}`,
     },
-    cache: "no-store",
   });
   return response;
 }
 
 export async function listChargers(): Promise<ZaptecCharger[]> {
-  const response = await zaptecFetch("/api/chargers?PageSize=100");
+  // The charger list rarely changes; Zaptec's fair-use policy explicitly
+  // asks for this to be fetched at most once an hour rather than on every
+  // poll.
+  const response = await zaptecFetch("/api/chargers?PageSize=100", {
+    next: { revalidate: 3600 },
+  });
   if (!response.ok) {
     throw new Error(`Failed to list chargers: ${response.status}`);
   }
@@ -69,6 +81,32 @@ function findObservation(
   return observations.find((observation) => observation.stateId === stateId);
 }
 
+// CompletedSession's value is a JSON blob (StartDateTime/EndDateTime/Energy);
+// parsed defensively since its exact shape isn't formally documented.
+function parseCompletedSession(raw: string | null | undefined): LastCompletedSession | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as {
+      StartDateTime?: string;
+      EndDateTime?: string;
+      Energy?: number;
+    };
+    if (!parsed.StartDateTime || !parsed.EndDateTime || parsed.Energy == null) return null;
+    return { startedAt: parsed.StartDateTime, endedAt: parsed.EndDateTime, energyKwh: parsed.Energy };
+  } catch {
+    return null;
+  }
+}
+
+// NextScheduleEvent's exact format (e.g. for Smart Eco Mode) isn't
+// documented publicly; parsed defensively as an ISO-ish date string and
+// simply omitted if it doesn't parse cleanly.
+function parseScheduledStart(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 export async function getChargerState(
   chargerId: string,
   isOnline: boolean,
@@ -100,6 +138,9 @@ export async function getChargerState(
     observations,
     ObservationId.TotalChargePowerSession,
   );
+  const chargeDurationObs = findObservation(observations, ObservationId.ChargeDuration);
+  const nextScheduleObs = findObservation(observations, ObservationId.NextScheduleEvent);
+  const completedSessionObs = findObservation(observations, ObservationId.CompletedSession);
 
   return {
     chargerId,
@@ -119,6 +160,11 @@ export async function getChargerState(
       : null,
     observedAt:
       operationModeObs?.timestamp ?? powerObs?.timestamp ?? sessionEnergyObs?.timestamp ?? null,
+    chargeDurationSeconds: chargeDurationObs?.valueAsString
+      ? Number(chargeDurationObs.valueAsString)
+      : null,
+    scheduledChargingStartAt: parseScheduledStart(nextScheduleObs?.valueAsString),
+    lastCompletedSession: parseCompletedSession(completedSessionObs?.valueAsString),
   };
 }
 

@@ -16,11 +16,12 @@ The scheduling decision logic is pure and unit-tested in `src/lib/scheduler/engi
 ## Known limitations (deliberate v1 scope)
 
 - **No price or solar optimization yet.** v1 is schedule-only, as agreed. Price-based ("cheapest hours") or solar-surplus charging would slot into the same `decideNextAction` function later.
-- **Energy, not battery %.** Zaptec doesn't expose vehicle battery state, so "how much to charge" is in kWh delivered this session, not a target percentage.
+- **Energy, not battery %.** Zaptec doesn't expose vehicle battery state, so "how much to charge" is in kWh delivered this session, not a target percentage. The "Quick schedule" flow converts a target % to kWh itself, using a hardcoded battery capacity for the household car (`VEHICLE_BATTERY_CAPACITY_KWH` in `src/lib/vehicle.ts`) — not anything Zaptec reports.
 - **One schedule ≈ one physical charging session.** Progress is tracked via Zaptec's session energy counter, which resets when a new charging session starts (e.g. car unplugged and replugged).
 - **Power estimate.** If the charger isn't actively reporting power, the engine assumes 7 kW to estimate how long charging will take. Adjust `DEFAULT_ASSUMED_POWER_KW` in `engine.ts` if your charger's actual rate differs a lot.
 - **No pre-charge authorization webhook.** Zaptec also supports a webhook that gates whether a session is allowed to start at all. Its request/response contract isn't publicly documented, and misconfiguring it could block *all* charging — not just scheduled charging — so it's intentionally not implemented. Only the informational session-end webhook is wired up.
 - **No self-signup.** Household members are added via a CLI script (`npm run db:add-user`), not a UI, since this is a private family tool.
+- **Zaptec API fair-use policy.** Zaptec asks integrators to avoid aggressive polling and to fetch the charger list at most once an hour rather than on every request (see [docs.zaptec.com/docs/api-fair-use-policy](https://docs.zaptec.com/docs/api-fair-use-policy)). The dashboard's `AutoRefresh` interval is 60s (not sub-minute), and `listChargers()` uses Next.js's fetch cache with a 1-hour revalidate instead of fetching fresh every poll. If you add more pollers (e.g. a shorter auto-refresh), keep this policy in mind — the hard rate limit is 10 req/sec/account, well above anything this app does, but the fair-use guidance is about not polling aggressively even under that limit.
 
 ## Local setup
 

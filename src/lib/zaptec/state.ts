@@ -17,6 +17,8 @@ export function describeOperationMode(state: ChargerState): string {
   switch (state.operationMode) {
     case ChargerOperationMode.Disconnected:
       return "No car connected";
+    case ChargerOperationMode.ConnectedRequesting:
+      return "Plugged in, waiting to charge";
     case ChargerOperationMode.Charging:
       return "Charging";
     case ChargerOperationMode.StoppedOrIdle:

@@ -1,5 +1,21 @@
 import type { ChargerState } from "@/lib/zaptec/types";
 import { describeOperationMode, isCurrentlyCharging } from "@/lib/zaptec/state";
+import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
+
+function formatDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+function formatOsloDateTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: HOUSEHOLD_TIME_ZONE,
+    hour12: false,
+  });
+}
 
 export function ChargerStatusCard({
   name,
@@ -47,7 +63,26 @@ export function ChargerStatusCard({
             {state.sessionEnergyKwh != null ? `${state.sessionEnergyKwh.toFixed(1)} kWh` : "—"}
           </dd>
         </div>
+        {charging && state.chargeDurationSeconds != null && (
+          <div>
+            <dt className="text-black/50 dark:text-white/50">Charging for</dt>
+            <dd className="font-medium">{formatDuration(state.chargeDurationSeconds)}</dd>
+          </div>
+        )}
       </dl>
+
+      {state.scheduledChargingStartAt && (
+        <p className="mt-3 rounded-md bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-700 dark:text-blue-400">
+          Smart charging scheduled to start {formatOsloDateTime(state.scheduledChargingStartAt)}
+        </p>
+      )}
+
+      {state.lastCompletedSession && (
+        <p className="mt-3 text-xs text-black/50 dark:text-white/50">
+          Last connected {formatOsloDateTime(state.lastCompletedSession.startedAt)} ·{" "}
+          {state.lastCompletedSession.energyKwh.toFixed(1)} kWh delivered
+        </p>
+      )}
     </div>
   );
 }

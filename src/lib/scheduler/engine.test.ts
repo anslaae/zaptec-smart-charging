@@ -13,6 +13,9 @@ function baseState(overrides: Partial<ChargerState> = {}): ChargerState {
     instantPowerWatts: null,
     sessionEnergyKwh: 0,
     observedAt: new Date().toISOString(),
+    chargeDurationSeconds: null,
+    scheduledChargingStartAt: null,
+    lastCompletedSession: null,
     ...overrides,
   };
 }
