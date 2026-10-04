@@ -26,6 +26,11 @@ export function ScheduleList({ schedules }: { schedules: Schedule[] }) {
           <div>
             <p className="font-medium">
               {Number(schedule.targetEnergyKwh).toFixed(1)} kWh on {schedule.chargerName}
+              {schedule.simulate && (
+                <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                  Simulated
+                </span>
+              )}
             </p>
             <p className="text-sm text-black/50 dark:text-white/50">
               Ready by{" "}

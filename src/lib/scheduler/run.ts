@@ -1,11 +1,41 @@
 import "server-only";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chargeSchedules } from "@/lib/db/schema";
+import { chargeSchedules, scheduleActions } from "@/lib/db/schema";
 import { listChargers, getChargerState, sendChargerCommand } from "@/lib/zaptec/client";
 import { ZaptecCommand } from "@/lib/zaptec/constants";
 import type { ChargerState } from "@/lib/zaptec/types";
 import { decideNextAction } from "./engine";
+
+const COMMAND_NAME: Record<number, string> = {
+  [ZaptecCommand.ResumeCharging]: "resume",
+  [ZaptecCommand.StopChargingFinal]: "stop",
+};
+
+// Records the decision either way, so the history page can show what the
+// scheduler did (or would have done) over time — and actually calls the
+// Zaptec API only when the schedule isn't in simulate mode.
+async function applyCommand(
+  schedule: { id: string; chargerId: string; simulate: boolean },
+  action: string,
+  commandId: number,
+): Promise<void> {
+  if (schedule.simulate) {
+    console.log(
+      `[scheduler] (simulated) schedule ${schedule.id}: would send ${COMMAND_NAME[commandId] ?? commandId} to charger ${schedule.chargerId}`,
+    );
+  } else {
+    await sendChargerCommand(schedule.chargerId, commandId);
+  }
+
+  await db.insert(scheduleActions).values({
+    scheduleId: schedule.id,
+    chargerId: schedule.chargerId,
+    action,
+    commandId,
+    simulated: schedule.simulate,
+  });
+}
 
 export async function runSchedulerTick(): Promise<{ processed: number }> {
   const tickStartedAt = new Date().toISOString();
@@ -48,7 +78,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
       );
 
       if (decision.action === "complete") {
-        await sendChargerCommand(schedule.chargerId, ZaptecCommand.StopChargingFinal).catch(
+        await applyCommand(schedule, "complete", ZaptecCommand.StopChargingFinal).catch(
           () => undefined,
         );
         await db
@@ -70,7 +100,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
           decision.action === "resume"
             ? ZaptecCommand.ResumeCharging
             : ZaptecCommand.StopChargingFinal;
-        await sendChargerCommand(schedule.chargerId, commandId);
+        await applyCommand(schedule, decision.action, commandId);
         await db
           .update(chargeSchedules)
           .set({

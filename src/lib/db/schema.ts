@@ -4,6 +4,8 @@ import {
   text,
   timestamp,
   numeric,
+  integer,
+  boolean,
   jsonb,
   pgEnum,
 } from "drizzle-orm/pg-core";
@@ -38,6 +40,10 @@ export const chargeSchedules = pgTable("charge_schedules", {
   }).notNull(),
   readyBy: timestamp("ready_by", { withTimezone: true }).notNull(),
   status: scheduleStatus("status").notNull().default("pending"),
+  // When true, the scheduler logs start/stop decisions instead of sending
+  // real commands to the charger. See the schedule_actions table for a log
+  // of what was (or would have been) sent.
+  simulate: boolean("simulate").notNull().default(false),
   lastCommand: text("last_command"),
   lastNote: text("last_note"),
   lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),
@@ -46,6 +52,23 @@ export const chargeSchedules = pgTable("charge_schedules", {
     .notNull()
     .defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// One row per command the scheduler decides to send (resume/pause/complete),
+// whether real or simulated — lets the history page show what the scheduler
+// actually did (or would have done) over time, not just the latest state.
+export const scheduleActions = pgTable("schedule_actions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  scheduleId: uuid("schedule_id")
+    .notNull()
+    .references(() => chargeSchedules.id),
+  chargerId: text("charger_id").notNull(),
+  action: text("action").notNull(),
+  commandId: integer("command_id").notNull(),
+  simulated: boolean("simulated").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });

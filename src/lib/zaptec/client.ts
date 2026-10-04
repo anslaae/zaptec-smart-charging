@@ -1,5 +1,4 @@
 import "server-only";
-import { env } from "@/lib/env";
 import { getZaptecAccessToken } from "./auth";
 import { ZAPTEC_API_BASE, ObservationId } from "./constants";
 import type {
@@ -127,11 +126,6 @@ export async function sendChargerCommand(
   chargerId: string,
   commandId: number,
 ): Promise<void> {
-  if (env.SIMULATE_CHARGER_COMMANDS) {
-    console.log(`[simulated] Zaptec command ${commandId} for charger ${chargerId}`);
-    return;
-  }
-
   const response = await zaptecFetch(
     `/api/chargers/${chargerId}/sendCommand/${commandId}`,
     { method: "POST" },

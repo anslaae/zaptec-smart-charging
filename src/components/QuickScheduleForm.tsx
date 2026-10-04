@@ -113,6 +113,15 @@ export function QuickScheduleForm({ chargers }: { chargers: { id: string; name: 
           : "Target must be above the current battery level."}
       </p>
 
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          name="simulate"
+          className="h-4 w-4 rounded border-black/20 dark:border-white/30"
+        />
+        Simulate only (don&apos;t actually control the charger)
+      </label>
+
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
 
       <button

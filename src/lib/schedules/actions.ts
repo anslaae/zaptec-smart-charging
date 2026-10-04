@@ -14,6 +14,7 @@ const CreateScheduleSchema = z.object({
   chargerName: z.string().min(1),
   targetEnergyKwh: z.coerce.number().positive().max(200),
   readyBy: z.string().min(1),
+  simulate: z.coerce.boolean(),
 });
 
 export interface CreateScheduleState {
@@ -31,6 +32,7 @@ export async function createSchedule(
     chargerName: formData.get("chargerName"),
     targetEnergyKwh: formData.get("targetEnergyKwh"),
     readyBy: formData.get("readyBy"),
+    simulate: formData.get("simulate"),
   });
 
   if (!parsed.success) {
@@ -49,6 +51,7 @@ export async function createSchedule(
     targetEnergyKwh: parsed.data.targetEnergyKwh.toString(),
     readyBy,
     status: "pending",
+    simulate: parsed.data.simulate,
   });
 
   revalidatePath("/");
