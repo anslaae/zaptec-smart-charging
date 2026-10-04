@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Zaptec Smart Charging
 
-## Getting Started
+A small household web app for scheduling EV charging on a Zaptec charger: set how much energy to add and when the car should be ready, and a background job starts/stops charging to hit that deadline.
 
-First, run the development server:
+Built as a responsive Next.js app (BFF pattern: the frontend never talks to Zaptec directly) with Postgres for schedules/history, deployed to Vercel.
+
+## How it works
+
+- You (or someone in the household) log in and create a schedule: "charge +20 kWh, ready by 07:00".
+- A Vercel Cron job hits `/api/cron/tick` every 5 minutes. It reads each active schedule, checks the charger's live state, and decides whether to send Zaptec's `ResumeCharging` (507) or `StopChargingFinal` (506) command so charging finishes around the deadline rather than immediately.
+- If a schedule falls behind, the app prioritizes finishing over the deadline rather than leaving the car undercharged.
+- A webhook (`/api/webhooks/zaptec/session-end`) logs completed charging sessions for the history page.
+
+The scheduling decision logic is pure and unit-tested in `src/lib/scheduler/engine.ts` / `engine.test.ts`.
+
+## Known limitations (deliberate v1 scope)
+
+- **No price or solar optimization yet.** v1 is schedule-only, as agreed. Price-based ("cheapest hours") or solar-surplus charging would slot into the same `decideNextAction` function later.
+- **Energy, not battery %.** Zaptec doesn't expose vehicle battery state, so "how much to charge" is in kWh delivered this session, not a target percentage.
+- **One schedule ≈ one physical charging session.** Progress is tracked via Zaptec's session energy counter, which resets when a new charging session starts (e.g. car unplugged and replugged).
+- **Power estimate.** If the charger isn't actively reporting power, the engine assumes 7 kW to estimate how long charging will take. Adjust `DEFAULT_ASSUMED_POWER_KW` in `engine.ts` if your charger's actual rate differs a lot.
+- **No pre-charge authorization webhook.** Zaptec also supports a webhook that gates whether a session is allowed to start at all. Its request/response contract isn't publicly documented, and misconfiguring it could block *all* charging — not just scheduled charging — so it's intentionally not implemented. Only the informational session-end webhook is wired up.
+- **No self-signup.** Household members are added via a CLI script (`npm run db:add-user`), not a UI, since this is a private family tool.
+
+## Local setup
 
 ```bash
+npm install
+cp .env.example .env.local   # fill in the values, see below
+npm run db:generate          # only needed if you change src/lib/db/schema.ts
+npm run db:migrate           # applies drizzle/*.sql to your database
+npm run db:add-user -- you@example.com "Your Name" "a-strong-password"
+npm test                     # scheduler engine unit tests
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+See `.env.example` for the full list and how to generate each secret. You'll need:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `DATABASE_URL` — any Postgres instance for local dev.
+- `SESSION_SECRET` — signs the login session cookie.
+- `ZAPTEC_USERNAME` / `ZAPTEC_PASSWORD` — your Zaptec account, used server-side only, to call the Zaptec API on your app's behalf. This account needs owner/service access to the charger(s).
+- `CRON_SECRET` — shared secret the cron job must present; checked in `/api/cron/tick`.
+- `ZAPTEC_WEBHOOK_USERNAME` / `ZAPTEC_WEBHOOK_PASSWORD` — pick any values; you'll enter the same ones in the Zaptec Portal when configuring the webhook.
 
-## Learn More
+## Deploying
 
-To learn more about Next.js, take a look at the following resources:
+### 1. Database
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Add a Postgres database to the Vercel project (Storage tab → Postgres, which is Neon-backed). Vercel injects `POSTGRES_URL` and friends automatically — set `DATABASE_URL` in the project's environment variables to the pooled connection string it gives you.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 2. Import the GitHub repo into Vercel
 
-## Deploy on Vercel
+This repo is pushed to GitHub already. In the Vercel dashboard: **Add New → Project → Import Git Repository**, pick this repo, and deploy — no CLI needed. Framework preset (Next.js) is auto-detected.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 3. Set environment variables
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+In the Vercel project's **Settings → Environment Variables**, add everything from `.env.example` (Production, and Preview if you want preview deploys to work).
+
+### 4. Run migrations against the production database
+
+From your machine, with `DATABASE_URL` pointed at the production database:
+
+```bash
+npm run db:migrate
+npm run db:add-user -- you@example.com "Your Name" "a-strong-password"
+```
+
+(Repeat `db:add-user` for each household member.)
+
+### 5. Cron job
+
+`vercel.json` defines a cron hitting `/api/cron/tick` every 5 minutes. **Check your Vercel plan** — Hobby plans have historically limited cron frequency (sometimes to once/day); if 5-minute crons aren't available on your plan, either upgrade or reduce the schedule's precision expectations accordingly.
+
+### 6. Zaptec Portal webhook (optional, for session history)
+
+In the Zaptec Portal, under the installation's Authentication settings, set the "after session ends" webhook URL to `https://<your-domain>/api/webhooks/zaptec/session-end`, using Basic Auth with the `ZAPTEC_WEBHOOK_USERNAME` / `ZAPTEC_WEBHOOK_PASSWORD` you configured. Do **not** configure the "before authorizing a session" webhook unless you've separately confirmed its payload/response contract — see Known Limitations above.
+
+## Tech stack
+
+- Next.js 16 (App Router, Turbopack, React 19) — note: this project was scaffolded against Next 16, which has real breaking changes vs. earlier versions (e.g. `proxy.ts` instead of `middleware.ts`, fully async `cookies()`/`params`). See `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md` if upgrading further.
+- Drizzle ORM + Postgres (`postgres` driver), schema in `src/lib/db/schema.ts`.
+- Hand-rolled session auth (bcrypt + signed JWT cookie via `jose`) rather than a full auth library — this is a small household login with no social providers or MFA needed, and it avoids pulling in a dependency whose compatibility with bleeding-edge Next 16 / React 19.2 hasn't been proven yet.
+- Zaptec API client in `src/lib/zaptec/`, OAuth2 Resource Owner Password flow.

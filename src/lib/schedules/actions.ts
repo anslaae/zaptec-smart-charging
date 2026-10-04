@@ -1,0 +1,66 @@
+"use server";
+
+import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { verifySession } from "@/lib/auth/dal";
+import { db } from "@/lib/db";
+import { chargeSchedules } from "@/lib/db/schema";
+
+const CreateScheduleSchema = z.object({
+  chargerId: z.string().min(1),
+  chargerName: z.string().min(1),
+  targetEnergyKwh: z.coerce.number().positive().max(200),
+  readyBy: z.string().min(1),
+});
+
+export interface CreateScheduleState {
+  error?: string;
+}
+
+export async function createSchedule(
+  _prevState: CreateScheduleState,
+  formData: FormData,
+): Promise<CreateScheduleState> {
+  const session = await verifySession();
+
+  const parsed = CreateScheduleSchema.safeParse({
+    chargerId: formData.get("chargerId"),
+    chargerName: formData.get("chargerName"),
+    targetEnergyKwh: formData.get("targetEnergyKwh"),
+    readyBy: formData.get("readyBy"),
+  });
+
+  if (!parsed.success) {
+    return { error: "Check the amount to charge and the ready-by time." };
+  }
+
+  const readyBy = new Date(parsed.data.readyBy);
+  if (Number.isNaN(readyBy.getTime()) || readyBy.getTime() <= Date.now()) {
+    return { error: "Ready-by time must be a valid time in the future." };
+  }
+
+  await db.insert(chargeSchedules).values({
+    createdByUserId: session.userId,
+    chargerId: parsed.data.chargerId,
+    chargerName: parsed.data.chargerName,
+    targetEnergyKwh: parsed.data.targetEnergyKwh.toString(),
+    readyBy,
+    status: "pending",
+  });
+
+  revalidatePath("/");
+  redirect("/");
+}
+
+export async function cancelSchedule(scheduleId: string): Promise<void> {
+  await verifySession();
+
+  await db
+    .update(chargeSchedules)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(eq(chargeSchedules.id, scheduleId));
+
+  revalidatePath("/");
+}
