@@ -1,23 +1,13 @@
 name: Scheduler tick
 
 # Vercel Hobby cron jobs are capped at once/day, so this workflow stands in
-# for Vercel Cron: it hits /api/cron/tick every 5 minutes instead.
-#
-# Before enabling:
-#   1. Make this repo public (GitHub Actions minutes are free/unlimited on
-#      public repos; a private repo would blow through the 2,000 free
-#      min/month at this frequency).
-#   2. Add repo secrets (Settings -> Secrets and variables -> Actions):
-#      - APP_URL: the deployed app's base URL (e.g. https://your-app.vercel.app)
-#      - CRON_SECRET: must match the CRON_SECRET env var set on Vercel
-#   3. Uncomment the `schedule` trigger below.
-#
-# You can test anytime before that via the "Run workflow" button
-# (workflow_dispatch), as long as APP_URL/CRON_SECRET secrets are set.
+# for Vercel Cron: it hits /api/cron/tick every 5 minutes instead. Repo is
+# public and the APP_URL/CRON_SECRET repo secrets are set, so this runs for
+# free (GitHub Actions minutes are unlimited on public repos).
 
 on:
-  # schedule:
-  #   - cron: "*/5 * * * *"
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:

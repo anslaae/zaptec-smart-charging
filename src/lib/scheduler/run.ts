@@ -8,10 +8,15 @@ import type { ChargerState } from "@/lib/zaptec/types";
 import { decideNextAction } from "./engine";
 
 export async function runSchedulerTick(): Promise<{ processed: number }> {
+  const tickStartedAt = new Date().toISOString();
   const schedules = await db
     .select()
     .from(chargeSchedules)
     .where(inArray(chargeSchedules.status, ["pending", "active"]));
+
+  console.log(
+    `[scheduler] tick at ${tickStartedAt}: ${schedules.length} pending/active schedule(s)`,
+  );
 
   if (schedules.length === 0) {
     return { processed: 0 };
@@ -35,6 +40,11 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
         { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
         state,
         now,
+      );
+
+      const decisionDetail = decision.action === "none" ? ` — ${decision.reason}` : "";
+      console.log(
+        `[scheduler] schedule ${schedule.id} (charger ${schedule.chargerId}): ${decision.action}${decisionDetail}`,
       );
 
       if (decision.action === "complete") {
@@ -86,6 +96,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
         .where(eq(chargeSchedules.id, schedule.id));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      console.error(`[scheduler] schedule ${schedule.id} (charger ${schedule.chargerId}) failed: ${message}`);
       await db
         .update(chargeSchedules)
         .set({ lastError: message, lastEvaluatedAt: now, updatedAt: now })
@@ -93,5 +104,6 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
     }
   }
 
+  console.log(`[scheduler] tick done: processed ${schedules.length} schedule(s)`);
   return { processed: schedules.length };
 }

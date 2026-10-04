@@ -6,6 +6,7 @@ import { runSchedulerTick } from "@/lib/scheduler/run";
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${env.CRON_SECRET}`) {
+    console.warn("[scheduler] /api/cron/tick: rejected request with invalid/missing CRON_SECRET");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -14,6 +15,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[scheduler] /api/cron/tick failed before completing: ${message}`);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

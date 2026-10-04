@@ -9,6 +9,14 @@ const envSchema = z.object({
   CRON_SECRET: z.string().min(16),
   ZAPTEC_WEBHOOK_USERNAME: z.string().min(1),
   ZAPTEC_WEBHOOK_PASSWORD: z.string().min(1),
+  // When "true", sendChargerCommand() logs instead of calling the real
+  // Zaptec API. Lets us exercise the full cron/scheduler pipeline (including
+  // real charger state reads) without actually starting/stopping charging.
+  SIMULATE_CHARGER_COMMANDS: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 export const env = envSchema.parse({
@@ -19,4 +27,5 @@ export const env = envSchema.parse({
   CRON_SECRET: process.env.CRON_SECRET,
   ZAPTEC_WEBHOOK_USERNAME: process.env.ZAPTEC_WEBHOOK_USERNAME,
   ZAPTEC_WEBHOOK_PASSWORD: process.env.ZAPTEC_WEBHOOK_PASSWORD,
+  SIMULATE_CHARGER_COMMANDS: process.env.SIMULATE_CHARGER_COMMANDS,
 });

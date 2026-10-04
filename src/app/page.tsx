@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth/dal";
+import { env } from "@/lib/env";
 import { db } from "@/lib/db";
 import { chargeSchedules } from "@/lib/db/schema";
 import { listChargers, getChargerState } from "@/lib/zaptec/client";
@@ -28,6 +29,11 @@ export default async function DashboardPage() {
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-8 px-6 py-8">
       <AutoRefresh />
+      {env.SIMULATE_CHARGER_COMMANDS && (
+        <div className="rounded-md bg-amber-500/15 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+          Testing mode: start/stop commands are simulated, not sent to the charger.
+        </div>
+      )}
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">Smart Charging</h1>
