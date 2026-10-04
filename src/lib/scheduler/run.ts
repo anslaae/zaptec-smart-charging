@@ -2,7 +2,7 @@ import "server-only";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chargeSchedules, scheduleActions } from "@/lib/db/schema";
-import { listChargers, getChargerState, sendChargerCommand } from "@/lib/zaptec/client";
+import { listChargers, getChargerState, sendChargerCommand, isCurrentlyCharging } from "@/lib/zaptec/client";
 import { ZaptecCommand } from "@/lib/zaptec/constants";
 import type { ChargerState } from "@/lib/zaptec/types";
 import { decideNextAction } from "./engine";
@@ -119,10 +119,15 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
         continue;
       }
 
+      // A "none" decision can mean "waiting for the optimal start time" --
+      // still genuinely pending, not "active". Only promote to active if
+      // the charger is actually, confirmedly charging right now (e.g. it
+      // started on its own before the scheduler needed to intervene).
+      const shouldMarkActive = schedule.status === "pending" && isCurrentlyCharging(state);
       await db
         .update(chargeSchedules)
         .set({
-          status: schedule.status === "pending" ? "active" : schedule.status,
+          ...(shouldMarkActive ? { status: "active" as const } : {}),
           lastNote: decision.reason,
           lastEvaluatedAt: now,
           updatedAt: now,
