@@ -13,6 +13,21 @@ const ACTION_LABEL: Record<string, string> = {
   complete: "Stop charging (target reached)",
 };
 
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: HOUSEHOLD_TIME_ZONE,
+    hour12: false,
+  });
+}
+
+function formatRange(startedAt: string, endedAt: string | null | undefined): string {
+  return endedAt
+    ? `started ${formatTime(startedAt)}, ended ${formatTime(endedAt)}`
+    : `started ${formatTime(startedAt)}, still in progress`;
+}
+
 export default async function HistoryPage() {
   await getCurrentUser();
 
@@ -44,6 +59,7 @@ export default async function HistoryPage() {
   const sessions = sessionsByCharger
     .flat()
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  const sessionById = new Map(sessions.map((s) => [s.id, s]));
 
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-8 px-6 py-8">
@@ -60,23 +76,45 @@ export default async function HistoryPage() {
           <p className="text-sm text-black/50 dark:text-white/50">No past schedules yet.</p>
         )}
         <ul className="flex flex-col gap-2">
-          {pastSchedules.map((schedule) => (
-            <li key={schedule.id} className="rounded-xl border border-black/10 p-4 text-sm dark:border-white/15">
-              {Number(schedule.targetEnergyKwh).toFixed(1)} kWh on {schedule.chargerName} —{" "}
-              {schedule.status} — ready by{" "}
-              {schedule.readyBy.toLocaleString(undefined, {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZone: HOUSEHOLD_TIME_ZONE,
-                hour12: false,
-              })}
-              {schedule.simulate && (
-                <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                  Simulated
-                </span>
-              )}
-            </li>
-          ))}
+          {pastSchedules.map((schedule) => {
+            const realSession = schedule.zaptecSessionId
+              ? sessionById.get(schedule.zaptecSessionId)
+              : undefined;
+            return (
+              <li
+                key={schedule.id}
+                className="rounded-xl border border-black/10 p-4 text-sm dark:border-white/15"
+              >
+                <div>
+                  {Number(schedule.targetEnergyKwh).toFixed(1)} kWh on {schedule.chargerName} —{" "}
+                  {schedule.status} — ready by{" "}
+                  {schedule.readyBy.toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                    timeZone: HOUSEHOLD_TIME_ZONE,
+                    hour12: false,
+                  })}
+                  {schedule.simulate && (
+                    <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                      Simulated
+                    </span>
+                  )}
+                </div>
+                {realSession && (
+                  <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                    Actually delivered {realSession.energyKwh.toFixed(1)} kWh,{" "}
+                    {formatRange(realSession.startedAt, realSession.endedAt)}
+                  </p>
+                )}
+                {!realSession && schedule.startedAt && (
+                  <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                    {schedule.simulate ? "Simulated: " : ""}
+                    {formatRange(schedule.startedAt.toISOString(), schedule.endedAt?.toISOString())}
+                  </p>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </section>
 

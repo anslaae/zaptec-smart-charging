@@ -93,6 +93,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
             lastNote: "Target energy reached",
             lastEvaluatedAt: now,
             lastError: null,
+            endedAt: now,
             updatedAt: now,
           })
           .where(eq(chargeSchedules.id, schedule.id));
@@ -105,6 +106,10 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
             ? ZaptecCommand.ResumeCharging
             : ZaptecCommand.StopChargingFinal;
         await applyCommand(schedule, decision.action, commandId);
+        // First time this schedule has actually engaged with charging
+        // (resumed or paused), real or simulated -- record when, and for
+        // real schedules, which Zaptec session it was.
+        const isFirstCommand = schedule.startedAt == null;
         await db
           .update(chargeSchedules)
           .set({
@@ -114,6 +119,10 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
             lastEvaluatedAt: now,
             lastError: null,
             updatedAt: now,
+            ...(isFirstCommand && {
+              startedAt: now,
+              ...(!schedule.simulate && { zaptecSessionId: state.sessionId }),
+            }),
           })
           .where(eq(chargeSchedules.id, schedule.id));
         continue;

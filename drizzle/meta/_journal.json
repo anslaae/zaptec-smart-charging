@@ -15,6 +15,13 @@
       "when": 1791131282574,
       "tag": "0001_nebulous_king_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791176946415,
+      "tag": "0002_outgoing_multiple_man",
+      "breakpoints": true
     }
   ]
 }

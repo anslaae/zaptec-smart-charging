@@ -165,6 +165,7 @@ export async function getChargerState(
   const completedSessionObs = findObservation(observations, ObservationId.CompletedSession);
   const chargerMaxCurrentObs = findObservation(observations, ObservationId.ChargerMaxCurrent);
   const maxPhasesObs = findObservation(observations, ObservationId.MaxPhases);
+  const sessionIdObs = findObservation(observations, ObservationId.SessionIdentifier);
 
   const chargerMaxCurrentAmps = chargerMaxCurrentObs?.valueAsString
     ? Number(chargerMaxCurrentObs.valueAsString)
@@ -198,6 +199,7 @@ export async function getChargerState(
       : null,
     observedAt:
       operationModeObs?.timestamp ?? powerObs?.timestamp ?? sessionEnergyObs?.timestamp ?? null,
+    sessionId: sessionIdObs?.valueAsString ?? null,
     chargeDurationSeconds: chargeDurationObs?.valueAsString
       ? Number(chargeDurationObs.valueAsString)
       : null,

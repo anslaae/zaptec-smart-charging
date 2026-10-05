@@ -48,6 +48,16 @@ export const chargeSchedules = pgTable("charge_schedules", {
   lastNote: text("last_note"),
   lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),
   lastError: text("last_error"),
+  // When the scheduler first resumed (or, if simulate, would have resumed)
+  // charging for this schedule.
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  // When the schedule reached a terminal state (completed or cancelled).
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  // The real Zaptec session active at the moment charging started, captured
+  // only for non-simulated schedules — lets the history page link back to
+  // the real session's actual energy/duration via getChargeHistory(). Null
+  // for simulated schedules, since no real session was ever triggered.
+  zaptecSessionId: text("zaptec_session_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

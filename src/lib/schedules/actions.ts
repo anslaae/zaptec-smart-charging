@@ -61,9 +61,10 @@ export async function createSchedule(
 export async function cancelSchedule(scheduleId: string): Promise<void> {
   await verifySession();
 
+  const now = new Date();
   await db
     .update(chargeSchedules)
-    .set({ status: "cancelled", updatedAt: new Date() })
+    .set({ status: "cancelled", endedAt: now, updatedAt: now })
     .where(eq(chargeSchedules.id, scheduleId));
 
   revalidatePath("/");

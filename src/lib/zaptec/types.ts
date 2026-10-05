@@ -101,6 +101,10 @@ export interface ChargerState {
   instantPowerWatts: number | null;
   sessionEnergyKwh: number | null;
   observedAt: string | null;
+  // GUID of whatever session is current (plugged-in or charging); used to
+  // link a schedule to its real Zaptec session once that session appears in
+  // getChargeHistory(). Changes whenever a new physical session starts.
+  sessionId: string | null;
   // Seconds into the current session; only reported while actively charging.
   chargeDurationSeconds: number | null;
   // When Smart Eco Mode (or another schedule) has decided to start charging;

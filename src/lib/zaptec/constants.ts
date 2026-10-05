@@ -29,6 +29,10 @@ export const ObservationId = {
   // Bitmask from the Phases constant (1/2/4, or 7 for all three) — for this
   // single-phase household installation it's always 1.
   MaxPhases: 520,
+  // The GUID of whatever session is current (plugged-in or charging); used
+  // to link a schedule to its real Zaptec session for later lookup via
+  // getChargeHistory(). Changes whenever a new physical session starts.
+  SessionIdentifier: 721,
 } as const;
 
 // ChargerOperationMode values — all 4 documented values (there's no 4).
