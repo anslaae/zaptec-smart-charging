@@ -1,17 +1,11 @@
 import Link from "next/link";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
-import { chargeSchedules, scheduleActions } from "@/lib/db/schema";
+import { chargeSchedules } from "@/lib/db/schema";
 import { listChargers, getChargeHistory } from "@/lib/zaptec/client";
 import { ChargingStats } from "@/components/ChargingStats";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
-
-const ACTION_LABEL: Record<string, string> = {
-  resume: "Resume charging",
-  pause: "Pause charging",
-  complete: "Stop charging (target reached)",
-};
 
 const SCHEDULE_STATUS_LABEL: Record<string, string> = {
   completed: "Completed",
@@ -34,16 +28,10 @@ function formatDuration(durationMs: number): string {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
-function formatRange(startedAt: string, endedAt: string | null | undefined): string {
-  if (!endedAt) return `${formatTime(startedAt)} → still in progress`;
-  const durationMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
-  return `${formatTime(startedAt)} → ${formatTime(endedAt)} (${formatDuration(durationMs)})`;
-}
-
 export default async function HistoryPage() {
   await getCurrentUser();
 
-  const [pastSchedules, chargers, recentActions] = await Promise.all([
+  const [pastSchedules, chargers] = await Promise.all([
     db
       .select()
       .from(chargeSchedules)
@@ -51,18 +39,6 @@ export default async function HistoryPage() {
       .orderBy(desc(chargeSchedules.updatedAt))
       .limit(20),
     listChargers(),
-    db
-      .select({
-        id: scheduleActions.id,
-        action: scheduleActions.action,
-        simulated: scheduleActions.simulated,
-        createdAt: scheduleActions.createdAt,
-        chargerName: chargeSchedules.chargerName,
-      })
-      .from(scheduleActions)
-      .innerJoin(chargeSchedules, eq(scheduleActions.scheduleId, chargeSchedules.id))
-      .orderBy(desc(scheduleActions.createdAt))
-      .limit(30),
   ]);
 
   const sessionsByCharger = await Promise.all(
@@ -87,7 +63,7 @@ export default async function HistoryPage() {
         {pastSchedules.length === 0 && (
           <p className="text-sm text-black/50 dark:text-white/50">No past schedules yet.</p>
         )}
-        <ul className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           {pastSchedules.map((schedule) => {
             // The schedule's own startedAt/endedAt mark when *the schedule*
             // was actively charging. The linked real session's own
@@ -97,82 +73,25 @@ export default async function HistoryPage() {
             const realSession = schedule.zaptecSessionId
               ? sessionById.get(schedule.zaptecSessionId)
               : undefined;
-            const startedAt = schedule.startedAt?.toISOString();
-            const endedAt = schedule.endedAt?.toISOString();
-            const durationMs =
-              startedAt && endedAt
-                ? new Date(endedAt).getTime() - new Date(startedAt).getTime()
-                : null;
-
             return (
-              <li
+              <HistoryCard
                 key={schedule.id}
-                className="rounded-xl border border-black/10 p-4 text-sm dark:border-white/15"
+                title={`${Number(schedule.targetEnergyKwh).toFixed(1)} kWh on ${schedule.chargerName}`}
+                startedAt={schedule.startedAt?.toISOString() ?? null}
+                endedAt={schedule.endedAt?.toISOString() ?? null}
+                badges={
+                  <>
+                    <Badge>{SCHEDULE_STATUS_LABEL[schedule.status] ?? schedule.status}</Badge>
+                    {schedule.simulate && <Badge tone="amber">Simulated</Badge>}
+                  </>
+                }
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">
-                    {Number(schedule.targetEnergyKwh).toFixed(1)} kWh on {schedule.chargerName}
-                  </span>
-                  {schedule.simulate && (
-                    <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                      Simulated
-                    </span>
-                  )}
-                </div>
-                <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">
-                  {SCHEDULE_STATUS_LABEL[schedule.status] ?? schedule.status} · ready by{" "}
-                  {formatTime(schedule.readyBy.toISOString())}
-                  {realSession && ` · ${realSession.energyKwh.toFixed(1)} kWh delivered`}
-                </p>
-                {startedAt && (
-                  <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                    <MiniStat label="Started" value={formatTime(startedAt)} />
-                    <MiniStat label="Stopped" value={endedAt ? formatTime(endedAt) : "—"} />
-                    <MiniStat
-                      label="Duration"
-                      value={durationMs != null ? formatDuration(durationMs) : "—"}
-                    />
-                  </dl>
-                )}
-              </li>
+                <p>Ready by {formatTime(schedule.readyBy.toISOString())}</p>
+                {realSession && <p>{realSession.energyKwh.toFixed(1)} kWh actually delivered</p>}
+              </HistoryCard>
             );
           })}
-        </ul>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold">Recent scheduler actions</h2>
-        {recentActions.length === 0 && (
-          <p className="text-sm text-black/50 dark:text-white/50">
-            No scheduler actions yet — these appear once a schedule tells the charger to
-            start/stop.
-          </p>
-        )}
-        <ul className="flex flex-col gap-2">
-          {recentActions.map((entry) => (
-            <li
-              key={entry.id}
-              className="flex items-center justify-between gap-3 rounded-xl border border-black/10 p-4 text-sm dark:border-white/15"
-            >
-              <span>
-                {ACTION_LABEL[entry.action] ?? entry.action} on {entry.chargerName}
-              </span>
-              <span className="flex items-center gap-2 text-black/50 dark:text-white/50">
-                {entry.simulated && (
-                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                    Simulated
-                  </span>
-                )}
-                {entry.createdAt.toLocaleString(undefined, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                  timeZone: HOUSEHOLD_TIME_ZONE,
-                  hour12: false,
-                })}
-              </span>
-            </li>
-          ))}
-        </ul>
+        </div>
       </section>
 
       <section className="flex flex-col gap-3">
@@ -185,26 +104,71 @@ export default async function HistoryPage() {
         {sessions.length === 0 && (
           <p className="text-sm text-black/50 dark:text-white/50">No sessions recorded yet.</p>
         )}
-        <ul className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           {sessions.map((session) => (
-            <li
+            <HistoryCard
               key={session.id}
-              className="rounded-xl border border-black/10 p-4 text-sm dark:border-white/15"
+              title={`${session.energyKwh.toFixed(1)} kWh`}
+              startedAt={session.startedAt}
+              endedAt={session.endedAt}
+              badges={!session.endedAt && <Badge tone="blue">In progress</Badge>}
             >
-              <span className="font-medium">{session.energyKwh.toFixed(1)} kWh</span>
-              <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-                {formatRange(session.startedAt, session.endedAt)}
-              </p>
-              {session.userFullName && (
-                <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-                  {session.userFullName}
-                </p>
-              )}
-            </li>
+              {session.userFullName && <p>{session.userFullName}</p>}
+            </HistoryCard>
           ))}
-        </ul>
+        </div>
       </section>
     </main>
+  );
+}
+
+// Shared collapsible card for both "Past schedules" and "All sessions", so
+// the two lists read as one consistent pattern: kWh, status and the key
+// times/duration visible collapsed, full Started/Stopped plus any extra
+// detail (children) revealed on expand.
+function HistoryCard({
+  title,
+  badges,
+  startedAt,
+  endedAt,
+  children,
+}: {
+  title: string;
+  badges?: React.ReactNode;
+  startedAt: string | null;
+  endedAt: string | null;
+  children?: React.ReactNode;
+}) {
+  const durationMs =
+    startedAt && endedAt ? new Date(endedAt).getTime() - new Date(startedAt).getTime() : null;
+  const durationLabel =
+    durationMs != null ? formatDuration(durationMs) : startedAt ? "in progress" : "—";
+
+  return (
+    <details className="group rounded-xl border border-black/10 open:bg-black/[0.02] dark:border-white/15 dark:open:bg-white/[0.03]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm [&::-webkit-details-marker]:hidden">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-medium">{title}</span>
+          {badges}
+        </div>
+        <div className="flex shrink-0 items-center gap-2 text-xs text-black/50 dark:text-white/50">
+          <span>{startedAt ? formatTime(startedAt) : "—"}</span>
+          <span>{durationLabel}</span>
+          <ChevronIcon />
+        </div>
+      </summary>
+      <div className="flex flex-col gap-2 border-t border-black/10 px-4 py-3 text-xs text-black/60 dark:border-white/15 dark:text-white/60">
+        <dl className="grid grid-cols-3 gap-2">
+          <MiniStat label="Started" value={startedAt ? formatTime(startedAt) : "—"} />
+          <MiniStat
+            label="Stopped"
+            value={endedAt ? formatTime(endedAt) : startedAt ? "In progress" : "—"}
+          />
+          <MiniStat label="Duration" value={durationLabel} />
+        </dl>
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -212,7 +176,43 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-black/50 dark:text-white/50">{label}</dt>
-      <dd className="font-medium">{value}</dd>
+      <dd className="font-medium text-black/80 dark:text-white/80">{value}</dd>
     </div>
+  );
+}
+
+function Badge({
+  tone = "neutral",
+  children,
+}: {
+  tone?: "neutral" | "amber" | "blue";
+  children: React.ReactNode;
+}) {
+  const toneClasses = {
+    neutral: "bg-black/5 text-black/60 dark:bg-white/10 dark:text-white/60",
+    amber: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+    blue: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  }[tone];
+  return (
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${toneClasses}`}>
+      {children}
+    </span>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4 shrink-0 transition-transform duration-150 group-open:rotate-180"
+      aria-hidden="true"
+    >
+      <path d="M5 7.5 10 12.5 15 7.5" />
+    </svg>
   );
 }
