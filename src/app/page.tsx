@@ -73,9 +73,6 @@ export default async function DashboardPage() {
             <Link href="/schedule/quick" className="underline underline-offset-2">
               Quick schedule
             </Link>
-            <Link href="/schedule" className="underline underline-offset-2">
-              By kWh
-            </Link>
           </div>
         </div>
         <ScheduleList schedules={schedules} startTimes={startTimes} />

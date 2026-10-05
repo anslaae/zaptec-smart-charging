@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/auth/dal";
@@ -42,6 +42,26 @@ export async function createSchedule(
   const readyBy = zonedDateTimeToUtc(parsed.data.readyBy, HOUSEHOLD_TIME_ZONE);
   if (Number.isNaN(readyBy.getTime()) || readyBy.getTime() <= Date.now()) {
     return { error: "Ready-by time must be a valid time in the future." };
+  }
+
+  // A charger can only run one schedule's charging window at a time, so
+  // reject a new one while an existing pending/active schedule would overlap
+  // it, rather than letting the scheduler juggle conflicting commands.
+  const [overlapping] = await db
+    .select({ id: chargeSchedules.id })
+    .from(chargeSchedules)
+    .where(
+      and(
+        eq(chargeSchedules.chargerId, parsed.data.chargerId),
+        inArray(chargeSchedules.status, ["pending", "active"]),
+      ),
+    )
+    .limit(1);
+
+  if (overlapping) {
+    return {
+      error: "This charger already has an active or pending schedule. Cancel it first.",
+    };
   }
 
   await db.insert(chargeSchedules).values({
