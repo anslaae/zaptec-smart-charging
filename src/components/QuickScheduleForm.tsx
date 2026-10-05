@@ -129,7 +129,7 @@ export function QuickScheduleForm({ chargers }: { chargers: { id: string; name: 
         disabled={pending || chargers.length === 0 || targetEnergyKwh <= 0}
         className="rounded-md bg-foreground px-4 py-2 text-base font-medium text-background disabled:opacity-60"
       >
-        {pending ? "Saving…" : "Create schedule"}
+        {pending ? "Saving…" : "Plan charging"}
       </button>
       {chargers.length === 0 && (
         <p className="text-sm text-red-600">No chargers found on the connected Zaptec account.</p>

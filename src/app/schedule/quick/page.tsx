@@ -13,7 +13,7 @@ export default async function QuickSchedulePage() {
         <Link href="/" className="text-sm text-black/50 underline underline-offset-2 dark:text-white/50">
           ← Back
         </Link>
-        <h1 className="mt-2 text-xl font-semibold">Quick schedule</h1>
+        <h1 className="mt-2 text-xl font-semibold">Plan charging</h1>
       </div>
       <QuickScheduleForm chargers={chargers.map((c) => ({ id: c.id, name: c.name }))} />
     </main>

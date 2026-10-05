@@ -1,5 +1,6 @@
 import type { ChargerState } from "@/lib/zaptec/types";
 import { describeOperationMode, isCurrentlyCharging } from "@/lib/zaptec/state";
+import { startChargingNow, stopChargingNow } from "@/lib/zaptec/actions";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
 
 function formatDuration(totalSeconds: number): string {
@@ -21,10 +22,12 @@ export function ChargerStatusCard({
   name,
   address,
   state,
+  hasActivePlan,
 }: {
   name: string;
   address: string;
   state: ChargerState;
+  hasActivePlan: boolean;
 }) {
   const charging = isCurrentlyCharging(state);
 
@@ -82,6 +85,31 @@ export function ChargerStatusCard({
           Last connected {formatOsloDateTime(state.lastCompletedSession.startedAt)} ·{" "}
           {state.lastCompletedSession.energyKwh.toFixed(1)} kWh delivered
         </p>
+      )}
+
+      {hasActivePlan ? (
+        <p className="mt-3 text-xs text-black/50 dark:text-white/50">
+          Manual controls are off while charging is planned — cancel the plan to use them.
+        </p>
+      ) : (
+        <div className="mt-3 flex gap-2">
+          <form action={startChargingNow.bind(null, state.chargerId)} className="flex-1">
+            <button
+              type="submit"
+              className="w-full rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
+            >
+              Start charging
+            </button>
+          </form>
+          <form action={stopChargingNow.bind(null, state.chargerId)} className="flex-1">
+            <button
+              type="submit"
+              className="w-full rounded-md border border-black/10 px-3 py-2 text-sm font-medium dark:border-white/15"
+            >
+              Stop charging
+            </button>
+          </form>
+        </div>
       )}
     </div>
   );

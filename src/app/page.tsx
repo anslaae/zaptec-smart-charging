@@ -6,7 +6,7 @@ import { chargeSchedules } from "@/lib/db/schema";
 import { listChargers, getChargerState } from "@/lib/zaptec/client";
 import { estimateChargingPlan } from "@/lib/scheduler/engine";
 import { ChargerStatusCard } from "@/components/ChargerStatusCard";
-import { ScheduleList } from "@/components/ScheduleList";
+import { ChargingPlanCard } from "@/components/ChargingPlanCard";
 import { LogoutButton } from "@/components/LogoutButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
 
@@ -27,16 +27,21 @@ export default async function DashboardPage() {
   );
   const chargerStateById = new Map(chargers.map((charger, index) => [charger.id, chargerStates[index]]));
 
-  const startTimes: Record<string, string> = {};
-  for (const schedule of schedules) {
-    if (schedule.status !== "pending") continue;
-    const state = chargerStateById.get(schedule.chargerId);
-    if (!state) continue;
-    const { latestStartTime } = estimateChargingPlan(
-      { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
-      state,
-    );
-    startTimes[schedule.id] = latestStartTime.toISOString();
+  // This is a single-charger household app; createSchedule() rejects
+  // overlapping schedules per charger, so there's at most one plan to show.
+  const charger = chargers[0];
+  const schedule = charger ? (schedules.find((s) => s.chargerId === charger.id) ?? null) : null;
+
+  let startTime: string | null = null;
+  if (schedule?.status === "pending" && charger) {
+    const state = chargerStateById.get(charger.id);
+    if (state) {
+      const { latestStartTime } = estimateChargingPlan(
+        { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
+        state,
+      );
+      startTime = latestStartTime.toISOString();
+    }
   }
 
   return (
@@ -56,27 +61,23 @@ export default async function DashboardPage() {
             No chargers found on the connected Zaptec account.
           </p>
         )}
-        {chargers.map((charger, index) => (
+        {chargers.map((c, index) => (
           <ChargerStatusCard
-            key={charger.id}
-            name={charger.name}
-            address={charger.installationName}
+            key={c.id}
+            name={c.name}
+            address={c.installationName}
             state={chargerStates[index]}
+            hasActivePlan={schedules.some((s) => s.chargerId === c.id)}
           />
         ))}
       </section>
 
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Schedules</h2>
-          <div className="flex items-center gap-3 text-sm font-medium">
-            <Link href="/schedule/quick" className="underline underline-offset-2">
-              Quick schedule
-            </Link>
-          </div>
-        </div>
-        <ScheduleList schedules={schedules} startTimes={startTimes} />
-      </section>
+      {charger && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-semibold">Charging plan</h2>
+          <ChargingPlanCard schedule={schedule} startTime={startTime} />
+        </section>
+      )}
 
       <Link href="/history" className="text-sm text-black/50 underline underline-offset-2 dark:text-white/50">
         View history
