@@ -106,10 +106,11 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
             ? ZaptecCommand.ResumeCharging
             : ZaptecCommand.StopChargingFinal;
         await applyCommand(schedule, decision.action, commandId);
-        // First time this schedule has actually engaged with charging
-        // (resumed or paused), real or simulated -- record when, and for
-        // real schedules, which Zaptec session it was.
-        const isFirstCommand = schedule.startedAt == null;
+        // startedAt marks when charging actually began -- only a "resume"
+        // means that; a "pause" means the car started too early and we told
+        // it to wait, which is the opposite of started. Real or simulated,
+        // this is the first resume either way.
+        const isFirstResume = decision.action === "resume" && schedule.startedAt == null;
         await db
           .update(chargeSchedules)
           .set({
@@ -119,7 +120,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
             lastEvaluatedAt: now,
             lastError: null,
             updatedAt: now,
-            ...(isFirstCommand && {
+            ...(isFirstResume && {
               startedAt: now,
               ...(!schedule.simulate && { zaptecSessionId: state.sessionId }),
             }),

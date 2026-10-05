@@ -13,6 +13,11 @@ const ACTION_LABEL: Record<string, string> = {
   complete: "Stop charging (target reached)",
 };
 
+const SCHEDULE_STATUS_LABEL: Record<string, string> = {
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     dateStyle: "medium",
@@ -84,40 +89,50 @@ export default async function HistoryPage() {
         )}
         <ul className="flex flex-col gap-2">
           {pastSchedules.map((schedule) => {
+            // The schedule's own startedAt/endedAt mark when *the schedule*
+            // was actively charging. The linked real session's own
+            // StartDateTime/EndDateTime span the whole plug-in period
+            // (idle time included), so only its delivered energy is used
+            // here -- not its timestamps.
             const realSession = schedule.zaptecSessionId
               ? sessionById.get(schedule.zaptecSessionId)
               : undefined;
+            const startedAt = schedule.startedAt?.toISOString();
+            const endedAt = schedule.endedAt?.toISOString();
+            const durationMs =
+              startedAt && endedAt
+                ? new Date(endedAt).getTime() - new Date(startedAt).getTime()
+                : null;
+
             return (
               <li
                 key={schedule.id}
                 className="rounded-xl border border-black/10 p-4 text-sm dark:border-white/15"
               >
-                <div>
-                  {Number(schedule.targetEnergyKwh).toFixed(1)} kWh on {schedule.chargerName} —{" "}
-                  {schedule.status} — ready by{" "}
-                  {schedule.readyBy.toLocaleString(undefined, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                    timeZone: HOUSEHOLD_TIME_ZONE,
-                    hour12: false,
-                  })}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">
+                    {Number(schedule.targetEnergyKwh).toFixed(1)} kWh on {schedule.chargerName}
+                  </span>
                   {schedule.simulate && (
-                    <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                    <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
                       Simulated
                     </span>
                   )}
                 </div>
-                {realSession && (
-                  <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-                    Actually delivered {realSession.energyKwh.toFixed(1)} kWh,{" "}
-                    {formatRange(realSession.startedAt, realSession.endedAt)}
-                  </p>
-                )}
-                {!realSession && schedule.startedAt && (
-                  <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-                    {schedule.simulate ? "Simulated: " : ""}
-                    {formatRange(schedule.startedAt.toISOString(), schedule.endedAt?.toISOString())}
-                  </p>
+                <p className="mt-0.5 text-xs text-black/50 dark:text-white/50">
+                  {SCHEDULE_STATUS_LABEL[schedule.status] ?? schedule.status} · ready by{" "}
+                  {formatTime(schedule.readyBy.toISOString())}
+                  {realSession && ` · ${realSession.energyKwh.toFixed(1)} kWh delivered`}
+                </p>
+                {startedAt && (
+                  <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                    <MiniStat label="Started" value={formatTime(startedAt)} />
+                    <MiniStat label="Stopped" value={endedAt ? formatTime(endedAt) : "—"} />
+                    <MiniStat
+                      label="Duration"
+                      value={durationMs != null ? formatDuration(durationMs) : "—"}
+                    />
+                  </dl>
                 )}
               </li>
             );
@@ -190,5 +205,14 @@ export default async function HistoryPage() {
         </ul>
       </section>
     </main>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-black/50 dark:text-white/50">{label}</dt>
+      <dd className="font-medium">{value}</dd>
+    </div>
   );
 }
