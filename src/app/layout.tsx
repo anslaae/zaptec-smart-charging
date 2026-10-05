@@ -15,6 +15,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Smart Charging",
   description: "Schedule smart charging for your Zaptec EV charger",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Smart Charging",
+  },
 };
 
 export const viewport: Viewport = {
