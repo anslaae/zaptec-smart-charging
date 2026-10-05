@@ -22,10 +22,17 @@ function formatTime(iso: string): string {
   });
 }
 
+function formatDuration(durationMs: number): string {
+  const totalMinutes = Math.round(durationMs / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
 function formatRange(startedAt: string, endedAt: string | null | undefined): string {
-  return endedAt
-    ? `started ${formatTime(startedAt)}, ended ${formatTime(endedAt)}`
-    : `started ${formatTime(startedAt)}, still in progress`;
+  if (!endedAt) return `${formatTime(startedAt)} → still in progress`;
+  const durationMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+  return `${formatTime(startedAt)} → ${formatTime(endedAt)} (${formatDuration(durationMs)})`;
 }
 
 export default async function HistoryPage() {
@@ -169,17 +176,10 @@ export default async function HistoryPage() {
               key={session.id}
               className="rounded-xl border border-black/10 p-4 text-sm dark:border-white/15"
             >
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{session.energyKwh.toFixed(1)} kWh</span>
-                <span className="text-black/50 dark:text-white/50">
-                  {new Date(session.startedAt).toLocaleString(undefined, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                    timeZone: HOUSEHOLD_TIME_ZONE,
-                    hour12: false,
-                  })}
-                </span>
-              </div>
+              <span className="font-medium">{session.energyKwh.toFixed(1)} kWh</span>
+              <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+                {formatRange(session.startedAt, session.endedAt)}
+              </p>
               {session.userFullName && (
                 <p className="mt-1 text-xs text-black/50 dark:text-white/50">
                   {session.userFullName}
