@@ -5,6 +5,7 @@ import { createSchedule, type CreateScheduleState } from "@/lib/schedules/action
 import { VEHICLE_BATTERY_CAPACITY_KWH } from "@/lib/vehicle";
 import { HOUSEHOLD_TIME_ZONE, tomorrowAtLocalValue, zonedDateTimeToUtc } from "@/lib/datetime";
 import { estimateChargingPlan } from "@/lib/scheduler/engine";
+import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState } from "@/lib/zaptec/types";
 
 const initialState: CreateScheduleState = {};
@@ -37,6 +38,8 @@ export function QuickScheduleForm({
     if (Number.isNaN(readyBy.getTime())) return null;
     return estimateChargingPlan({ targetEnergyKwh, readyBy }, chargerState).latestStartTime;
   }, [chargerState, targetEnergyKwh, readyByValue]);
+
+  const noCarConnected = chargerState?.operationMode === ChargerOperationMode.Disconnected;
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -145,14 +148,12 @@ export function QuickScheduleForm({
         </p>
       )}
 
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          name="simulate"
-          className="h-4 w-4 rounded border-black/20 dark:border-white/30"
-        />
-        Simulate only (don&apos;t actually control the charger)
-      </label>
+      {noCarConnected && (
+        <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+          No car appears to be connected right now. You can still plan charging — it just
+          won&apos;t be able to start until the car is plugged in.
+        </p>
+      )}
 
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
 

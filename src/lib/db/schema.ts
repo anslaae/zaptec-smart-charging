@@ -5,7 +5,6 @@ import {
   timestamp,
   numeric,
   integer,
-  boolean,
   jsonb,
   pgEnum,
 } from "drizzle-orm/pg-core";
@@ -40,23 +39,17 @@ export const chargeSchedules = pgTable("charge_schedules", {
   }).notNull(),
   readyBy: timestamp("ready_by", { withTimezone: true }).notNull(),
   status: scheduleStatus("status").notNull().default("pending"),
-  // When true, the scheduler logs start/stop decisions instead of sending
-  // real commands to the charger. See the schedule_actions table for a log
-  // of what was (or would have been) sent.
-  simulate: boolean("simulate").notNull().default(false),
   lastCommand: text("last_command"),
   lastNote: text("last_note"),
   lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),
   lastError: text("last_error"),
-  // When the scheduler first resumed (or, if simulate, would have resumed)
-  // charging for this schedule.
+  // When the scheduler first resumed charging for this schedule.
   startedAt: timestamp("started_at", { withTimezone: true }),
   // When the schedule reached a terminal state (completed or cancelled).
   endedAt: timestamp("ended_at", { withTimezone: true }),
-  // The real Zaptec session active at the moment charging started, captured
-  // only for non-simulated schedules — lets the history page link back to
-  // the real session's actual energy/duration via getChargeHistory(). Null
-  // for simulated schedules, since no real session was ever triggered.
+  // The real Zaptec session active at the moment charging started -- lets
+  // the history page link back to the real session's actual energy/duration
+  // via getChargeHistory().
   zaptecSessionId: text("zaptec_session_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -66,9 +59,9 @@ export const chargeSchedules = pgTable("charge_schedules", {
     .defaultNow(),
 });
 
-// One row per command the scheduler decides to send (resume/pause/complete),
-// whether real or simulated — lets the history page show what the scheduler
-// actually did (or would have done) over time, not just the latest state.
+// One row per command the scheduler decides to send (resume/pause/complete)
+// -- an internal log of what the scheduler actually did over time, not just
+// the latest state.
 export const scheduleActions = pgTable("schedule_actions", {
   id: uuid("id").primaryKey().defaultRandom(),
   scheduleId: uuid("schedule_id")
@@ -77,7 +70,6 @@ export const scheduleActions = pgTable("schedule_actions", {
   chargerId: text("charger_id").notNull(),
   action: text("action").notNull(),
   commandId: integer("command_id").notNull(),
-  simulated: boolean("simulated").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -7,33 +7,20 @@ import { ZaptecCommand } from "@/lib/zaptec/constants";
 import type { ChargerState } from "@/lib/zaptec/types";
 import { decideNextAction } from "./engine";
 
-const COMMAND_NAME: Record<number, string> = {
-  [ZaptecCommand.ResumeCharging]: "resume",
-  [ZaptecCommand.StopChargingFinal]: "stop",
-};
-
-// Records the decision either way, so the history page can show what the
-// scheduler did (or would have done) over time — and actually calls the
-// Zaptec API only when the schedule isn't in simulate mode.
+// Records the decision, so there's an internal log of what the scheduler
+// actually sent over time, not just the latest state.
 async function applyCommand(
-  schedule: { id: string; chargerId: string; simulate: boolean },
+  schedule: { id: string; chargerId: string },
   action: string,
   commandId: number,
 ): Promise<void> {
-  if (schedule.simulate) {
-    console.log(
-      `[scheduler] (simulated) schedule ${schedule.id}: would send ${COMMAND_NAME[commandId] ?? commandId} to charger ${schedule.chargerId}`,
-    );
-  } else {
-    await sendChargerCommand(schedule.chargerId, commandId);
-  }
+  await sendChargerCommand(schedule.chargerId, commandId);
 
   await db.insert(scheduleActions).values({
     scheduleId: schedule.id,
     chargerId: schedule.chargerId,
     action,
     commandId,
-    simulated: schedule.simulate,
   });
 }
 
@@ -131,7 +118,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
             updatedAt: now,
             ...(isFirstResume && {
               startedAt: now,
-              ...(!schedule.simulate && { zaptecSessionId: state.sessionId }),
+              zaptecSessionId: state.sessionId,
             }),
           })
           .where(eq(chargeSchedules.id, schedule.id));
@@ -143,11 +130,17 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
       // the charger is actually, confirmedly charging right now (e.g. it
       // started on its own before the scheduler needed to intervene).
       const shouldMarkActive = schedule.status === "pending" && isCurrentlyCharging(state);
+      if (decision.isProblem) {
+        console.error(
+          `[scheduler] schedule ${schedule.id} (charger ${schedule.chargerId}): ${decision.reason}`,
+        );
+      }
       await db
         .update(chargeSchedules)
         .set({
           ...(shouldMarkActive ? { status: "active" as const } : {}),
           lastNote: decision.reason,
+          lastError: decision.isProblem ? decision.reason : null,
           lastEvaluatedAt: now,
           updatedAt: now,
         })

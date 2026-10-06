@@ -79,12 +79,7 @@ export default async function HistoryPage() {
                 title={`${Number(schedule.targetEnergyKwh).toFixed(1)} kWh on ${schedule.chargerName}`}
                 startedAt={schedule.startedAt?.toISOString() ?? null}
                 endedAt={schedule.endedAt?.toISOString() ?? null}
-                badges={
-                  <>
-                    <Badge>{SCHEDULE_STATUS_LABEL[schedule.status] ?? schedule.status}</Badge>
-                    {schedule.simulate && <Badge tone="amber">Simulated</Badge>}
-                  </>
-                }
+                badges={<Badge>{SCHEDULE_STATUS_LABEL[schedule.status] ?? schedule.status}</Badge>}
               >
                 <p>Ready by {formatTime(schedule.readyBy.toISOString())}</p>
                 {realSession && <p>{realSession.energyKwh.toFixed(1)} kWh actually delivered</p>}

@@ -73,12 +73,13 @@ describe("decideNextAction", () => {
     expect(decision.action).toBe("resume");
   });
 
-  it("reports no car connected instead of silently doing nothing", () => {
+  it("reports no car connected as a problem, not silently doing nothing", () => {
     const state = baseState({ operationMode: ChargerOperationMode.Disconnected, finalStopActive: null });
     const decision = decideNextAction(schedule, state, new Date("2026-01-01T06:59:00Z"));
     expect(decision).toEqual({
       action: "none",
       reason: "Needs to charge but no car is connected",
+      isProblem: true,
     });
   });
 

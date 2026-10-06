@@ -1,6 +1,7 @@
 import type { ChargerState } from "@/lib/zaptec/types";
 import { describeOperationMode, isCurrentlyCharging } from "@/lib/zaptec/state";
 import { startChargingNow, stopChargingNow } from "@/lib/zaptec/actions";
+import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import { SubmitButton } from "@/components/SubmitButton";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
 
@@ -31,6 +32,7 @@ export function ChargerStatusCard({
   hasActivePlan: boolean;
 }) {
   const charging = isCurrentlyCharging(state);
+  const noCarConnected = state.operationMode === ChargerOperationMode.Disconnected;
 
   return (
     <div className="rounded-xl border border-black/10 p-4 dark:border-white/15">
@@ -101,6 +103,10 @@ export function ChargerStatusCard({
             Stop charging
           </SubmitButton>
         </form>
+      ) : noCarConnected ? (
+        <p className="mt-3 text-xs text-black/50 dark:text-white/50">
+          Plug in the car to start charging manually.
+        </p>
       ) : (
         <form action={startChargingNow.bind(null, state.chargerId)} className="mt-3">
           <SubmitButton

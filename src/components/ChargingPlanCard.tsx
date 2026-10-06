@@ -40,14 +40,7 @@ export function ChargingPlanCard({
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-black/10 p-4 dark:border-white/15">
       <div>
-        <p className="font-medium">
-          {Number(schedule.targetEnergyKwh).toFixed(1)} kWh
-          {schedule.simulate && (
-            <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-              Simulated
-            </span>
-          )}
-        </p>
+        <p className="font-medium">{Number(schedule.targetEnergyKwh).toFixed(1)} kWh</p>
         <p className="text-sm text-black/50 dark:text-white/50">
           Ready by{" "}
           {schedule.readyBy.toLocaleString(undefined, {

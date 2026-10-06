@@ -11,7 +11,9 @@ export type SchedulerDecision =
   | { action: "complete" }
   | { action: "resume" }
   | { action: "pause" }
-  | { action: "none"; reason: string };
+  // isProblem marks a genuine failure to act when charging was needed (vs.
+  // a normal, expected wait) -- surfaced as lastError rather than lastNote.
+  | { action: "none"; reason: string; isProblem?: boolean };
 
 /**
  * Last-resort fallback charge rate, used only if we have neither a live
@@ -84,7 +86,11 @@ export function decideNextAction(
       return { action: "resume" };
     }
     if (state.operationMode === ChargerOperationMode.Disconnected) {
-      return { action: "none", reason: "Needs to charge but no car is connected" };
+      return {
+        action: "none",
+        reason: "Needs to charge but no car is connected",
+        isProblem: true,
+      };
     }
     // Connected but never explicitly stopped by us (e.g. just plugged in,
     // sitting idle). There's no separate "start" command -- ResumeCharging
