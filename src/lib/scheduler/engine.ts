@@ -10,7 +10,6 @@ export interface ScheduleInput {
 export type SchedulerDecision =
   | { action: "complete" }
   | { action: "resume" }
-  | { action: "start" }
   | { action: "pause" }
   | { action: "none"; reason: string };
 
@@ -88,10 +87,10 @@ export function decideNextAction(
       return { action: "none", reason: "Needs to charge but no car is connected" };
     }
     // Connected but never explicitly stopped by us (e.g. just plugged in,
-    // sitting idle) -- ResumeCharging only undoes a previous stop and fails
-    // with a 500 in this state; StartCharging is the one that actually
-    // begins a fresh session.
-    return { action: "start" };
+    // sitting idle). There's no separate "start" command -- ResumeCharging
+    // is sent regardless; if there's nothing to resume, Zaptec rejects it
+    // with a harmless 528 that sendChargerCommand treats as success.
+    return { action: "resume" };
   }
 
   if (isCurrentlyCharging(state)) {

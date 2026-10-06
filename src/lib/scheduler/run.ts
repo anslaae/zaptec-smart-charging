@@ -8,7 +8,6 @@ import type { ChargerState } from "@/lib/zaptec/types";
 import { decideNextAction } from "./engine";
 
 const COMMAND_NAME: Record<number, string> = {
-  [ZaptecCommand.StartCharging]: "start",
   [ZaptecCommand.ResumeCharging]: "resume",
   [ZaptecCommand.StopChargingFinal]: "stop",
 };
@@ -101,20 +100,16 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
         continue;
       }
 
-      if (decision.action === "resume" || decision.action === "start" || decision.action === "pause") {
+      if (decision.action === "resume" || decision.action === "pause") {
         const commandId =
           decision.action === "resume"
             ? ZaptecCommand.ResumeCharging
-            : decision.action === "start"
-              ? ZaptecCommand.StartCharging
-              : ZaptecCommand.StopChargingFinal;
+            : ZaptecCommand.StopChargingFinal;
         await applyCommand(schedule, decision.action, commandId);
-        // startedAt marks when charging actually began -- "resume" or
-        // "start" both mean that; a "pause" means the car started too early
-        // and we told it to wait, which is the opposite of started.
-        const isFirstResume =
-          (decision.action === "resume" || decision.action === "start") &&
-          schedule.startedAt == null;
+        // startedAt marks when charging actually began -- only a "resume"
+        // means that; a "pause" means the car started too early and we told
+        // it to wait, which is the opposite of started.
+        const isFirstResume = decision.action === "resume" && schedule.startedAt == null;
         await db
           .update(chargeSchedules)
           .set({

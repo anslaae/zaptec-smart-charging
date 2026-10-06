@@ -1,6 +1,6 @@
 import "server-only";
 import { getZaptecAccessToken } from "./auth";
-import { ZAPTEC_API_BASE, ObservationId, NOMINAL_VOLTAGE } from "./constants";
+import { ZAPTEC_API_BASE, ObservationId, NOMINAL_VOLTAGE, ZaptecCommand } from "./constants";
 import type {
   ZaptecChargerListApiResponse,
   ZaptecStateObservation,
@@ -217,9 +217,25 @@ export async function sendChargerCommand(
     `/api/chargers/${chargerId}/sendCommand/${commandId}`,
     { method: "POST" },
   );
-  if (!response.ok) {
-    throw new Error(
-      `Zaptec command ${commandId} failed for charger ${chargerId}: ${response.status} ${await response.text()}`,
-    );
+  if (response.ok) return;
+
+  const bodyText = await response.text();
+  // ResumeCharging only undoes a previous StopChargingFinal. Error 528
+  // (DeviceCommandRejected) "Charging is not Paused nor Scheduled" just
+  // means there was nothing to resume -- i.e. the charger was never
+  // stopped by us -- which isn't actually a failure. evcc's production
+  // Zaptec driver treats this identically; there is no separate "start a
+  // fresh session" command (StartCharging/501 returns 519 UnknownCommand).
+  if (commandId === ZaptecCommand.ResumeCharging) {
+    try {
+      const body = JSON.parse(bodyText) as { Code?: number };
+      if (body.Code === 528) return;
+    } catch {
+      // not JSON -- fall through to throw below
+    }
   }
+
+  throw new Error(
+    `Zaptec command ${commandId} failed for charger ${chargerId}: ${response.status} ${bodyText}`,
+  );
 }

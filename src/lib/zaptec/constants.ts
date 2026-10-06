@@ -4,16 +4,14 @@ export const ZAPTEC_TOKEN_URL = "https://api.zaptec.com/oauth/token";
 export const ZaptecCommand = {
   Restart: 102,
   FirmwareUpgrade: 200,
-  // Starts a fresh session from idle (car connected, not charging, never
-  // stopped by us). Distinct from ResumeCharging -- confirmed via a live
-  // 500 error: "Charging is not Paused nor Scheduled; Resume command
-  // cannot be sent" when ResumeCharging was sent to an idle, never-stopped
-  // session.
-  StartCharging: 501,
-  StopCharging: 502,
   StopChargingFinal: 506,
   // Only undoes a previous StopChargingFinal/pause -- does not start a
-  // fresh session (see StartCharging above).
+  // fresh session from idle. There is no separate "start" command: the
+  // listed StartCharging (501) returns a live 519 UnknownCommand via this
+  // endpoint. A charger that's connected but never stopped by us will
+  // reject this with a (harmless, treated as success) 528 -- see
+  // sendChargerCommand in client.ts. Matches evcc's production Zaptec
+  // driver, which uses this exact same pair and nothing else.
   ResumeCharging: 507,
   DeauthorizeStop: 10001,
 } as const;

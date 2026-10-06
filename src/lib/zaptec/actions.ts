@@ -6,14 +6,15 @@ import { sendChargerCommand } from "./client";
 import { ZaptecCommand } from "./constants";
 
 // Manual override, independent of any schedule -- "just charge now" rather
-// than aiming for a target/deadline. Uses StartCharging, not ResumeCharging:
-// confirmed live that ResumeCharging only undoes a previous
-// StopChargingFinal and fails outright (HTTP 500, "Charging is not Paused
-// nor Scheduled") against a charger that's simply plugged in and idle,
-// which is the state this button is meant for.
+// than aiming for a target/deadline. There's no separate "start" command
+// (StartCharging/501 is rejected outright with 519 UnknownCommand);
+// ResumeCharging is the only one that applies, matching evcc's production
+// Zaptec driver. If the charger was never stopped, Zaptec rejects it with a
+// harmless 528 that sendChargerCommand() treats as success -- it just means
+// there was nothing to resume.
 export async function startChargingNow(chargerId: string): Promise<void> {
   await verifySession();
-  await sendChargerCommand(chargerId, ZaptecCommand.StartCharging);
+  await sendChargerCommand(chargerId, ZaptecCommand.ResumeCharging);
   revalidatePath("/");
 }
 

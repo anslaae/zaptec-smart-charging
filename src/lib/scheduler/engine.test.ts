@@ -82,15 +82,16 @@ describe("decideNextAction", () => {
     });
   });
 
-  it("starts (not resumes) a charger that's connected but was never stopped by us", () => {
-    // ResumeCharging only undoes a previous StopChargingFinal and fails
-    // against a charger that's simply plugged in and idle -- confirmed via
-    // a live 500 error ("Charging is not Paused nor Scheduled").
+  it("still sends resume to a connected charger that was never stopped by us", () => {
+    // There's no separate "start" command -- ResumeCharging is sent
+    // regardless. If the charger was never paused, Zaptec rejects it with a
+    // harmless 528 that sendChargerCommand() treats as success (confirmed
+    // against evcc's production Zaptec driver, which does the same).
     const state = baseState({
       operationMode: ChargerOperationMode.ConnectedRequesting,
       finalStopActive: null,
     });
     const decision = decideNextAction(schedule, state, new Date("2026-01-01T06:59:00Z"));
-    expect(decision).toEqual({ action: "start" });
+    expect(decision).toEqual({ action: "resume" });
   });
 });
