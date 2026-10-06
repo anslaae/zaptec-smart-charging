@@ -7,7 +7,7 @@ Built as a responsive Next.js app (BFF pattern: the frontend never talks to Zapt
 ## How it works
 
 - You (or someone in the household) log in and create a schedule: "charge +20 kWh, ready by 07:00".
-- A Vercel Cron job hits `/api/cron/tick` every 5 minutes. It reads each active schedule, checks the charger's live state, and decides whether to send Zaptec's `ResumeCharging` (507) or `StopChargingFinal` (506) command so charging finishes around the deadline rather than immediately.
+- An external cron (cron-job.org, see "Cron job" below) hits `/api/cron/tick` every 5 minutes. It reads each active schedule, checks the charger's live state, and decides whether to send Zaptec's `ResumeCharging` (507) or `StopChargingFinal` (506) command so charging finishes around the deadline rather than immediately.
 - If a schedule falls behind, the app prioritizes finishing over the deadline rather than leaving the car undercharged.
 - A webhook (`/api/webhooks/zaptec/session-end`) logs completed charging sessions for the history page.
 
@@ -72,13 +72,21 @@ npm run db:add-user -- you@example.com "Your Name" "a-strong-password"
 
 ### 5. Cron job
 
-Vercel Hobby plan caps cron jobs at once/day (and a `vercel.json` declaring anything more frequent will fail to deploy), so this project doesn't use Vercel Cron. Instead, `.github/workflows/scheduler-tick.yml` hits `/api/cron/tick` every 5 minutes from GitHub Actions. To enable it:
+Vercel Hobby plan caps cron jobs at once/day (and a `vercel.json` declaring anything more frequent will fail to deploy), so this project doesn't use Vercel Cron. GitHub Actions' `schedule` trigger was tried instead, but turned out to be unreliable in practice — GitHub documents it as best-effort and deprioritizes it under load, especially on low-traffic repos; it ended up firing hours apart instead of every 5 minutes.
 
-1. Make this repo **public** — GitHub Actions minutes are free/unlimited on public repos; at a 5-minute interval a private repo would blow through the 2,000 free minutes/month.
-2. Add repo secrets (Settings → Secrets and variables → Actions): `APP_URL` (your deployed app's base URL) and `CRON_SECRET` (must match the value set on Vercel).
-3. Uncomment the `schedule` trigger in the workflow file.
+Instead, [cron-job.org](https://cron-job.org) (free) calls `/api/cron/tick` directly on a real 5-minute schedule:
 
-If you're on Vercel Pro and would rather use Vercel Cron instead, re-add a `crons` block to `vercel.json` and drop the workflow.
+1. Create a free account at cron-job.org.
+2. Create a new cron job:
+   - URL: `https://<your-domain>/api/cron/tick`
+   - Schedule: every 5 minutes
+   - Request method: GET
+   - Custom header: `Authorization: Bearer <your CRON_SECRET>` (must match the value set on Vercel)
+3. Save and enable it. cron-job.org's dashboard shows execution history/response codes, useful for confirming it's actually running on schedule.
+
+`.github/workflows/scheduler-tick.yml` is kept around as a manual (`workflow_dispatch`-only) way to trigger a tick from the GitHub UI for testing — it no longer runs on a schedule.
+
+If you're on Vercel Pro and would rather use Vercel Cron instead, re-add a `crons` block to `vercel.json` and drop cron-job.org.
 
 ### 6. Zaptec Portal webhook (optional, for session history)
 

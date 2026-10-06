@@ -1,13 +1,13 @@
-name: Scheduler tick
+name: Scheduler tick (manual)
 
-# Vercel Hobby cron jobs are capped at once/day, so this workflow stands in
-# for Vercel Cron: it hits /api/cron/tick every 5 minutes instead. Repo is
-# public and the APP_URL/CRON_SECRET repo secrets are set, so this runs for
-# free (GitHub Actions minutes are unlimited on public repos).
+# GitHub Actions' `schedule` trigger turned out to be unreliable for this --
+# GitHub explicitly documents it as best-effort and deprioritizes it under
+# load, especially on low-traffic repos. In practice this fired hours apart
+# instead of every 5 minutes. cron-job.org (https://cron-job.org) now calls
+# /api/cron/tick directly on a real 5-minute schedule; see the README. This
+# workflow is kept only for manually testing the tick from the GitHub UI.
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
