@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { eq, inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
@@ -8,6 +9,7 @@ import { estimateChargingPlan } from "@/lib/scheduler/engine";
 import { ChargerStatusCard } from "@/components/ChargerStatusCard";
 import { ChargingPlanCard } from "@/components/ChargingPlanCard";
 import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
+import { ScheduleCreatedToast } from "@/components/ScheduleCreatedToast";
 import { LogoutButton } from "@/components/LogoutButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
 
@@ -53,6 +55,9 @@ export default async function DashboardPage() {
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-8 px-6 py-8">
       <AutoRefresh />
+      <Suspense fallback={null}>
+        <ScheduleCreatedToast />
+      </Suspense>
       <header className="flex items-center justify-between">
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold">Smart Charging</h1>

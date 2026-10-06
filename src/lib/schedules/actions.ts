@@ -72,17 +72,33 @@ export async function createSchedule(
   });
 
   revalidatePath("/");
-  redirect("/");
+  // ?created=1 lets the dashboard fire a one-off success toast on arrival --
+  // this component is about to unmount (redirect), so it can't show one itself.
+  redirect("/?created=1");
 }
 
-export async function cancelSchedule(scheduleId: string): Promise<void> {
+export interface ActionResult {
+  error?: string;
+  success?: boolean;
+}
+
+export async function cancelSchedule(
+  scheduleId: string,
+  _prevState: ActionResult,
+  _formData: FormData,
+): Promise<ActionResult> {
   await verifySession();
 
-  const now = new Date();
-  await db
-    .update(chargeSchedules)
-    .set({ status: "cancelled", endedAt: now, updatedAt: now })
-    .where(eq(chargeSchedules.id, scheduleId));
+  try {
+    const now = new Date();
+    await db
+      .update(chargeSchedules)
+      .set({ status: "cancelled", endedAt: now, updatedAt: now })
+      .where(eq(chargeSchedules.id, scheduleId));
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to cancel the schedule." };
+  }
 
   revalidatePath("/");
+  return { success: true };
 }

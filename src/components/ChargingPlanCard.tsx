@@ -1,5 +1,9 @@
+"use client";
+
+import { useActionState, useEffect } from "react";
 import Link from "next/link";
-import { cancelSchedule } from "@/lib/schedules/actions";
+import { toast } from "sonner";
+import { cancelSchedule, type ActionResult } from "@/lib/schedules/actions";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { chargeSchedules } from "@/lib/db/schema";
@@ -13,6 +17,8 @@ const STATUS_LABEL: Record<Schedule["status"], string> = {
   cancelled: "Cancelled",
 };
 
+const initialState: ActionResult = {};
+
 // A single-charger household only ever has at most one pending/active
 // schedule at a time (createSchedule rejects overlaps), so this shows that
 // one plan directly rather than a list.
@@ -23,6 +29,19 @@ export function ChargingPlanCard({
   schedule: Schedule | null;
   startTime: string | null;
 }) {
+  const [cancelState, cancelAction] = useActionState(
+    cancelSchedule.bind(null, schedule?.id ?? ""),
+    initialState,
+  );
+
+  useEffect(() => {
+    if (cancelState.error) {
+      toast.error("Couldn't cancel the plan", { description: cancelState.error });
+    } else if (cancelState.success) {
+      toast.success("Charging plan cancelled");
+    }
+  }, [cancelState]);
+
   if (!schedule) {
     return (
       <div className="flex items-center justify-between gap-3 rounded-xl border border-black/10 p-4 dark:border-white/15">
@@ -67,7 +86,7 @@ export function ChargingPlanCard({
           <p className="text-sm text-red-600">Last error: {schedule.lastError}</p>
         )}
       </div>
-      <form action={cancelSchedule.bind(null, schedule.id)}>
+      <form action={cancelAction}>
         <SubmitButton
           pendingLabel="Cancelling…"
           className="shrink-0 rounded-md border border-black/10 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"

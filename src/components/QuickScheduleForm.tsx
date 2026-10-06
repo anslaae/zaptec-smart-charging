@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { createSchedule, type CreateScheduleState } from "@/lib/schedules/actions";
 import { VEHICLE_BATTERY_CAPACITY_KWH } from "@/lib/vehicle";
 import { HOUSEHOLD_TIME_ZONE, tomorrowAtLocalValue, zonedDateTimeToUtc } from "@/lib/datetime";
@@ -41,6 +42,10 @@ export function QuickScheduleForm({
 
   const noCarConnected = chargerState?.operationMode === ChargerOperationMode.Disconnected;
 
+  useEffect(() => {
+    if (state.error) toast.error("Couldn't plan charging", { description: state.error });
+  }, [state.error]);
+
   return (
     <form action={formAction} className="flex flex-col gap-4">
       {chargers.length > 1 && (
@@ -52,7 +57,7 @@ export function QuickScheduleForm({
             id="quickChargerId"
             name="chargerId"
             required
-            className="rounded-md border border-black/10 bg-transparent px-3 py-2 text-base dark:border-white/15"
+            className="cursor-pointer rounded-md border border-black/10 bg-transparent px-3 py-2 text-base dark:border-white/15"
             onChange={(event) => {
               const form = event.currentTarget.form;
               if (!form) return;
@@ -88,7 +93,7 @@ export function QuickScheduleForm({
             step={5}
             value={currentPercent}
             onChange={(event) => setCurrentPercent(Number(event.target.value))}
-            className="flex-1"
+            className="flex-1 cursor-pointer"
           />
           <span className="w-12 text-right text-sm font-medium">{currentPercent}%</span>
         </div>
@@ -103,7 +108,7 @@ export function QuickScheduleForm({
               type="button"
               onClick={() => setTargetPercent(percent)}
               aria-pressed={targetPercent === percent}
-              className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium ${
+              className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm font-medium ${
                 targetPercent === percent
                   ? "border-foreground bg-foreground text-background"
                   : "border-black/10 dark:border-white/15"
@@ -155,12 +160,10 @@ export function QuickScheduleForm({
         </p>
       )}
 
-      {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-
       <button
         type="submit"
         disabled={pending || chargers.length === 0 || targetEnergyKwh <= 0}
-        className="rounded-md bg-foreground px-4 py-2 text-base font-medium text-background disabled:opacity-60"
+        className="cursor-pointer rounded-md bg-foreground px-4 py-2 text-base font-medium text-background disabled:cursor-not-allowed disabled:opacity-60"
       >
         {pending ? "Saving…" : "Plan charging"}
       </button>

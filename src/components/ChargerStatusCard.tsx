@@ -1,8 +1,7 @@
 import type { ChargerState } from "@/lib/zaptec/types";
 import { describeOperationMode, isCurrentlyCharging } from "@/lib/zaptec/state";
-import { startChargingNow, stopChargingNow } from "@/lib/zaptec/actions";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
-import { SubmitButton } from "@/components/SubmitButton";
+import { ManualChargeButton } from "@/components/ManualChargeButton";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
 
 function formatDuration(totalSeconds: number): string {
@@ -95,27 +94,13 @@ export function ChargerStatusCard({
           Manual controls are off while charging is planned — cancel the plan to use them.
         </p>
       ) : charging ? (
-        <form action={stopChargingNow.bind(null, state.chargerId)} className="mt-3">
-          <SubmitButton
-            pendingLabel="Stopping…"
-            className="w-full rounded-md border border-black/10 px-3 py-2 text-sm font-medium dark:border-white/15"
-          >
-            Stop charging
-          </SubmitButton>
-        </form>
+        <ManualChargeButton chargerId={state.chargerId} mode="stop" />
       ) : noCarConnected ? (
         <p className="mt-3 text-xs text-black/50 dark:text-white/50">
           Plug in the car to start charging manually.
         </p>
       ) : (
-        <form action={startChargingNow.bind(null, state.chargerId)} className="mt-3">
-          <SubmitButton
-            pendingLabel="Starting…"
-            className="w-full rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
-          >
-            Start charging
-          </SubmitButton>
-        </form>
+        <ManualChargeButton chargerId={state.chargerId} mode="start" />
       )}
     </div>
   );
