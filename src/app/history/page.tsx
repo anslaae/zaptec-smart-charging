@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { chargeSchedules } from "@/lib/db/schema";
 import { listChargers, getChargeHistory } from "@/lib/zaptec/client";
 import { ChargingStats } from "@/components/ChargingStats";
+import { DeleteScheduleButton } from "@/components/DeleteScheduleButton";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
 
 const SCHEDULE_STATUS_LABEL: Record<string, string> = {
@@ -104,6 +105,7 @@ export default async function HistoryPage() {
                   startedAt={schedule.startedAt?.toISOString() ?? null}
                   endedAt={schedule.endedAt?.toISOString() ?? null}
                   badges={<Badge>{SCHEDULE_STATUS_LABEL[schedule.status] ?? schedule.status}</Badge>}
+                  footer={<DeleteScheduleButton scheduleId={schedule.id} />}
                 >
                   <p>Ready by {formatTime(schedule.readyBy.toISOString())}</p>
                   {realSession && <p>{realSession.energyKwh.toFixed(1)} kWh actually delivered</p>}
@@ -178,12 +180,14 @@ function HistoryCard({
   startedAt,
   endedAt,
   children,
+  footer,
 }: {
   title: string;
   badges?: React.ReactNode;
   startedAt: string | null;
   endedAt: string | null;
   children?: React.ReactNode;
+  footer?: React.ReactNode;
 }) {
   const durationMs =
     startedAt && endedAt ? new Date(endedAt).getTime() - new Date(startedAt).getTime() : null;
@@ -213,6 +217,7 @@ function HistoryCard({
           <MiniStat label="Duration" value={durationLabel} />
         </dl>
         {children}
+        {footer && <div className="flex justify-end">{footer}</div>}
       </div>
     </details>
   );

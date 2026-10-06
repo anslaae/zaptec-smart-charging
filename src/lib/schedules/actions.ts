@@ -102,3 +102,33 @@ export async function cancelSchedule(
   revalidatePath("/");
   return { success: true };
 }
+
+export async function deleteSchedule(
+  scheduleId: string,
+  _prevState: ActionResult,
+  _formData: FormData,
+): Promise<ActionResult> {
+  await verifySession();
+
+  try {
+    const [schedule] = await db
+      .select({ status: chargeSchedules.status })
+      .from(chargeSchedules)
+      .where(eq(chargeSchedules.id, scheduleId))
+      .limit(1);
+
+    if (!schedule) {
+      return { error: "Schedule not found." };
+    }
+    if (schedule.status === "pending" || schedule.status === "active") {
+      return { error: "Cancel the schedule before deleting it." };
+    }
+
+    await db.delete(chargeSchedules).where(eq(chargeSchedules.id, scheduleId));
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to delete the schedule." };
+  }
+
+  revalidatePath("/history");
+  return { success: true };
+}

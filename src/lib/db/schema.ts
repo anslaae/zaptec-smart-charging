@@ -66,7 +66,7 @@ export const scheduleActions = pgTable("schedule_actions", {
   id: uuid("id").primaryKey().defaultRandom(),
   scheduleId: uuid("schedule_id")
     .notNull()
-    .references(() => chargeSchedules.id),
+    .references(() => chargeSchedules.id, { onDelete: "cascade" }),
   chargerId: text("charger_id").notNull(),
   action: text("action").notNull(),
   commandId: integer("command_id").notNull(),
@@ -79,7 +79,7 @@ export const chargeSessions = pgTable("charge_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
   chargerId: text("charger_id").notNull(),
   zaptecSessionId: text("zaptec_session_id"),
-  scheduleId: uuid("schedule_id").references(() => chargeSchedules.id),
+  scheduleId: uuid("schedule_id").references(() => chargeSchedules.id, { onDelete: "cascade" }),
   startedAt: timestamp("started_at", { withTimezone: true }),
   endedAt: timestamp("ended_at", { withTimezone: true }),
   energyKwh: numeric("energy_kwh", { precision: 6, scale: 2 }),
