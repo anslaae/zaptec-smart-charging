@@ -28,6 +28,25 @@ function formatDuration(durationMs: number): string {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
+// Outlook-style recency buckets, increasing in scope so only the most recent
+// (and usually smallest) group needs to be open by default.
+const RECENCY_BUCKETS = [
+  { label: "Last 7 days", maxDays: 7 },
+  { label: "Last 30 days", maxDays: 30 },
+  { label: "Last 3 months", maxDays: 90 },
+  { label: "Older", maxDays: Infinity },
+];
+
+function groupByRecency<T>(items: T[], getDate: (item: T) => Date, now: Date) {
+  const buckets = RECENCY_BUCKETS.map((b) => ({ ...b, items: [] as T[] }));
+  for (const item of items) {
+    const ageDays = (now.getTime() - getDate(item).getTime()) / 86_400_000;
+    const bucket = buckets.find((b) => ageDays <= b.maxDays) ?? buckets[buckets.length - 1];
+    bucket.items.push(item);
+  }
+  return buckets.filter((b) => b.items.length > 0);
+}
+
 export default async function HistoryPage() {
   await getCurrentUser();
 
@@ -49,6 +68,10 @@ export default async function HistoryPage() {
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   const sessionById = new Map(sessions.map((s) => [s.id, s]));
 
+  const now = new Date();
+  const scheduleGroups = groupByRecency(pastSchedules, (s) => s.updatedAt, now);
+  const sessionGroups = groupByRecency(sessions, (s) => new Date(s.startedAt), now);
+
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-8 px-6 py-8">
       <div>
@@ -63,30 +86,32 @@ export default async function HistoryPage() {
         {pastSchedules.length === 0 && (
           <p className="text-sm text-black/50 dark:text-white/50">No past schedules yet.</p>
         )}
-        <div className="flex flex-col gap-2">
-          {pastSchedules.map((schedule) => {
-            // The schedule's own startedAt/endedAt mark when *the schedule*
-            // was actively charging. The linked real session's own
-            // StartDateTime/EndDateTime span the whole plug-in period
-            // (idle time included), so only its delivered energy is used
-            // here -- not its timestamps.
-            const realSession = schedule.zaptecSessionId
-              ? sessionById.get(schedule.zaptecSessionId)
-              : undefined;
-            return (
-              <HistoryCard
-                key={schedule.id}
-                title={`${Number(schedule.targetEnergyKwh).toFixed(1)} kWh on ${schedule.chargerName}`}
-                startedAt={schedule.startedAt?.toISOString() ?? null}
-                endedAt={schedule.endedAt?.toISOString() ?? null}
-                badges={<Badge>{SCHEDULE_STATUS_LABEL[schedule.status] ?? schedule.status}</Badge>}
-              >
-                <p>Ready by {formatTime(schedule.readyBy.toISOString())}</p>
-                {realSession && <p>{realSession.energyKwh.toFixed(1)} kWh actually delivered</p>}
-              </HistoryCard>
-            );
-          })}
-        </div>
+        {scheduleGroups.map((group, index) => (
+          <RecencyGroup key={group.label} label={group.label} count={group.items.length} defaultOpen={index === 0}>
+            {group.items.map((schedule) => {
+              // The schedule's own startedAt/endedAt mark when *the
+              // schedule* was actively charging. The linked real session's
+              // own StartDateTime/EndDateTime span the whole plug-in period
+              // (idle time included), so only its delivered energy is used
+              // here -- not its timestamps.
+              const realSession = schedule.zaptecSessionId
+                ? sessionById.get(schedule.zaptecSessionId)
+                : undefined;
+              return (
+                <HistoryCard
+                  key={schedule.id}
+                  title={`${Number(schedule.targetEnergyKwh).toFixed(1)} kWh on ${schedule.chargerName}`}
+                  startedAt={schedule.startedAt?.toISOString() ?? null}
+                  endedAt={schedule.endedAt?.toISOString() ?? null}
+                  badges={<Badge>{SCHEDULE_STATUS_LABEL[schedule.status] ?? schedule.status}</Badge>}
+                >
+                  <p>Ready by {formatTime(schedule.readyBy.toISOString())}</p>
+                  {realSession && <p>{realSession.energyKwh.toFixed(1)} kWh actually delivered</p>}
+                </HistoryCard>
+              );
+            })}
+          </RecencyGroup>
+        ))}
       </section>
 
       <section className="flex flex-col gap-3">
@@ -99,21 +124,47 @@ export default async function HistoryPage() {
         {sessions.length === 0 && (
           <p className="text-sm text-black/50 dark:text-white/50">No sessions recorded yet.</p>
         )}
-        <div className="flex flex-col gap-2">
-          {sessions.map((session) => (
-            <HistoryCard
-              key={session.id}
-              title={`${session.energyKwh.toFixed(1)} kWh`}
-              startedAt={session.startedAt}
-              endedAt={session.endedAt}
-              badges={!session.endedAt && <Badge tone="blue">In progress</Badge>}
-            >
-              {session.userFullName && <p>{session.userFullName}</p>}
-            </HistoryCard>
-          ))}
-        </div>
+        {sessionGroups.map((group, index) => (
+          <RecencyGroup key={group.label} label={group.label} count={group.items.length} defaultOpen={index === 0}>
+            {group.items.map((session) => (
+              <HistoryCard
+                key={session.id}
+                title={`${session.energyKwh.toFixed(1)} kWh`}
+                startedAt={session.startedAt}
+                endedAt={session.endedAt}
+                badges={!session.endedAt && <Badge tone="blue">In progress</Badge>}
+              >
+                {session.userFullName && <p>{session.userFullName}</p>}
+              </HistoryCard>
+            ))}
+          </RecencyGroup>
+        ))}
       </section>
     </main>
+  );
+}
+
+// Outlook-style collapsible section header, one per recency bucket. Only the
+// first (most recent, usually smallest) group is open by default.
+function RecencyGroup({
+  label,
+  count,
+  defaultOpen,
+  children,
+}: {
+  label: string;
+  count: number;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details open={defaultOpen} className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-2 py-1 text-xs font-medium text-black/50 uppercase tracking-wide dark:text-white/50 [&::-webkit-details-marker]:hidden">
+        <ChevronIcon />
+        {label} ({count})
+      </summary>
+      <div className="mt-2 flex flex-col gap-2">{children}</div>
+    </details>
   );
 }
 
