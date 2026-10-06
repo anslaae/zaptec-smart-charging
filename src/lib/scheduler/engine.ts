@@ -1,5 +1,6 @@
 import type { ChargerState } from "@/lib/zaptec/types";
 import { isCurrentlyCharging, isPausedAndResumable } from "@/lib/zaptec/state";
+import { ChargerOperationMode } from "@/lib/zaptec/constants";
 
 export interface ScheduleInput {
   targetEnergyKwh: number;
@@ -9,6 +10,7 @@ export interface ScheduleInput {
 export type SchedulerDecision =
   | { action: "complete" }
   | { action: "resume" }
+  | { action: "start" }
   | { action: "pause" }
   | { action: "none"; reason: string };
 
@@ -82,10 +84,14 @@ export function decideNextAction(
     if (isPausedAndResumable(state)) {
       return { action: "resume" };
     }
-    return {
-      action: "none",
-      reason: "Needs to charge but charger is not in a resumable state (plug in car?)",
-    };
+    if (state.operationMode === ChargerOperationMode.Disconnected) {
+      return { action: "none", reason: "Needs to charge but no car is connected" };
+    }
+    // Connected but never explicitly stopped by us (e.g. just plugged in,
+    // sitting idle) -- ResumeCharging only undoes a previous stop and fails
+    // with a 500 in this state; StartCharging is the one that actually
+    // begins a fresh session.
+    return { action: "start" };
   }
 
   if (isCurrentlyCharging(state)) {

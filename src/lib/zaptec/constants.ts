@@ -4,7 +4,16 @@ export const ZAPTEC_TOKEN_URL = "https://api.zaptec.com/oauth/token";
 export const ZaptecCommand = {
   Restart: 102,
   FirmwareUpgrade: 200,
+  // Starts a fresh session from idle (car connected, not charging, never
+  // stopped by us). Distinct from ResumeCharging -- confirmed via a live
+  // 500 error: "Charging is not Paused nor Scheduled; Resume command
+  // cannot be sent" when ResumeCharging was sent to an idle, never-stopped
+  // session.
+  StartCharging: 501,
+  StopCharging: 502,
   StopChargingFinal: 506,
+  // Only undoes a previous StopChargingFinal/pause -- does not start a
+  // fresh session (see StartCharging above).
   ResumeCharging: 507,
   DeauthorizeStop: 10001,
 } as const;

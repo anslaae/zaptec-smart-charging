@@ -73,12 +73,24 @@ describe("decideNextAction", () => {
     expect(decision.action).toBe("resume");
   });
 
-  it("reports a non-resumable charger instead of silently doing nothing", () => {
+  it("reports no car connected instead of silently doing nothing", () => {
     const state = baseState({ operationMode: ChargerOperationMode.Disconnected, finalStopActive: null });
     const decision = decideNextAction(schedule, state, new Date("2026-01-01T06:59:00Z"));
     expect(decision).toEqual({
       action: "none",
-      reason: "Needs to charge but charger is not in a resumable state (plug in car?)",
+      reason: "Needs to charge but no car is connected",
     });
+  });
+
+  it("starts (not resumes) a charger that's connected but was never stopped by us", () => {
+    // ResumeCharging only undoes a previous StopChargingFinal and fails
+    // against a charger that's simply plugged in and idle -- confirmed via
+    // a live 500 error ("Charging is not Paused nor Scheduled").
+    const state = baseState({
+      operationMode: ChargerOperationMode.ConnectedRequesting,
+      finalStopActive: null,
+    });
+    const decision = decideNextAction(schedule, state, new Date("2026-01-01T06:59:00Z"));
+    expect(decision).toEqual({ action: "start" });
   });
 });
