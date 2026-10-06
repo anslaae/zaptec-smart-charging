@@ -25,6 +25,13 @@ export default async function proxy(request: NextRequest) {
 
 // This is an optimistic, cookie-only check. Real authorization still happens
 // server-side in the DAL (src/lib/auth/dal.ts) for every page, action, and route.
+//
+// Also excludes the file-based metadata routes (manifest, icons) -- without
+// this, an unauthenticated request for e.g. /manifest.webmanifest got
+// redirected to /login, and the browser choked trying to parse the login
+// page's HTML as the manifest's JSON.
 export const config = {
-  matcher: ["/((?!api/cron|api/webhooks|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/((?!api/cron|api/webhooks|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest).*)",
+  ],
 };
