@@ -1,11 +1,15 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth/dal";
-import { listChargers } from "@/lib/zaptec/client";
+import { listChargers, getChargerState } from "@/lib/zaptec/client";
 import { QuickScheduleForm } from "@/components/QuickScheduleForm";
 
 export default async function QuickSchedulePage() {
   await getCurrentUser();
   const chargers = await listChargers();
+  const charger = chargers[0];
+  const chargerState = charger
+    ? await getChargerState(charger.id, charger.isOnline, charger.circuitId)
+    : null;
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col gap-6 px-6 py-8">
@@ -15,7 +19,10 @@ export default async function QuickSchedulePage() {
         </Link>
         <h1 className="mt-2 text-xl font-semibold">Plan charging</h1>
       </div>
-      <QuickScheduleForm chargers={chargers.map((c) => ({ id: c.id, name: c.name }))} />
+      <QuickScheduleForm
+        chargers={chargers.map((c) => ({ id: c.id, name: c.name }))}
+        chargerState={chargerState}
+      />
     </main>
   );
 }
