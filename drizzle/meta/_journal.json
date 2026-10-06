@@ -22,6 +22,13 @@
       "when": 1791176946415,
       "tag": "0002_outgoing_multiple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791302130409,
+      "tag": "0003_yellow_invisible_woman",
+      "breakpoints": true
     }
   ]
 }

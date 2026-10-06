@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cancelSchedule } from "@/lib/schedules/actions";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
+import { SubmitButton } from "@/components/SubmitButton";
 import type { chargeSchedules } from "@/lib/db/schema";
 
 type Schedule = typeof chargeSchedules.$inferSelect;
@@ -74,12 +75,12 @@ export function ChargingPlanCard({
         )}
       </div>
       <form action={cancelSchedule.bind(null, schedule.id)}>
-        <button
-          type="submit"
+        <SubmitButton
+          pendingLabel="Cancelling…"
           className="shrink-0 rounded-md border border-black/10 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
         >
           Cancel
-        </button>
+        </SubmitButton>
       </form>
     </div>
   );

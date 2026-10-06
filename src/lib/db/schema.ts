@@ -96,6 +96,14 @@ export const chargeSessions = pgTable("charge_sessions", {
     .defaultNow(),
 });
 
+// Single row ("singleton"), upserted on every scheduler tick regardless of
+// whether there were any schedules to act on -- lets the UI show whether the
+// external cron (cron-job.org) is actually still calling /api/cron/tick.
+export const schedulerHeartbeat = pgTable("scheduler_heartbeat", {
+  id: text("id").primaryKey(),
+  lastTickAt: timestamp("last_tick_at", { withTimezone: true }).notNull(),
+});
+
 export const webhookEvents = pgTable("webhook_events", {
   id: uuid("id").primaryKey().defaultRandom(),
   eventType: text("event_type").notNull(),

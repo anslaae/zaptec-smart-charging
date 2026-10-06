@@ -1,7 +1,7 @@
 import "server-only";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chargeSchedules, scheduleActions } from "@/lib/db/schema";
+import { chargeSchedules, scheduleActions, schedulerHeartbeat } from "@/lib/db/schema";
 import { listChargers, getChargerState, sendChargerCommand, isCurrentlyCharging } from "@/lib/zaptec/client";
 import { ZaptecCommand } from "@/lib/zaptec/constants";
 import type { ChargerState } from "@/lib/zaptec/types";
@@ -38,7 +38,17 @@ async function applyCommand(
 }
 
 export async function runSchedulerTick(): Promise<{ processed: number }> {
-  const tickStartedAt = new Date().toISOString();
+  const now0 = new Date();
+  const tickStartedAt = now0.toISOString();
+
+  // Recorded unconditionally, even with zero schedules, so the dashboard can
+  // tell whether the external cron (cron-job.org) is actually still calling
+  // this at all -- not just whether a given schedule has been evaluated.
+  await db
+    .insert(schedulerHeartbeat)
+    .values({ id: "singleton", lastTickAt: now0 })
+    .onConflictDoUpdate({ target: schedulerHeartbeat.id, set: { lastTickAt: now0 } });
+
   const schedules = await db
     .select()
     .from(chargeSchedules)

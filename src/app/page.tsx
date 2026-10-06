@@ -1,25 +1,31 @@
 import Link from "next/link";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
-import { chargeSchedules } from "@/lib/db/schema";
+import { chargeSchedules, schedulerHeartbeat } from "@/lib/db/schema";
 import { listChargers, getChargerState } from "@/lib/zaptec/client";
 import { estimateChargingPlan } from "@/lib/scheduler/engine";
 import { ChargerStatusCard } from "@/components/ChargerStatusCard";
 import { ChargingPlanCard } from "@/components/ChargingPlanCard";
+import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
 import { LogoutButton } from "@/components/LogoutButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
 
-  const [chargers, schedules] = await Promise.all([
+  const [chargers, schedules, heartbeat] = await Promise.all([
     listChargers(),
     db
       .select()
       .from(chargeSchedules)
       .where(inArray(chargeSchedules.status, ["pending", "active"]))
       .orderBy(chargeSchedules.readyBy),
+    db
+      .select({ lastTickAt: schedulerHeartbeat.lastTickAt })
+      .from(schedulerHeartbeat)
+      .where(eq(schedulerHeartbeat.id, "singleton"))
+      .then((rows) => rows[0] ?? null),
   ]);
 
   const chargerStates = await Promise.all(
@@ -48,9 +54,10 @@ export default async function DashboardPage() {
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-8 px-6 py-8">
       <AutoRefresh />
       <header className="flex items-center justify-between">
-        <div>
+        <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold">Smart Charging</h1>
           <p className="text-sm text-black/50 dark:text-white/50">Hi {user.name}</p>
+          <SchedulerStatusBadge lastTickAt={heartbeat?.lastTickAt ?? null} />
         </div>
         <LogoutButton />
       </header>

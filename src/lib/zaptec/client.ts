@@ -133,7 +133,13 @@ export async function getChargerState(
   isOnline: boolean,
   circuitId: string,
 ): Promise<ChargerState> {
-  const response = await zaptecFetch(`/api/chargers/${chargerId}/state`);
+  // Independent requests -- fetched together rather than one after the
+  // other. The circuit lookup is cached 24h, so this only matters on a
+  // cache miss, but it's free to do regardless.
+  const [response, circuitMaxCurrentAmps] = await Promise.all([
+    zaptecFetch(`/api/chargers/${chargerId}/state`),
+    getCircuitMaxCurrentAmps(circuitId),
+  ]);
   if (!response.ok) {
     throw new Error(`Failed to read charger state: ${response.status}`);
   }
@@ -171,7 +177,6 @@ export async function getChargerState(
     ? Number(chargerMaxCurrentObs.valueAsString)
     : null;
   const phases = maxPhasesObs?.valueAsString ? countPhases(Number(maxPhasesObs.valueAsString)) : null;
-  const circuitMaxCurrentAmps = await getCircuitMaxCurrentAmps(circuitId);
   const effectiveMaxCurrentAmps =
     chargerMaxCurrentAmps != null && circuitMaxCurrentAmps != null
       ? Math.min(chargerMaxCurrentAmps, circuitMaxCurrentAmps)
