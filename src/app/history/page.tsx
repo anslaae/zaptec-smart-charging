@@ -2,11 +2,12 @@ import Link from "next/link";
 import { desc, inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
-import { chargeSchedules } from "@/lib/db/schema";
+import { chargeSchedules, activityEvents } from "@/lib/db/schema";
 import { listChargers, getChargeHistory } from "@/lib/zaptec/client";
 import { ChargingStats } from "@/components/ChargingStats";
 import { DeleteScheduleButton } from "@/components/DeleteScheduleButton";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
+import { ACTIVITY_LABEL, type ActivityType } from "@/lib/activity/log";
 
 const SCHEDULE_STATUS_LABEL: Record<string, string> = {
   completed: "Completed",
@@ -51,7 +52,7 @@ function groupByRecency<T>(items: T[], getDate: (item: T) => Date, now: Date) {
 export default async function HistoryPage() {
   await getCurrentUser();
 
-  const [pastSchedules, chargers] = await Promise.all([
+  const [pastSchedules, chargers, activity] = await Promise.all([
     db
       .select()
       .from(chargeSchedules)
@@ -59,6 +60,7 @@ export default async function HistoryPage() {
       .orderBy(desc(chargeSchedules.updatedAt))
       .limit(20),
     listChargers(),
+    db.select().from(activityEvents).orderBy(desc(activityEvents.createdAt)).limit(200),
   ]);
 
   const sessionsByCharger = await Promise.all(
@@ -72,6 +74,7 @@ export default async function HistoryPage() {
   const now = new Date();
   const scheduleGroups = groupByRecency(pastSchedules, (s) => s.updatedAt, now);
   const sessionGroups = groupByRecency(sessions, (s) => new Date(s.startedAt), now);
+  const activityGroups = groupByRecency(activity, (e) => e.createdAt, now);
 
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-8 px-6 py-8">
@@ -138,6 +141,35 @@ export default async function HistoryPage() {
               >
                 {session.userFullName && <p>{session.userFullName}</p>}
               </HistoryCard>
+            ))}
+          </RecencyGroup>
+        ))}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-base font-semibold">Activity</h2>
+        {activity.length === 0 && (
+          <p className="text-sm text-black/50 dark:text-white/50">No activity recorded yet.</p>
+        )}
+        {activityGroups.map((group, index) => (
+          <RecencyGroup key={group.label} label={group.label} count={group.items.length} defaultOpen={index === 0}>
+            {group.items.map((event) => (
+              <div
+                key={event.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/15"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium">
+                    {ACTIVITY_LABEL[event.type as ActivityType] ?? event.type}
+                  </p>
+                  {event.detail && (
+                    <p className="truncate text-xs text-black/50 dark:text-white/50">{event.detail}</p>
+                  )}
+                </div>
+                <span className="shrink-0 text-xs text-black/50 dark:text-white/50">
+                  {formatTime(event.createdAt.toISOString())}
+                </span>
+              </div>
             ))}
           </RecencyGroup>
         ))}

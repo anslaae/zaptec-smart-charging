@@ -10,6 +10,7 @@ import { chargeSchedules } from "@/lib/db/schema";
 import { HOUSEHOLD_TIME_ZONE, zonedDateTimeToUtc } from "@/lib/datetime";
 import { sendChargerCommand } from "@/lib/zaptec/client";
 import { ZaptecCommand } from "@/lib/zaptec/constants";
+import { logActivity, ActivityType } from "@/lib/activity/log";
 
 const CreateScheduleSchema = z.object({
   chargerId: z.string().min(1),
@@ -72,6 +73,12 @@ export async function createSchedule(
     readyBy,
     status: "pending",
   });
+  await logActivity(
+    parsed.data.chargerId,
+    parsed.data.chargerName,
+    ActivityType.PlanCreated,
+    `${parsed.data.targetEnergyKwh} kWh, ready by ${readyBy.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: HOUSEHOLD_TIME_ZONE })}`,
+  );
 
   revalidatePath("/");
   // ?created=1 lets the dashboard fire a one-off success toast on arrival --
@@ -93,7 +100,11 @@ export async function cancelSchedule(
 
   try {
     const [schedule] = await db
-      .select({ chargerId: chargeSchedules.chargerId, status: chargeSchedules.status })
+      .select({
+        chargerId: chargeSchedules.chargerId,
+        chargerName: chargeSchedules.chargerName,
+        status: chargeSchedules.status,
+      })
       .from(chargeSchedules)
       .where(eq(chargeSchedules.id, scheduleId))
       .limit(1);
@@ -112,6 +123,9 @@ export async function cancelSchedule(
       .update(chargeSchedules)
       .set({ status: "cancelled", endedAt: now, updatedAt: now })
       .where(eq(chargeSchedules.id, scheduleId));
+    if (schedule) {
+      await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanCancelled);
+    }
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to cancel the schedule." };
   }

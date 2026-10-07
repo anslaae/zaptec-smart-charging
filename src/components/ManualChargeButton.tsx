@@ -9,13 +9,15 @@ const initialState: ActionResult = {};
 
 export function ManualChargeButton({
   chargerId,
+  chargerName,
   mode,
 }: {
   chargerId: string;
+  chargerName: string;
   mode: "start" | "stop";
 }) {
   const action = mode === "start" ? startChargingNow : stopChargingNow;
-  const [state, formAction] = useActionState(action.bind(null, chargerId), initialState);
+  const [state, formAction] = useActionState(action.bind(null, chargerId, chargerName), initialState);
 
   useEffect(() => {
     if (state.error) {
@@ -28,13 +30,13 @@ export function ManualChargeButton({
   }, [state, mode]);
 
   return (
-    <form action={formAction} className="mt-3">
+    <form action={formAction}>
       <SubmitButton
         pendingLabel={mode === "start" ? "Starting…" : "Stopping…"}
         className={
           mode === "start"
-            ? "w-full rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
-            : "w-full rounded-md border border-black/10 px-3 py-2 text-sm font-medium dark:border-white/15"
+            ? "shrink-0 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
+            : "shrink-0 rounded-md border border-black/10 px-3 py-1.5 text-sm font-medium dark:border-white/15"
         }
       >
         {mode === "start" ? "Start charging" : "Stop charging"}

@@ -6,11 +6,13 @@ import {
   scheduleActions,
   schedulerHeartbeat,
   manualChargeSessions,
+  chargerObservedState,
 } from "@/lib/db/schema";
 import { listChargers, getChargerState, sendChargerCommand, isCurrentlyCharging } from "@/lib/zaptec/client";
 import { ZaptecCommand, ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState, ZaptecCharger } from "@/lib/zaptec/types";
 import { decideNextAction } from "./engine";
+import { logActivity, ActivityType } from "@/lib/activity/log";
 
 // Records the decision, so there's an internal log of what the scheduler
 // actually sent over time, not just the latest state.
@@ -27,6 +29,50 @@ async function applyCommand(
     action,
     commandId,
   });
+}
+
+// Logs plugged-in/unplugged/charging-started/charging-stopped transitions to
+// the activity feed by diffing against the last operationMode seen. Only
+// logs on an actual change (and never on the very first observation of a
+// charger, to avoid a spurious entry every time this table is empty) --
+// deliberately limited to these four transitions rather than every mode
+// change, so routine idle/paused flapping doesn't turn the activity log into
+// noise. This runs for every charger regardless of schedules, since it's
+// about physical reality, not app intent.
+async function logStateTransitions(
+  chargers: ZaptecCharger[],
+  stateCache: Map<string, ChargerState>,
+): Promise<void> {
+  const previous = await db.select().from(chargerObservedState);
+  const previousByCharger = new Map(previous.map((row) => [row.chargerId, row.operationMode]));
+
+  for (const charger of chargers) {
+    const state = stateCache.get(charger.id);
+    if (!state) continue;
+
+    const prevMode = previousByCharger.get(charger.id);
+    const currentMode = state.operationMode;
+
+    if (prevMode !== undefined && prevMode !== currentMode) {
+      if (currentMode === ChargerOperationMode.Disconnected) {
+        await logActivity(charger.id, charger.name, ActivityType.Unplugged);
+      } else if (prevMode === ChargerOperationMode.Disconnected) {
+        await logActivity(charger.id, charger.name, ActivityType.PluggedIn);
+      } else if (currentMode === ChargerOperationMode.Charging) {
+        await logActivity(charger.id, charger.name, ActivityType.ChargingStarted);
+      } else if (prevMode === ChargerOperationMode.Charging) {
+        await logActivity(charger.id, charger.name, ActivityType.ChargingStopped);
+      }
+    }
+
+    await db
+      .insert(chargerObservedState)
+      .values({ chargerId: charger.id, operationMode: currentMode })
+      .onConflictDoUpdate({
+        target: chargerObservedState.chargerId,
+        set: { operationMode: currentMode, updatedAt: new Date() },
+      });
+  }
 }
 
 // The Zaptec installation's own "Require authentication" switch can't be
@@ -54,7 +100,7 @@ async function enforceAuthorizedCharging(
   for (const charger of chargers) {
     let state = stateCache.get(charger.id);
     if (!state) {
-      state = await getChargerState(charger.id, charger.isOnline, charger.circuitId);
+      state = await getChargerState(charger.id, charger.isOnline, charger.circuitId, charger.installationId);
       stateCache.set(charger.id, state);
     }
 
@@ -77,10 +123,7 @@ async function enforceAuthorizedCharging(
       `[scheduler] charger ${charger.id} (${charger.name}) is charging with no schedule or manual authorization -- stopping it`,
     );
     await sendChargerCommand(charger.id, ZaptecCommand.StopChargingFinal).catch(() => undefined);
-    await db
-      .update(schedulerHeartbeat)
-      .set({ lastBlockedAt: new Date(), lastBlockedChargerName: charger.name })
-      .where(eq(schedulerHeartbeat.id, "singleton"));
+    await logActivity(charger.id, charger.name, ActivityType.StoppedUnplanned);
   }
 }
 
@@ -111,11 +154,14 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
 
   // Runs for every charger regardless of whether any schedule exists, since
   // an unauthorized session can happen on a charger with no schedule at all.
+  // This populates stateCache for every charger, so the transition log below
+  // can run purely off the cache.
   await enforceAuthorizedCharging(
     chargers,
     new Set(schedules.map((s) => s.chargerId)),
     stateCache,
   );
+  await logStateTransitions(chargers, stateCache);
 
   if (schedules.length === 0) {
     return { processed: 0 };
@@ -131,6 +177,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
           schedule.chargerId,
           charger?.isOnline ?? false,
           charger?.circuitId ?? "",
+          charger?.installationId ?? "",
         );
         stateCache.set(schedule.chargerId, state);
       }
@@ -150,6 +197,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
         await applyCommand(schedule, "complete", ZaptecCommand.StopChargingFinal).catch(
           () => undefined,
         );
+        await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanCompleted);
         await db
           .update(chargeSchedules)
           .set({

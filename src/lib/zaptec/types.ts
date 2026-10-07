@@ -51,6 +51,11 @@ export interface ZaptecCircuitApiResponse {
   Active: boolean;
 }
 
+// Only the one field this app reads -- the real response has many more.
+export interface ZaptecInstallationApiResponse {
+  IsRequiredAuthentication: boolean;
+}
+
 export interface ZaptecStateObservationApi {
   ChargerId: string;
   StateId: number;
@@ -117,4 +122,9 @@ export interface ChargerState {
   // current limit, its circuit's current limit) x active phases x 230V.
   // Null only if either reading is unavailable.
   maxPowerKw: number | null;
+  // Whether the installation's "Require authentication" is on. When true,
+  // this app can only control an already-authorized session (pause/resume);
+  // it has no way to authorize a brand-new one -- see appHasControl() in
+  // state.ts. Null if the lookup failed.
+  installationRequiresAuth: boolean | null;
 }

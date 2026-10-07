@@ -18,6 +18,7 @@ function baseState(overrides: Partial<ChargerState> = {}): ChargerState {
     scheduledChargingStartAt: null,
     lastCompletedSession: null,
     maxPowerKw: null,
+    installationRequiresAuth: false,
     ...overrides,
   };
 }

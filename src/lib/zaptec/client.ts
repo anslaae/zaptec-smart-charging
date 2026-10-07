@@ -10,6 +10,7 @@ import type {
   ChargeHistoryEntry,
   ZaptecChargeHistoryApiResponse,
   ZaptecCircuitApiResponse,
+  ZaptecInstallationApiResponse,
   LastCompletedSession,
 } from "./types";
 
@@ -68,6 +69,20 @@ export async function getCircuitMaxCurrentAmps(circuitId: string): Promise<numbe
   if (!response.ok) return null;
   const data = (await response.json()) as ZaptecCircuitApiResponse;
   return data.MaxCurrent ?? null;
+}
+
+// "Require authentication" is a security setting, not something that flips
+// minute to minute, but it directly gates whether this app can control the
+// charger at all (see appHasControl() in state.ts) -- cached moderately (5
+// min) rather than hard like the circuit lookup, so a change shows up fairly
+// promptly without polling it on every tick.
+export async function getInstallationRequiresAuth(installationId: string): Promise<boolean | null> {
+  const response = await zaptecFetch(`/api/installation/${installationId}`, {
+    next: { revalidate: 300 },
+  });
+  if (!response.ok) return null;
+  const data = (await response.json()) as ZaptecInstallationApiResponse;
+  return data.IsRequiredAuthentication ?? null;
 }
 
 // Only the most recent 100 sessions per charger; fine for a household charger,
@@ -132,13 +147,15 @@ export async function getChargerState(
   chargerId: string,
   isOnline: boolean,
   circuitId: string,
+  installationId: string,
 ): Promise<ChargerState> {
   // Independent requests -- fetched together rather than one after the
-  // other. The circuit lookup is cached 24h, so this only matters on a
-  // cache miss, but it's free to do regardless.
-  const [response, circuitMaxCurrentAmps] = await Promise.all([
+  // other. The circuit and installation lookups are both cached, so this
+  // only matters on a cache miss, but it's free to do regardless.
+  const [response, circuitMaxCurrentAmps, installationRequiresAuth] = await Promise.all([
     zaptecFetch(`/api/chargers/${chargerId}/state`),
     getCircuitMaxCurrentAmps(circuitId),
+    getInstallationRequiresAuth(installationId),
   ]);
   if (!response.ok) {
     throw new Error(`Failed to read charger state: ${response.status}`);
@@ -211,6 +228,7 @@ export async function getChargerState(
     scheduledChargingStartAt: parseScheduledStart(nextScheduleObs?.valueAsString),
     lastCompletedSession: parseCompletedSession(completedSessionObs?.valueAsString),
     maxPowerKw,
+    installationRequiresAuth,
   };
 }
 

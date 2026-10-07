@@ -6,10 +6,8 @@ import { db } from "@/lib/db";
 import { chargeSchedules, schedulerHeartbeat } from "@/lib/db/schema";
 import { listChargers, getChargerState } from "@/lib/zaptec/client";
 import { estimateChargingPlan } from "@/lib/scheduler/engine";
-import { ChargerStatusCard } from "@/components/ChargerStatusCard";
-import { ChargingPlanCard } from "@/components/ChargingPlanCard";
+import { ChargerCard } from "@/components/ChargerCard";
 import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
-import { UnauthorizedChargingBanner } from "@/components/UnauthorizedChargingBanner";
 import { ScheduleCreatedToast } from "@/components/ScheduleCreatedToast";
 import { LogoutButton } from "@/components/LogoutButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
@@ -25,37 +23,17 @@ export default async function DashboardPage() {
       .where(inArray(chargeSchedules.status, ["pending", "active"]))
       .orderBy(chargeSchedules.readyBy),
     db
-      .select({
-        lastTickAt: schedulerHeartbeat.lastTickAt,
-        lastBlockedAt: schedulerHeartbeat.lastBlockedAt,
-        lastBlockedChargerName: schedulerHeartbeat.lastBlockedChargerName,
-      })
+      .select({ lastTickAt: schedulerHeartbeat.lastTickAt })
       .from(schedulerHeartbeat)
       .where(eq(schedulerHeartbeat.id, "singleton"))
       .then((rows) => rows[0] ?? null),
   ]);
 
   const chargerStates = await Promise.all(
-    chargers.map((charger) => getChargerState(charger.id, charger.isOnline, charger.circuitId)),
+    chargers.map((charger) =>
+      getChargerState(charger.id, charger.isOnline, charger.circuitId, charger.installationId),
+    ),
   );
-  const chargerStateById = new Map(chargers.map((charger, index) => [charger.id, chargerStates[index]]));
-
-  // This is a single-charger household app; createSchedule() rejects
-  // overlapping schedules per charger, so there's at most one plan to show.
-  const charger = chargers[0];
-  const schedule = charger ? (schedules.find((s) => s.chargerId === charger.id) ?? null) : null;
-
-  let startTime: string | null = null;
-  if (schedule?.status === "pending" && charger) {
-    const state = chargerStateById.get(charger.id);
-    if (state) {
-      const { latestStartTime } = estimateChargingPlan(
-        { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
-        state,
-      );
-      startTime = latestStartTime.toISOString();
-    }
-  }
 
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-8 px-6 py-8">
@@ -72,34 +50,36 @@ export default async function DashboardPage() {
         <LogoutButton />
       </header>
 
-      <UnauthorizedChargingBanner
-        lastBlockedAt={heartbeat?.lastBlockedAt ?? null}
-        chargerName={heartbeat?.lastBlockedChargerName ?? null}
-      />
-
       <section className="flex flex-col gap-3">
         {chargers.length === 0 && (
           <p className="text-sm text-black/50 dark:text-white/50">
             No chargers found on the connected Zaptec account.
           </p>
         )}
-        {chargers.map((c, index) => (
-          <ChargerStatusCard
-            key={c.id}
-            name={c.name}
-            address={c.installationName}
-            state={chargerStates[index]}
-            hasActivePlan={schedules.some((s) => s.chargerId === c.id)}
-          />
-        ))}
+        {chargers.map((c, index) => {
+          const state = chargerStates[index];
+          // createSchedule() rejects overlapping schedules per charger, so
+          // there's at most one pending/active plan per charger.
+          const schedule = schedules.find((s) => s.chargerId === c.id) ?? null;
+          const startTime =
+            schedule?.status === "pending"
+              ? estimateChargingPlan(
+                  { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
+                  state,
+                ).latestStartTime.toISOString()
+              : null;
+          return (
+            <ChargerCard
+              key={c.id}
+              name={c.name}
+              address={c.installationName}
+              state={state}
+              schedule={schedule}
+              startTime={startTime}
+            />
+          );
+        })}
       </section>
-
-      {charger && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-base font-semibold">Charging plan</h2>
-          <ChargingPlanCard schedule={schedule} startTime={startTime} />
-        </section>
-      )}
 
       <Link href="/history" className="text-sm text-black/50 underline underline-offset-2 dark:text-white/50">
         View history

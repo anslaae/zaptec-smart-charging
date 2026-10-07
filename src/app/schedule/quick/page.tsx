@@ -8,7 +8,7 @@ export default async function QuickSchedulePage() {
   const chargers = await listChargers();
   const charger = chargers[0];
   const chargerState = charger
-    ? await getChargerState(charger.id, charger.isOnline, charger.circuitId)
+    ? await getChargerState(charger.id, charger.isOnline, charger.circuitId, charger.installationId)
     : null;
 
   return (

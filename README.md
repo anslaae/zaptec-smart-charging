@@ -10,6 +10,8 @@ Built as a responsive Next.js app (BFF pattern: the frontend never talks to Zapt
 - An external cron (cron-job.org, see "Cron job" below) hits `/api/cron/tick` every minute. It reads each active schedule, checks the charger's live state, and decides whether to send Zaptec's `ResumeCharging` (507) or `StopChargingFinal` (506) command so charging finishes around the deadline rather than immediately.
 - If a schedule falls behind, the app prioritizes finishing over the deadline rather than leaving the car undercharged.
 - The same tick also checks every charger for charging with no active schedule and no manual-start authorization behind it, and stops it (see "Require authentication vs. free charging" below).
+- Every plug-in, charging start/stop, manual action, and plan created/cancelled/completed is logged to a plain activity feed (`activity_events` table, shown on the history page) -- plugging in with no plan ready and immediately being auto-stopped is the expected normal case, not an alarm.
+- The dashboard shows a per-charger "App not in control" badge (from `appHasControl()` in `src/lib/zaptec/state.ts`) whenever Require authentication is back on and there's no existing session to manage -- manual start/stop and planning are hidden in that state since they wouldn't do anything.
 - A webhook (`/api/webhooks/zaptec/session-end`) logs completed charging sessions for the history page.
 
 The scheduling decision logic is pure and unit-tested in `src/lib/scheduler/engine.ts` / `engine.test.ts`.

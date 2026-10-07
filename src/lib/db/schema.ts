@@ -94,12 +94,32 @@ export const chargeSessions = pgTable("charge_sessions", {
 export const schedulerHeartbeat = pgTable("scheduler_heartbeat", {
   id: text("id").primaryKey(),
   lastTickAt: timestamp("last_tick_at", { withTimezone: true }).notNull(),
-  // Set whenever the tick finds a charger drawing power with no authorized
-  // schedule or manual session behind it (e.g. the installation's "Require
-  // authentication" is off and a stranger plugged in) and force-stops it.
-  // Surfaced on the dashboard since nothing else would notice this happened.
-  lastBlockedAt: timestamp("last_blocked_at", { withTimezone: true }),
-  lastBlockedChargerName: text("last_blocked_charger_name"),
+});
+
+// One row per charger, holding only the last operationMode the tick saw --
+// purely bookkeeping to detect a *change* (plugged in, started charging,
+// ...) worth logging to activityEvents. Not surfaced in the UI directly.
+export const chargerObservedState = pgTable("charger_observed_state", {
+  chargerId: text("charger_id").primaryKey(),
+  operationMode: integer("operation_mode"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A plain chronological log of everything worth showing on the history
+// page's "Activity" list -- both physical events we observe (plugged in,
+// charging started/stopped) and things this app did (manual start/stop, plan
+// created/cancelled/completed, an unplanned session we stopped). `type` is a
+// free-text key from src/lib/activity/log.ts rather than a DB enum, so adding
+// a new kind of event later doesn't need a migration.
+export const activityEvents = pgTable("activity_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  chargerId: text("charger_id").notNull(),
+  chargerName: text("charger_name").notNull(),
+  type: text("type").notNull(),
+  detail: text("detail"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 // Tracks a manual "Start charging" click as an open-ended authorization --

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { manualChargeSessions } from "@/lib/db/schema";
+import { logActivity, ActivityType } from "@/lib/activity/log";
 import { sendChargerCommand } from "./client";
 import { ZaptecCommand } from "./constants";
 
@@ -22,6 +23,7 @@ export interface ActionResult {
 // there was nothing to resume.
 export async function startChargingNow(
   chargerId: string,
+  chargerName: string,
   _prevState: ActionResult,
   _formData: FormData,
 ): Promise<ActionResult> {
@@ -34,12 +36,14 @@ export async function startChargingNow(
   // Opens a manual authorization so the scheduler tick's enforcement doesn't
   // treat this as an unrecognized session and stop it again.
   await db.insert(manualChargeSessions).values({ chargerId, startedByUserId: session.userId });
+  await logActivity(chargerId, chargerName, ActivityType.ManualStart);
   revalidatePath("/");
   return { success: true };
 }
 
 export async function stopChargingNow(
   chargerId: string,
+  chargerName: string,
   _prevState: ActionResult,
   _formData: FormData,
 ): Promise<ActionResult> {
@@ -53,6 +57,7 @@ export async function stopChargingNow(
     .update(manualChargeSessions)
     .set({ endedAt: new Date() })
     .where(and(eq(manualChargeSessions.chargerId, chargerId), isNull(manualChargeSessions.endedAt)));
+  await logActivity(chargerId, chargerName, ActivityType.ManualStop);
   revalidatePath("/");
   return { success: true };
 }
