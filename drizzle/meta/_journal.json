@@ -43,6 +43,13 @@
       "when": 1791305329325,
       "tag": "0005_oval_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791351274639,
+      "tag": "0006_glossy_jamie_braddock",
+      "breakpoints": true
     }
   ]
 }

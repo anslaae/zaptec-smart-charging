@@ -1,7 +1,10 @@
 "use server";
 
+import { isNull, eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/auth/dal";
+import { db } from "@/lib/db";
+import { manualChargeSessions } from "@/lib/db/schema";
 import { sendChargerCommand } from "./client";
 import { ZaptecCommand } from "./constants";
 
@@ -22,12 +25,15 @@ export async function startChargingNow(
   _prevState: ActionResult,
   _formData: FormData,
 ): Promise<ActionResult> {
-  await verifySession();
+  const session = await verifySession();
   try {
     await sendChargerCommand(chargerId, ZaptecCommand.ResumeCharging);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to start charging." };
   }
+  // Opens a manual authorization so the scheduler tick's enforcement doesn't
+  // treat this as an unrecognized session and stop it again.
+  await db.insert(manualChargeSessions).values({ chargerId, startedByUserId: session.userId });
   revalidatePath("/");
   return { success: true };
 }
@@ -43,6 +49,10 @@ export async function stopChargingNow(
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to stop charging." };
   }
+  await db
+    .update(manualChargeSessions)
+    .set({ endedAt: new Date() })
+    .where(and(eq(manualChargeSessions.chargerId, chargerId), isNull(manualChargeSessions.endedAt)));
   revalidatePath("/");
   return { success: true };
 }

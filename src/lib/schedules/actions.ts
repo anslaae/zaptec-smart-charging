@@ -8,6 +8,8 @@ import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { chargeSchedules } from "@/lib/db/schema";
 import { HOUSEHOLD_TIME_ZONE, zonedDateTimeToUtc } from "@/lib/datetime";
+import { sendChargerCommand } from "@/lib/zaptec/client";
+import { ZaptecCommand } from "@/lib/zaptec/constants";
 
 const CreateScheduleSchema = z.object({
   chargerId: z.string().min(1),
@@ -90,6 +92,21 @@ export async function cancelSchedule(
   await verifySession();
 
   try {
+    const [schedule] = await db
+      .select({ chargerId: chargeSchedules.chargerId, status: chargeSchedules.status })
+      .from(chargeSchedules)
+      .where(eq(chargeSchedules.id, scheduleId))
+      .limit(1);
+
+    // An active schedule may currently be charging -- cancelling it should
+    // stop that right away rather than leaving the car running until the
+    // scheduler tick's unauthorized-charging check catches it later.
+    if (schedule?.status === "active") {
+      await sendChargerCommand(schedule.chargerId, ZaptecCommand.StopChargingFinal).catch(
+        () => undefined,
+      );
+    }
+
     const now = new Date();
     await db
       .update(chargeSchedules)

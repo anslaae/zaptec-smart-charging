@@ -94,6 +94,28 @@ export const chargeSessions = pgTable("charge_sessions", {
 export const schedulerHeartbeat = pgTable("scheduler_heartbeat", {
   id: text("id").primaryKey(),
   lastTickAt: timestamp("last_tick_at", { withTimezone: true }).notNull(),
+  // Set whenever the tick finds a charger drawing power with no authorized
+  // schedule or manual session behind it (e.g. the installation's "Require
+  // authentication" is off and a stranger plugged in) and force-stops it.
+  // Surfaced on the dashboard since nothing else would notice this happened.
+  lastBlockedAt: timestamp("last_blocked_at", { withTimezone: true }),
+  lastBlockedChargerName: text("last_blocked_charger_name"),
+});
+
+// Tracks a manual "Start charging" click as an open-ended authorization --
+// the scheduler tick treats a charger as legitimately charging while one of
+// these is open for it, same as an active schedule. Closed when the car
+// disconnects or someone presses "Stop charging".
+export const manualChargeSessions = pgTable("manual_charge_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  chargerId: text("charger_id").notNull(),
+  startedByUserId: uuid("started_by_user_id")
+    .notNull()
+    .references(() => users.id),
+  startedAt: timestamp("started_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
 });
 
 export const webhookEvents = pgTable("webhook_events", {

@@ -9,6 +9,7 @@ import { estimateChargingPlan } from "@/lib/scheduler/engine";
 import { ChargerStatusCard } from "@/components/ChargerStatusCard";
 import { ChargingPlanCard } from "@/components/ChargingPlanCard";
 import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
+import { UnauthorizedChargingBanner } from "@/components/UnauthorizedChargingBanner";
 import { ScheduleCreatedToast } from "@/components/ScheduleCreatedToast";
 import { LogoutButton } from "@/components/LogoutButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
@@ -24,7 +25,11 @@ export default async function DashboardPage() {
       .where(inArray(chargeSchedules.status, ["pending", "active"]))
       .orderBy(chargeSchedules.readyBy),
     db
-      .select({ lastTickAt: schedulerHeartbeat.lastTickAt })
+      .select({
+        lastTickAt: schedulerHeartbeat.lastTickAt,
+        lastBlockedAt: schedulerHeartbeat.lastBlockedAt,
+        lastBlockedChargerName: schedulerHeartbeat.lastBlockedChargerName,
+      })
       .from(schedulerHeartbeat)
       .where(eq(schedulerHeartbeat.id, "singleton"))
       .then((rows) => rows[0] ?? null),
@@ -66,6 +71,11 @@ export default async function DashboardPage() {
         </div>
         <LogoutButton />
       </header>
+
+      <UnauthorizedChargingBanner
+        lastBlockedAt={heartbeat?.lastBlockedAt ?? null}
+        chargerName={heartbeat?.lastBlockedChargerName ?? null}
+      />
 
       <section className="flex flex-col gap-3">
         {chargers.length === 0 && (

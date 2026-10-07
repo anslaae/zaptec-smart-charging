@@ -1,10 +1,15 @@
 import "server-only";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chargeSchedules, scheduleActions, schedulerHeartbeat } from "@/lib/db/schema";
+import {
+  chargeSchedules,
+  scheduleActions,
+  schedulerHeartbeat,
+  manualChargeSessions,
+} from "@/lib/db/schema";
 import { listChargers, getChargerState, sendChargerCommand, isCurrentlyCharging } from "@/lib/zaptec/client";
-import { ZaptecCommand } from "@/lib/zaptec/constants";
-import type { ChargerState } from "@/lib/zaptec/types";
+import { ZaptecCommand, ChargerOperationMode } from "@/lib/zaptec/constants";
+import type { ChargerState, ZaptecCharger } from "@/lib/zaptec/types";
 import { decideNextAction } from "./engine";
 
 // Records the decision, so there's an internal log of what the scheduler
@@ -22,6 +27,61 @@ async function applyCommand(
     action,
     commandId,
   });
+}
+
+// The Zaptec installation's own "Require authentication" switch can't be
+// controlled from our side (confirmed against the public API schema -- the
+// installation update endpoint only exposes current-limit fields), so with it
+// off (free charging, chosen because requiring a physical RFID tap blocks our
+// own automation too) *anyone* who plugs in auto-starts a session. This is
+// the software-side gate that compensates: any charger drawing power with no
+// pending/active schedule and no open manual authorization gets stopped.
+// StopChargingFinal latches (sets FinalStopActive), so it won't silently
+// resume on its own -- it stays off until someone we recognize starts it
+// again. This only runs at the cron cadence (currently every 4 minutes), so
+// an unrecognized session can draw power for up to that long before it's cut.
+async function enforceAuthorizedCharging(
+  chargers: ZaptecCharger[],
+  scheduledChargerIds: Set<string>,
+  stateCache: Map<string, ChargerState>,
+): Promise<void> {
+  const openSessions = await db
+    .select()
+    .from(manualChargeSessions)
+    .where(isNull(manualChargeSessions.endedAt));
+  const openChargerIds = new Set(openSessions.map((s) => s.chargerId));
+
+  for (const charger of chargers) {
+    let state = stateCache.get(charger.id);
+    if (!state) {
+      state = await getChargerState(charger.id, charger.isOnline, charger.circuitId);
+      stateCache.set(charger.id, state);
+    }
+
+    // A manual authorization only covers the connection event it was opened
+    // for. Close it once the car disconnects so a *different* car plugging in
+    // later isn't waved through by a stale row.
+    if (state.operationMode === ChargerOperationMode.Disconnected && openChargerIds.has(charger.id)) {
+      await db
+        .update(manualChargeSessions)
+        .set({ endedAt: new Date() })
+        .where(and(eq(manualChargeSessions.chargerId, charger.id), isNull(manualChargeSessions.endedAt)));
+      continue;
+    }
+
+    if (!isCurrentlyCharging(state)) continue;
+    if (scheduledChargerIds.has(charger.id)) continue; // governed by the per-schedule loop below instead
+    if (openChargerIds.has(charger.id)) continue; // authorized by a manual start
+
+    console.error(
+      `[scheduler] charger ${charger.id} (${charger.name}) is charging with no schedule or manual authorization -- stopping it`,
+    );
+    await sendChargerCommand(charger.id, ZaptecCommand.StopChargingFinal).catch(() => undefined);
+    await db
+      .update(schedulerHeartbeat)
+      .set({ lastBlockedAt: new Date(), lastBlockedChargerName: charger.name })
+      .where(eq(schedulerHeartbeat.id, "singleton"));
+  }
 }
 
 export async function runSchedulerTick(): Promise<{ processed: number }> {
@@ -45,13 +105,21 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
     `[scheduler] tick at ${tickStartedAt}: ${schedules.length} pending/active schedule(s)`,
   );
 
-  if (schedules.length === 0) {
-    return { processed: 0 };
-  }
-
   const chargers = await listChargers();
   const chargerById = new Map(chargers.map((charger) => [charger.id, charger]));
   const stateCache = new Map<string, ChargerState>();
+
+  // Runs for every charger regardless of whether any schedule exists, since
+  // an unauthorized session can happen on a charger with no schedule at all.
+  await enforceAuthorizedCharging(
+    chargers,
+    new Set(schedules.map((s) => s.chargerId)),
+    stateCache,
+  );
+
+  if (schedules.length === 0) {
+    return { processed: 0 };
+  }
 
   for (const schedule of schedules) {
     const now = new Date();
