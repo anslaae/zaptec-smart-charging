@@ -34,8 +34,12 @@ export function ManualChargeButton({
       <SubmitButton
         pendingLabel={mode === "start" ? "Starting…" : "Stopping…"}
         className={
+          // Both variants carry a 1px border (transparent for "start") so
+          // they're the same height as the bordered "stop"/"Cancel" buttons
+          // they sit beside -- a border changes a button's rendered height
+          // even with box-sizing: border-box, since there's no fixed height.
           mode === "start"
-            ? "shrink-0 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
+            ? "shrink-0 rounded-md border border-transparent bg-foreground px-3 py-1.5 text-sm font-medium text-background"
             : "shrink-0 rounded-md border border-black/10 px-3 py-1.5 text-sm font-medium dark:border-white/15"
         }
       >

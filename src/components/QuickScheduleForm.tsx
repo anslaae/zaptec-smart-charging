@@ -12,6 +12,23 @@ import type { ChargerState } from "@/lib/zaptec/types";
 const initialState: CreateScheduleState = {};
 const TARGET_OPTIONS = [80, 100] as const;
 const DEFAULT_READY_BY = tomorrowAtLocalValue(HOUSEHOLD_TIME_ZONE, 8, 0);
+const [DEFAULT_READY_BY_DATE, DEFAULT_READY_BY_TIME] = DEFAULT_READY_BY.split("T");
+const [DEFAULT_READY_BY_HOUR, DEFAULT_READY_BY_MINUTE] = DEFAULT_READY_BY_TIME.split(":");
+
+// input type="datetime-local" has two real problems on this app's own
+// household phones: its displayed time follows the OS region setting (shows
+// AM/PM regardless of this app's 24h convention everywhere else), and iOS
+// has a known WebKit bug where the native picker for date/time inputs (and
+// selects) stops responding in a home-screen-installed web app, especially
+// after it's been backgrounded -- see
+// https://developer.apple.com/forums/thread/705685. A plain <input
+// type="date"> plus two explicit <select>s sidesteps the locale issue
+// entirely (we spell out 24h ourselves) and is a simpler, more robust
+// control than the compound widget, though it can't fully rule out that same
+// OS-level bug -- closing and reopening the app from the home screen (or
+// just using it in Safari) is the workaround if a picker ever goes unresponsive.
+const HOURS = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0"));
+const MINUTES = Array.from({ length: 12 }, (_, m) => String(m * 5).padStart(2, "0"));
 
 export function QuickScheduleForm({
   chargers,
@@ -23,7 +40,10 @@ export function QuickScheduleForm({
   const [state, formAction, pending] = useActionState(createSchedule, initialState);
   const [currentPercent, setCurrentPercent] = useState(50);
   const [targetPercent, setTargetPercent] = useState<(typeof TARGET_OPTIONS)[number]>(80);
-  const [readyByValue, setReadyByValue] = useState(DEFAULT_READY_BY);
+  const [readyByDate, setReadyByDate] = useState(DEFAULT_READY_BY_DATE);
+  const [readyByHour, setReadyByHour] = useState(DEFAULT_READY_BY_HOUR);
+  const [readyByMinute, setReadyByMinute] = useState(DEFAULT_READY_BY_MINUTE);
+  const readyByValue = `${readyByDate}T${readyByHour}:${readyByMinute}`;
 
   const targetEnergyKwh = useMemo(() => {
     const kwh = ((targetPercent - currentPercent) / 100) * VEHICLE_BATTERY_CAPACITY_KWH;
@@ -121,18 +141,45 @@ export function QuickScheduleForm({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="quickReadyBy" className="text-sm font-medium">
+        <label htmlFor="quickReadyByDate" className="text-sm font-medium">
           Ready by
         </label>
-        <input
-          id="quickReadyBy"
-          name="readyBy"
-          type="datetime-local"
-          required
-          value={readyByValue}
-          onChange={(event) => setReadyByValue(event.target.value)}
-          className="rounded-md border border-black/10 bg-transparent px-3 py-2 text-base dark:border-white/15"
-        />
+        <div className="flex gap-2">
+          <input
+            id="quickReadyByDate"
+            type="date"
+            required
+            value={readyByDate}
+            onChange={(event) => setReadyByDate(event.target.value)}
+            className="flex-1 cursor-pointer rounded-md border border-black/10 bg-transparent px-3 py-2 text-base dark:border-white/15"
+          />
+          <select
+            aria-label="Hour"
+            value={readyByHour}
+            onChange={(event) => setReadyByHour(event.target.value)}
+            className="cursor-pointer rounded-md border border-black/10 bg-transparent px-2 py-2 text-base dark:border-white/15"
+          >
+            {HOURS.map((hour) => (
+              <option key={hour} value={hour}>
+                {hour}
+              </option>
+            ))}
+          </select>
+          <span className="flex items-center text-base text-black/50 dark:text-white/50">:</span>
+          <select
+            aria-label="Minute"
+            value={readyByMinute}
+            onChange={(event) => setReadyByMinute(event.target.value)}
+            className="cursor-pointer rounded-md border border-black/10 bg-transparent px-2 py-2 text-base dark:border-white/15"
+          >
+            {MINUTES.map((minute) => (
+              <option key={minute} value={minute}>
+                {minute}
+              </option>
+            ))}
+          </select>
+        </div>
+        <input type="hidden" name="readyBy" value={readyByValue} />
       </div>
 
       <p className="text-xs text-black/50 dark:text-white/50">

@@ -167,7 +167,7 @@ export function ChargerCard({
             <form action={cancelAction}>
               <SubmitButton
                 pendingLabel="Cancelling…"
-                className="shrink-0 rounded-md border border-black/10 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+                className="shrink-0 rounded-md border border-black/10 px-3 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
               >
                 Cancel
               </SubmitButton>
@@ -185,7 +185,7 @@ export function ChargerCard({
             )}
             <Link
               href="/schedule/quick"
-              className="shrink-0 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
+              className="shrink-0 rounded-md border border-transparent bg-foreground px-3 py-1.5 text-sm font-medium text-background"
             >
               Plan charging
             </Link>
