@@ -1,6 +1,6 @@
-// cron-job.org calls /api/cron/tick every 4 minutes; flag as stale past 2
-// missed ticks (8 minutes) rather than 1, to tolerate an occasional delay.
-const STALE_AFTER_SECONDS = 8 * 60;
+// cron-job.org calls /api/cron/tick every minute; flag as stale past 3
+// missed ticks rather than 1, to tolerate an occasional delay.
+const STALE_AFTER_SECONDS = 3 * 60;
 
 function formatAgo(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s ago`;

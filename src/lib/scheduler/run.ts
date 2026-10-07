@@ -38,8 +38,8 @@ async function applyCommand(
 // pending/active schedule and no open manual authorization gets stopped.
 // StopChargingFinal latches (sets FinalStopActive), so it won't silently
 // resume on its own -- it stays off until someone we recognize starts it
-// again. This only runs at the cron cadence (currently every 4 minutes), so
-// an unrecognized session can draw power for up to that long before it's cut.
+// again. This only runs at the cron cadence (currently every minute), so an
+// unrecognized session can draw power for up to that long before it's cut.
 async function enforceAuthorizedCharging(
   chargers: ZaptecCharger[],
   scheduledChargerIds: Set<string>,

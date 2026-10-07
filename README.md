@@ -7,8 +7,9 @@ Built as a responsive Next.js app (BFF pattern: the frontend never talks to Zapt
 ## How it works
 
 - You (or someone in the household) log in and create a schedule: "charge +20 kWh, ready by 07:00".
-- An external cron (cron-job.org, see "Cron job" below) hits `/api/cron/tick` every 5 minutes. It reads each active schedule, checks the charger's live state, and decides whether to send Zaptec's `ResumeCharging` (507) or `StopChargingFinal` (506) command so charging finishes around the deadline rather than immediately.
+- An external cron (cron-job.org, see "Cron job" below) hits `/api/cron/tick` every minute. It reads each active schedule, checks the charger's live state, and decides whether to send Zaptec's `ResumeCharging` (507) or `StopChargingFinal` (506) command so charging finishes around the deadline rather than immediately.
 - If a schedule falls behind, the app prioritizes finishing over the deadline rather than leaving the car undercharged.
+- The same tick also checks every charger for charging with no active schedule and no manual-start authorization behind it, and stops it (see "Require authentication vs. free charging" below).
 - A webhook (`/api/webhooks/zaptec/session-end`) logs completed charging sessions for the history page.
 
 The scheduling decision logic is pure and unit-tested in `src/lib/scheduler/engine.ts` / `engine.test.ts`.
@@ -22,6 +23,7 @@ The scheduling decision logic is pure and unit-tested in `src/lib/scheduler/engi
 - **No pre-charge authorization webhook.** Zaptec also supports a webhook that gates whether a session is allowed to start at all. Its request/response contract isn't publicly documented, and misconfiguring it could block *all* charging — not just scheduled charging — so it's intentionally not implemented. Only the informational session-end webhook is wired up.
 - **No self-signup.** Household members are added via a CLI script (`npm run db:add-user`), not a UI, since this is a private family tool.
 - **Zaptec API fair-use policy.** Zaptec asks integrators to avoid aggressive polling and to fetch the charger list at most once an hour rather than on every request (see [docs.zaptec.com/docs/api-fair-use-policy](https://docs.zaptec.com/docs/api-fair-use-policy)). The dashboard's `AutoRefresh` interval is 60s (not sub-minute), and `listChargers()` uses Next.js's fetch cache with a 1-hour revalidate instead of fetching fresh every poll. If you add more pollers (e.g. a shorter auto-refresh), keep this policy in mind — the hard rate limit is 10 req/sec/account, well above anything this app does, but the fair-use guidance is about not polling aggressively even under that limit.
+- **Require authentication vs. free charging.** Zaptec's public partner API has no command to authorize a brand-new session (only `ResumeCharging`/`StopChargingFinal`, which only resume/pause a session already underway) and no way to toggle the installation's "Require authentication" setting remotely — confirmed against the full Swagger spec at `api.zaptec.com/swagger/v1/swagger.json`. With authentication required, neither manual nor scheduled starts can work at all: the charger just sits waiting for an RFID tap. This installation therefore runs with "Require authentication" off (free charging) so the app can actually control it, and `enforceAuthorizedCharging()` in `src/lib/scheduler/run.ts` compensates in software: every tick, any charger drawing power with no active schedule and no open manual-start authorization gets `StopChargingFinal`'d. This is poll-based (currently every minute), so an unrecognized plug-in can draw power for up to that long before it's cut — a real OCPP integration (switching the installation to OCPP mode and running a CSMS that issues `RemoteStartTransaction`) would close that gap properly, but needs a persistent WebSocket connection that doesn't fit this app's serverless Vercel deployment, so it's left as a future option.
 
 ## Local setup
 
@@ -74,12 +76,12 @@ npm run db:add-user -- you@example.com "Your Name" "a-strong-password"
 
 Vercel Hobby plan caps cron jobs at once/day (and a `vercel.json` declaring anything more frequent will fail to deploy), so this project doesn't use Vercel Cron. GitHub Actions' `schedule` trigger was tried instead, but turned out to be unreliable in practice — GitHub documents it as best-effort and deprioritizes it under load, especially on low-traffic repos; it ended up firing hours apart instead of every 5 minutes.
 
-Instead, [cron-job.org](https://cron-job.org) (free) calls `/api/cron/tick` directly on a real 5-minute schedule:
+Instead, [cron-job.org](https://cron-job.org) (free) calls `/api/cron/tick` directly on a real minute-by-minute schedule:
 
 1. Create a free account at cron-job.org.
 2. Create a new cron job:
    - URL: `https://<your-domain>/api/cron/tick`
-   - Schedule: every 5 minutes
+   - Schedule: every minute
    - Request method: GET
    - Custom header: `Authorization: Bearer <your CRON_SECRET>` (must match the value set on Vercel)
 3. Save and enable it. cron-job.org's dashboard shows execution history/response codes, useful for confirming it's actually running on schedule.
