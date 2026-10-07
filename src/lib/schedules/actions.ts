@@ -77,7 +77,7 @@ export async function createSchedule(
     parsed.data.chargerId,
     parsed.data.chargerName,
     ActivityType.PlanCreated,
-    `${parsed.data.targetEnergyKwh} kWh, ready by ${readyBy.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: HOUSEHOLD_TIME_ZONE })}`,
+    `${parsed.data.targetEnergyKwh} kWh, ready by ${readyBy.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: HOUSEHOLD_TIME_ZONE, hour12: false })}`,
   );
 
   revalidatePath("/");

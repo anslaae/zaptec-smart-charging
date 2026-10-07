@@ -9,6 +9,7 @@ import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import { ManualChargeButton } from "@/components/ManualChargeButton";
 import { cancelSchedule, type ActionResult } from "@/lib/schedules/actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
 import type { chargeSchedules } from "@/lib/db/schema";
 
@@ -36,24 +37,64 @@ function formatOsloDateTime(date: string | Date): string {
   });
 }
 
+function liveChargingSummary(state: ChargerState): string {
+  return [
+    state.instantPowerWatts != null ? `${(state.instantPowerWatts / 1000).toFixed(1)} kW` : null,
+    state.sessionEnergyKwh != null ? `${state.sessionEnergyKwh.toFixed(1)} kWh delivered` : null,
+    state.chargeDurationSeconds != null ? formatDuration(state.chargeDurationSeconds) : null,
+  ]
+    .filter((part): part is string => part != null)
+    .join(" · ");
+}
+
+function StatusPill({
+  tone,
+  children,
+}: {
+  tone: "green" | "neutral" | "amber" | "red";
+  children: React.ReactNode;
+}) {
+  const toneClasses = {
+    green: "bg-green-500/15 text-green-700 dark:text-green-400",
+    neutral: "bg-black/5 text-black/60 dark:bg-white/10 dark:text-white/60",
+    amber: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+    red: "bg-red-500/15 text-red-700 dark:text-red-400",
+  }[tone];
+  const dotClasses = {
+    green: "bg-green-500",
+    neutral: "bg-current",
+    amber: "bg-amber-500",
+    red: "bg-red-500",
+  }[tone];
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${toneClasses}`}>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClasses}`} />
+      {children}
+    </span>
+  );
+}
+
 const cancelInitialState: ActionResult = {};
 
-// One box per charger: live status, the current plan (if any) with a cancel
-// button, and -- only when there's no plan -- manual start/stop beside a
-// shortcut to create one. Everything a household member needs to glance at
-// or act on for this charger lives here, instead of split across two cards.
+// One box per charger, read top to bottom as: every status indicator
+// together (scheduler tick, charger state, control), then whatever's
+// actually relevant right now (a plan, live charging numbers, or just "plug
+// in"), secondary detail tucked into a collapsible section, and finally the
+// action a household member would actually take.
 export function ChargerCard({
   name,
   address,
   state,
   schedule,
   startTime,
+  lastTickAt,
 }: {
   name: string;
   address: string;
   state: ChargerState;
   schedule: Schedule | null;
   startTime: string | null;
+  lastTickAt: Date | null;
 }) {
   const charging = isCurrentlyCharging(state);
   const noCarConnected = state.operationMode === ChargerOperationMode.Disconnected;
@@ -74,70 +115,70 @@ export function ChargerCard({
 
   return (
     <div className="rounded-xl border border-black/10 p-4 dark:border-white/15">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h2 className="text-base font-semibold">{name}</h2>
-          <p className="text-xs text-black/50 dark:text-white/50">{address}</p>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              charging
-                ? "bg-green-500/15 text-green-700 dark:text-green-400"
-                : "bg-black/5 text-black/60 dark:bg-white/10 dark:text-white/60"
-            }`}
-          >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${charging ? "bg-green-500" : "bg-current"}`}
-            />
-            {describeOperationMode(state)}
-          </span>
-          {!inControl && (
-            <span
-              title="Require authentication is on and there's no session to manage -- authorize charging from the Zaptec app, or switch the installation back to free charging."
-              className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              App not in control
-            </span>
-          )}
-        </div>
+      <h2 className="text-base font-semibold">{name}</h2>
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <SchedulerStatusBadge lastTickAt={lastTickAt} />
+        <StatusPill tone={charging ? "green" : "neutral"}>{describeOperationMode(state)}</StatusPill>
+        {!inControl && <StatusPill tone="amber">App not in control</StatusPill>}
       </div>
 
-      <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <dt className="text-black/50 dark:text-white/50">Power</dt>
-          <dd className="font-medium">
-            {state.instantPowerWatts != null
-              ? `${(state.instantPowerWatts / 1000).toFixed(1)} kW`
-              : "—"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-black/50 dark:text-white/50">Session energy</dt>
-          <dd className="font-medium">
-            {state.sessionEnergyKwh != null ? `${state.sessionEnergyKwh.toFixed(1)} kWh` : "—"}
-          </dd>
-        </div>
-        {charging && state.chargeDurationSeconds != null && (
-          <div>
-            <dt className="text-black/50 dark:text-white/50">Charging for</dt>
-            <dd className="font-medium">{formatDuration(state.chargeDurationSeconds)}</dd>
-          </div>
-        )}
-      </dl>
+      {inControl && (
+        <div className="mt-3 flex flex-col gap-1 text-sm">
+          {schedule ? (
+            <>
+              <p className="font-medium">
+                {Number(schedule.targetEnergyKwh).toFixed(1)} kWh by {formatOsloDateTime(schedule.readyBy)}
+              </p>
+              <p className="text-black/50 dark:text-white/50">
+                {STATUS_LABEL[schedule.status]}
+                {schedule.lastNote ? ` · ${schedule.lastNote}` : ""}
+              </p>
+              {schedule.status === "pending" && startTime && (
+                <p className="text-black/50 dark:text-white/50">
+                  Starts around {formatOsloDateTime(startTime)}
+                </p>
+              )}
+              {schedule.lastError && <p className="text-red-600">{schedule.lastError}</p>}
+              {charging && (
+                <p className="text-black/50 dark:text-white/50">{liveChargingSummary(state)}</p>
+              )}
+            </>
+          ) : charging ? (
+            <>
+              <p className="font-medium">Charging now</p>
+              <p className="text-black/50 dark:text-white/50">{liveChargingSummary(state)}</p>
+            </>
+          ) : (
+            <p className="font-medium">
+              {noCarConnected ? "No car connected" : "No charging planned"}
+            </p>
+          )}
 
-      {state.scheduledChargingStartAt && (
-        <p className="mt-3 rounded-md bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-700 dark:text-blue-400">
-          Smart charging scheduled to start {formatOsloDateTime(state.scheduledChargingStartAt)}
-        </p>
+          {state.scheduledChargingStartAt && (
+            <p className="mt-1 rounded-md bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-700 dark:text-blue-400">
+              Zaptec smart charging scheduled to start {formatOsloDateTime(state.scheduledChargingStartAt)}
+            </p>
+          )}
+        </div>
       )}
 
-      {state.lastCompletedSession && (
-        <p className="mt-3 text-xs text-black/50 dark:text-white/50">
-          Last connected {formatOsloDateTime(state.lastCompletedSession.startedAt)} ·{" "}
-          {state.lastCompletedSession.energyKwh.toFixed(1)} kWh delivered
-        </p>
+      {(address || state.lastCompletedSession || state.maxPowerKw != null) && (
+        <details className="mt-3 group">
+          <summary className="cursor-pointer list-none text-xs font-medium text-black/50 [&::-webkit-details-marker]:hidden dark:text-white/50">
+            Details
+          </summary>
+          <div className="mt-2 flex flex-col gap-1 text-xs text-black/60 dark:text-white/60">
+            {address && <p>{address}</p>}
+            {state.lastCompletedSession && (
+              <p>
+                Last connected {formatOsloDateTime(state.lastCompletedSession.startedAt)} ·{" "}
+                {state.lastCompletedSession.energyKwh.toFixed(1)} kWh delivered
+              </p>
+            )}
+            {state.maxPowerKw != null && <p>Max charge rate: {state.maxPowerKw.toFixed(1)} kW</p>}
+          </div>
+        </details>
       )}
 
       <div className="mt-4 border-t border-black/10 pt-3 dark:border-white/15">
@@ -148,22 +189,7 @@ export function ChargerCard({
             restore automation here.
           </p>
         ) : schedule ? (
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="font-medium">{Number(schedule.targetEnergyKwh).toFixed(1)} kWh</p>
-              <p className="text-sm text-black/50 dark:text-white/50">
-                Ready by {formatOsloDateTime(schedule.readyBy)} · {STATUS_LABEL[schedule.status]}
-                {schedule.lastNote ? ` · ${schedule.lastNote}` : ""}
-              </p>
-              {schedule.status === "pending" && startTime && (
-                <p className="text-sm text-black/50 dark:text-white/50">
-                  Starts charging around {formatOsloDateTime(startTime)}
-                </p>
-              )}
-              {schedule.lastError && (
-                <p className="text-sm text-red-600">Last error: {schedule.lastError}</p>
-              )}
-            </div>
+          <div className="flex justify-end">
             <form action={cancelAction}>
               <SubmitButton
                 pendingLabel="Cancelling…"
@@ -174,10 +200,7 @@ export function ChargerCard({
             </form>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <p className="flex-1 text-sm text-black/50 dark:text-white/50">
-              {noCarConnected ? "Plug in to charge, or plan ahead." : "No charging planned."}
-            </p>
+          <div className="flex items-center justify-end gap-2">
             {charging ? (
               <ManualChargeButton chargerId={state.chargerId} chargerName={name} mode="stop" />
             ) : noCarConnected ? null : (

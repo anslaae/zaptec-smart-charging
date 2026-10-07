@@ -45,7 +45,7 @@ export function ManualChargeButton({
             : "flex h-9 shrink-0 items-center justify-center rounded-md border border-black/10 px-3 text-sm font-medium dark:border-white/15"
         }
       >
-        {mode === "start" ? "Start charging" : "Stop charging"}
+        {mode === "start" ? "Charge now" : "Stop charging"}
       </SubmitButton>
     </form>
   );

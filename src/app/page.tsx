@@ -7,7 +7,6 @@ import { chargeSchedules, schedulerHeartbeat } from "@/lib/db/schema";
 import { listChargers, getChargerState } from "@/lib/zaptec/client";
 import { estimateChargingPlan } from "@/lib/scheduler/engine";
 import { ChargerCard } from "@/components/ChargerCard";
-import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
 import { ScheduleCreatedToast } from "@/components/ScheduleCreatedToast";
 import { LogoutButton } from "@/components/LogoutButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
@@ -45,7 +44,6 @@ export default async function DashboardPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold">Smart Charging</h1>
           <p className="text-sm text-black/50 dark:text-white/50">Hi {user.name}</p>
-          <SchedulerStatusBadge lastTickAt={heartbeat?.lastTickAt ?? null} />
         </div>
         <LogoutButton />
       </header>
@@ -76,6 +74,7 @@ export default async function DashboardPage() {
               state={state}
               schedule={schedule}
               startTime={startTime}
+              lastTickAt={heartbeat?.lastTickAt ?? null}
             />
           );
         })}
