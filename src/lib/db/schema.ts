@@ -117,6 +117,11 @@ export const activityEvents = pgTable("activity_events", {
   chargerName: text("charger_name").notNull(),
   type: text("type").notNull(),
   detail: text("detail"),
+  // Who did it, for the events a person actually triggered (manual
+  // start/stop, plan created/cancelled). Null for events nobody "did" --
+  // physical transitions the tick observed, or the scheduler/enforcement
+  // acting on its own (plan completed, stopped an unplanned session).
+  userId: uuid("user_id").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

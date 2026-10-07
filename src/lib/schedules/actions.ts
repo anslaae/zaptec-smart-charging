@@ -73,12 +73,10 @@ export async function createSchedule(
     readyBy,
     status: "pending",
   });
-  await logActivity(
-    parsed.data.chargerId,
-    parsed.data.chargerName,
-    ActivityType.PlanCreated,
-    `${parsed.data.targetEnergyKwh} kWh, ready by ${readyBy.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: HOUSEHOLD_TIME_ZONE, hour12: false })}`,
-  );
+  await logActivity(parsed.data.chargerId, parsed.data.chargerName, ActivityType.PlanCreated, {
+    detail: `${parsed.data.targetEnergyKwh} kWh, ready by ${readyBy.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: HOUSEHOLD_TIME_ZONE, hour12: false })}`,
+    userId: session.userId,
+  });
 
   revalidatePath("/");
   // ?created=1 lets the dashboard fire a one-off success toast on arrival --
@@ -96,7 +94,7 @@ export async function cancelSchedule(
   _prevState: ActionResult,
   _formData: FormData,
 ): Promise<ActionResult> {
-  await verifySession();
+  const session = await verifySession();
 
   try {
     const [schedule] = await db
@@ -124,7 +122,9 @@ export async function cancelSchedule(
       .set({ status: "cancelled", endedAt: now, updatedAt: now })
       .where(eq(chargeSchedules.id, scheduleId));
     if (schedule) {
-      await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanCancelled);
+      await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanCancelled, {
+        userId: session.userId,
+      });
     }
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to cancel the schedule." };

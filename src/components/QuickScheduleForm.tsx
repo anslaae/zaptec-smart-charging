@@ -110,7 +110,7 @@ export function QuickScheduleForm({
             type="range"
             min={0}
             max={100}
-            step={5}
+            step={1}
             value={currentPercent}
             onChange={(event) => setCurrentPercent(Number(event.target.value))}
             className="flex-1 cursor-pointer"

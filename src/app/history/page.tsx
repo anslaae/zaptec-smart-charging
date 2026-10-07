@@ -2,7 +2,7 @@ import Link from "next/link";
 import { desc, inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
-import { chargeSchedules, activityEvents } from "@/lib/db/schema";
+import { chargeSchedules, activityEvents, users } from "@/lib/db/schema";
 import { listChargers, getChargeHistory } from "@/lib/zaptec/client";
 import { ChargingStats } from "@/components/ChargingStats";
 import { DeleteScheduleButton } from "@/components/DeleteScheduleButton";
@@ -52,7 +52,7 @@ function groupByRecency<T>(items: T[], getDate: (item: T) => Date, now: Date) {
 export default async function HistoryPage() {
   await getCurrentUser();
 
-  const [pastSchedules, chargers, activity] = await Promise.all([
+  const [pastSchedules, chargers, activity, householdUsers] = await Promise.all([
     db
       .select()
       .from(chargeSchedules)
@@ -61,7 +61,11 @@ export default async function HistoryPage() {
       .limit(20),
     listChargers(),
     db.select().from(activityEvents).orderBy(desc(activityEvents.createdAt)).limit(200),
+    db.select({ id: users.id, name: users.name }).from(users),
   ]);
+  // A small household, so just load everyone and look names up in memory
+  // rather than joining -- avoids repeating the join across three tables.
+  const userNameById = new Map(householdUsers.map((u) => [u.id, u.name]));
 
   const sessionsByCharger = await Promise.all(
     chargers.map((charger) => getChargeHistory(charger.id)),
@@ -112,6 +116,7 @@ export default async function HistoryPage() {
                 >
                   <p>Ready by {formatTime(schedule.readyBy.toISOString())}</p>
                   {realSession && <p>{realSession.energyKwh.toFixed(1)} kWh actually delivered</p>}
+                  <p>Created by {userNameById.get(schedule.createdByUserId) ?? "someone no longer in the household"}</p>
                 </HistoryCard>
               );
             })}
@@ -162,8 +167,12 @@ export default async function HistoryPage() {
                   <p className="truncate font-medium">
                     {ACTIVITY_LABEL[event.type as ActivityType] ?? event.type}
                   </p>
-                  {event.detail && (
-                    <p className="truncate text-xs text-black/50 dark:text-white/50">{event.detail}</p>
+                  {(event.detail || event.userId) && (
+                    <p className="truncate text-xs text-black/50 dark:text-white/50">
+                      {[event.detail, event.userId && `by ${userNameById.get(event.userId) ?? "someone"}`]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
                   )}
                 </div>
                 <span className="shrink-0 text-xs text-black/50 dark:text-white/50">

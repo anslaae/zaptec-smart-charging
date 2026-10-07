@@ -41,7 +41,13 @@ export async function logActivity(
   chargerId: string,
   chargerName: string,
   type: ActivityType,
-  detail?: string,
+  options?: { detail?: string; userId?: string },
 ): Promise<void> {
-  await db.insert(activityEvents).values({ chargerId, chargerName, type, detail: detail ?? null });
+  await db.insert(activityEvents).values({
+    chargerId,
+    chargerName,
+    type,
+    detail: options?.detail ?? null,
+    userId: options?.userId ?? null,
+  });
 }

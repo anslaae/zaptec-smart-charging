@@ -36,7 +36,7 @@ export async function startChargingNow(
   // Opens a manual authorization so the scheduler tick's enforcement doesn't
   // treat this as an unrecognized session and stop it again.
   await db.insert(manualChargeSessions).values({ chargerId, startedByUserId: session.userId });
-  await logActivity(chargerId, chargerName, ActivityType.ManualStart);
+  await logActivity(chargerId, chargerName, ActivityType.ManualStart, { userId: session.userId });
   revalidatePath("/");
   return { success: true };
 }
@@ -47,7 +47,7 @@ export async function stopChargingNow(
   _prevState: ActionResult,
   _formData: FormData,
 ): Promise<ActionResult> {
-  await verifySession();
+  const session = await verifySession();
   try {
     await sendChargerCommand(chargerId, ZaptecCommand.StopChargingFinal);
   } catch (error) {
@@ -57,7 +57,7 @@ export async function stopChargingNow(
     .update(manualChargeSessions)
     .set({ endedAt: new Date() })
     .where(and(eq(manualChargeSessions.chargerId, chargerId), isNull(manualChargeSessions.endedAt)));
-  await logActivity(chargerId, chargerName, ActivityType.ManualStop);
+  await logActivity(chargerId, chargerName, ActivityType.ManualStop, { userId: session.userId });
   revalidatePath("/");
   return { success: true };
 }
