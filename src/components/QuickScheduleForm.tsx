@@ -151,6 +151,22 @@ export function QuickScheduleForm({
             required
             value={readyByDate}
             onChange={(event) => setReadyByDate(event.target.value)}
+            // Browsers only treat the small calendar-icon area as reliably
+            // clickable to open the picker; tapping the date digits
+            // themselves just focuses that segment for manual entry, which
+            // reads as "nothing happened" on a touchscreen. Forcing the
+            // picker open on any click/tap makes the whole box behave the
+            // same way. showPicker() needs a direct user gesture, so this is
+            // only called from onClick, never onFocus (which also fires from
+            // keyboard tab navigation).
+            onClick={(event) => {
+              try {
+                event.currentTarget.showPicker?.();
+              } catch {
+                // Unsupported or disallowed in this state -- the field still
+                // works as a normal date input either way.
+              }
+            }}
             className="flex-1 cursor-pointer rounded-md border border-black/10 bg-transparent px-3 py-2 text-base dark:border-white/15"
           />
           <select
