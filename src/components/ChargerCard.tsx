@@ -10,6 +10,8 @@ import { ManualChargeButton } from "@/components/ManualChargeButton";
 import { cancelSchedule, type ActionResult } from "@/lib/schedules/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
+import { useDebugScenario } from "@/components/DebugProvider";
+import { DEBUG_SCENARIOS } from "@/lib/debug/scenarios";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
 import type { chargeSchedules } from "@/lib/db/schema";
 
@@ -96,9 +98,20 @@ export function ChargerCard({
   startTime: string | null;
   lastTickAt: Date | null;
 }) {
-  const charging = isCurrentlyCharging(state);
-  const noCarConnected = state.operationMode === ChargerOperationMode.Disconnected;
-  const inControl = appHasControl(state);
+  // A debug scenario is a pure front-end preview -- it replaces what's
+  // rendered without touching real data, and (below) the real action
+  // buttons are swapped for a disabled note so a click can't send an actual
+  // Zaptec command based on fake displayed state.
+  const debug = useDebugScenario();
+  const isPreview = debug.enabled && debug.scenario !== "real";
+  const effective = isPreview ? DEBUG_SCENARIOS[debug.scenario] : null;
+  const effectiveState = effective?.state ?? state;
+  const effectiveSchedule = effective ? effective.schedule : schedule;
+  const effectiveStartTime = effective ? effective.startTime : startTime;
+
+  const charging = isCurrentlyCharging(effectiveState);
+  const noCarConnected = effectiveState.operationMode === ChargerOperationMode.Disconnected;
+  const inControl = appHasControl(effectiveState);
 
   const [cancelState, cancelAction] = useActionState(
     cancelSchedule.bind(null, schedule?.id ?? ""),
@@ -119,35 +132,41 @@ export function ChargerCard({
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <SchedulerStatusBadge lastTickAt={lastTickAt} />
-        <StatusPill tone={charging ? "green" : "neutral"}>{describeOperationMode(state)}</StatusPill>
+        <StatusPill tone={charging ? "green" : "neutral"}>
+          {describeOperationMode(effectiveState)}
+        </StatusPill>
         {!inControl && <StatusPill tone="amber">App not in control</StatusPill>}
+        {isPreview && <StatusPill tone="red">Preview: {DEBUG_SCENARIOS[debug.scenario].label}</StatusPill>}
       </div>
 
       {inControl && (
         <div className="mt-3 flex flex-col gap-1 text-sm">
-          {schedule ? (
+          {effectiveSchedule ? (
             <>
               <p className="font-medium">
-                {Number(schedule.targetEnergyKwh).toFixed(1)} kWh by {formatOsloDateTime(schedule.readyBy)}
+                {Number(effectiveSchedule.targetEnergyKwh).toFixed(1)} kWh by{" "}
+                {formatOsloDateTime(effectiveSchedule.readyBy)}
               </p>
               <p className="text-black/50 dark:text-white/50">
-                {STATUS_LABEL[schedule.status]}
-                {schedule.lastNote ? ` · ${schedule.lastNote}` : ""}
+                {STATUS_LABEL[effectiveSchedule.status]}
+                {effectiveSchedule.lastNote ? ` · ${effectiveSchedule.lastNote}` : ""}
               </p>
-              {schedule.status === "pending" && startTime && (
+              {effectiveSchedule.status === "pending" && effectiveStartTime && (
                 <p className="text-black/50 dark:text-white/50">
-                  Starts around {formatOsloDateTime(startTime)}
+                  Starts around {formatOsloDateTime(effectiveStartTime)}
                 </p>
               )}
-              {schedule.lastError && <p className="text-red-600">{schedule.lastError}</p>}
+              {effectiveSchedule.lastError && (
+                <p className="text-red-600">{effectiveSchedule.lastError}</p>
+              )}
               {charging && (
-                <p className="text-black/50 dark:text-white/50">{liveChargingSummary(state)}</p>
+                <p className="text-black/50 dark:text-white/50">{liveChargingSummary(effectiveState)}</p>
               )}
             </>
           ) : charging ? (
             <>
               <p className="font-medium">Charging now</p>
-              <p className="text-black/50 dark:text-white/50">{liveChargingSummary(state)}</p>
+              <p className="text-black/50 dark:text-white/50">{liveChargingSummary(effectiveState)}</p>
             </>
           ) : (
             <p className="font-medium">
@@ -155,34 +174,42 @@ export function ChargerCard({
             </p>
           )}
 
-          {state.scheduledChargingStartAt && (
+          {effectiveState.scheduledChargingStartAt && (
             <p className="mt-1 rounded-md bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-700 dark:text-blue-400">
-              Zaptec smart charging scheduled to start {formatOsloDateTime(state.scheduledChargingStartAt)}
+              Zaptec smart charging scheduled to start{" "}
+              {formatOsloDateTime(effectiveState.scheduledChargingStartAt)}
             </p>
           )}
         </div>
       )}
 
-      {(address || state.lastCompletedSession || state.maxPowerKw != null) && (
+      {(address || effectiveState.lastCompletedSession || effectiveState.maxPowerKw != null) && (
         <details className="mt-3 group">
           <summary className="cursor-pointer list-none text-xs font-medium text-black/50 [&::-webkit-details-marker]:hidden dark:text-white/50">
             Details
           </summary>
           <div className="mt-2 flex flex-col gap-1 text-xs text-black/60 dark:text-white/60">
             {address && <p>{address}</p>}
-            {state.lastCompletedSession && (
+            {effectiveState.lastCompletedSession && (
               <p>
-                Last connected {formatOsloDateTime(state.lastCompletedSession.startedAt)} ·{" "}
-                {state.lastCompletedSession.energyKwh.toFixed(1)} kWh delivered
+                Last connected {formatOsloDateTime(effectiveState.lastCompletedSession.startedAt)} ·{" "}
+                {effectiveState.lastCompletedSession.energyKwh.toFixed(1)} kWh delivered
               </p>
             )}
-            {state.maxPowerKw != null && <p>Max charge rate: {state.maxPowerKw.toFixed(1)} kW</p>}
+            {effectiveState.maxPowerKw != null && (
+              <p>Max charge rate: {effectiveState.maxPowerKw.toFixed(1)} kW</p>
+            )}
           </div>
         </details>
       )}
 
       <div className="mt-4 border-t border-black/10 pt-3 dark:border-white/15">
-        {!inControl ? (
+        {isPreview ? (
+          <p className="text-xs text-black/50 dark:text-white/50">
+            Previewing a debug scenario -- real controls are hidden so a click here can&apos;t send
+            an actual command.
+          </p>
+        ) : !inControl ? (
           <p className="text-xs text-black/50 dark:text-white/50">
             Require authentication is on and there&apos;s no session to manage right now -- start
             charging from the Zaptec app, or switch the installation back to free charging to

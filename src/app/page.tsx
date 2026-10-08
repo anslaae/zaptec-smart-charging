@@ -10,6 +10,7 @@ import { ChargerCard } from "@/components/ChargerCard";
 import { ScheduleCreatedToast } from "@/components/ScheduleCreatedToast";
 import { LogoutButton } from "@/components/LogoutButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { DebugProvider } from "@/components/DebugProvider";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -40,49 +41,51 @@ export default async function DashboardPage() {
       <Suspense fallback={null}>
         <ScheduleCreatedToast />
       </Suspense>
-      <header className="flex items-center justify-between">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-xl font-semibold">Smart Charging</h1>
-          <p className="text-sm text-black/50 dark:text-white/50">Hi {user.name}</p>
-        </div>
-        <LogoutButton />
-      </header>
+      <DebugProvider buildSha={process.env.BUILD_SHA ?? "unknown"} buildEnv={process.env.BUILD_ENV ?? "unknown"}>
+        <header className="flex items-center justify-between">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-xl font-semibold">Smart Charging</h1>
+            <p className="text-sm text-black/50 dark:text-white/50">Hi {user.name}</p>
+          </div>
+          <LogoutButton />
+        </header>
 
-      <section className="flex flex-col gap-3">
-        {chargers.length === 0 && (
-          <p className="text-sm text-black/50 dark:text-white/50">
-            No chargers found on the connected Zaptec account.
-          </p>
-        )}
-        {chargers.map((c, index) => {
-          const state = chargerStates[index];
-          // createSchedule() rejects overlapping schedules per charger, so
-          // there's at most one pending/active plan per charger.
-          const schedule = schedules.find((s) => s.chargerId === c.id) ?? null;
-          const startTime =
-            schedule?.status === "pending"
-              ? estimateChargingPlan(
-                  { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
-                  state,
-                ).latestStartTime.toISOString()
-              : null;
-          return (
-            <ChargerCard
-              key={c.id}
-              name={c.name}
-              address={c.installationName}
-              state={state}
-              schedule={schedule}
-              startTime={startTime}
-              lastTickAt={heartbeat?.lastTickAt ?? null}
-            />
-          );
-        })}
-      </section>
+        <section className="flex flex-col gap-3">
+          {chargers.length === 0 && (
+            <p className="text-sm text-black/50 dark:text-white/50">
+              No chargers found on the connected Zaptec account.
+            </p>
+          )}
+          {chargers.map((c, index) => {
+            const state = chargerStates[index];
+            // createSchedule() rejects overlapping schedules per charger, so
+            // there's at most one pending/active plan per charger.
+            const schedule = schedules.find((s) => s.chargerId === c.id) ?? null;
+            const startTime =
+              schedule?.status === "pending"
+                ? estimateChargingPlan(
+                    { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
+                    state,
+                  ).latestStartTime.toISOString()
+                : null;
+            return (
+              <ChargerCard
+                key={c.id}
+                name={c.name}
+                address={c.installationName}
+                state={state}
+                schedule={schedule}
+                startTime={startTime}
+                lastTickAt={heartbeat?.lastTickAt ?? null}
+              />
+            );
+          })}
+        </section>
 
-      <Link href="/history" className="text-sm text-black/50 underline underline-offset-2 dark:text-white/50">
-        View history
-      </Link>
+        <Link href="/history" className="text-sm text-black/50 underline underline-offset-2 dark:text-white/50">
+          View history
+        </Link>
+      </DebugProvider>
     </main>
   );
 }
