@@ -11,6 +11,7 @@ import { ScheduleCreatedToast } from "@/components/ScheduleCreatedToast";
 import { LogoutButton } from "@/components/LogoutButton";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { DebugProvider } from "@/components/DebugProvider";
+import { NotificationToggle } from "@/components/NotificationToggle";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -47,7 +48,10 @@ export default async function DashboardPage() {
             <h1 className="text-xl font-semibold">Smart Charging</h1>
             <p className="text-sm text-black/50 dark:text-white/50">Hi {user.name}</p>
           </div>
-          <LogoutButton />
+          <div className="flex flex-col items-end gap-2">
+            <LogoutButton />
+            <NotificationToggle />
+          </div>
         </header>
 
         <section className="flex flex-col gap-3">

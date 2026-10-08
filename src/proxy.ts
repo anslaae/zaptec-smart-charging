@@ -34,8 +34,11 @@ export default async function proxy(request: NextRequest) {
 // api/health is deliberately public too -- it's meant to be hit by an
 // external uptime monitor with no way to log in, and it exposes nothing
 // sensitive (build SHA, scheduler tick staleness, DB reachability).
+//
+// sw.js (the push-notification service worker) is also excluded -- the
+// browser/OS can fetch and run it outside of an open, authenticated tab.
 export const config = {
   matcher: [
-    "/((?!api/cron|api/webhooks|api/health|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest).*)",
+    "/((?!api/cron|api/webhooks|api/health|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest|sw.js).*)",
   ],
 };

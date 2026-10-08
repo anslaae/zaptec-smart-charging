@@ -14,6 +14,7 @@ export const ActivityType = {
   ManualStop: "manual_stop",
   PlanCreated: "plan_created",
   PlanCancelled: "plan_cancelled",
+  PlanChargingStarted: "plan_charging_started",
   PlanCompleted: "plan_completed",
   // The scheduler tick stopped a session with no active plan or manual
   // authorization behind it -- the normal outcome of plugging in with no
@@ -33,6 +34,7 @@ export const ACTIVITY_LABEL: Record<ActivityType, string> = {
   manual_stop: "Stopped manually",
   plan_created: "Charging plan created",
   plan_cancelled: "Charging plan cancelled",
+  plan_charging_started: "Planned charging started",
   plan_completed: "Charging plan completed",
   stopped_unplanned: "Stopped automatically (no plan or manual start running)",
 };

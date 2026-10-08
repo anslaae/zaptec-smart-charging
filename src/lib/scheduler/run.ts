@@ -13,6 +13,7 @@ import { ZaptecCommand, ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState, ZaptecCharger } from "@/lib/zaptec/types";
 import { decideNextAction } from "./engine";
 import { logActivity, ActivityType } from "@/lib/activity/log";
+import { sendPushToAllSubscribers } from "@/lib/push/send";
 
 // Records the decision, so there's an internal log of what the scheduler
 // actually sent over time, not just the latest state.
@@ -58,6 +59,10 @@ async function logStateTransitions(
         await logActivity(charger.id, charger.name, ActivityType.Unplugged);
       } else if (prevMode === ChargerOperationMode.Disconnected) {
         await logActivity(charger.id, charger.name, ActivityType.PluggedIn);
+        await sendPushToAllSubscribers({
+          title: "Car connected",
+          body: `${charger.name} is plugged in.`,
+        }).catch(() => undefined);
       } else if (currentMode === ChargerOperationMode.Charging) {
         await logActivity(charger.id, charger.name, ActivityType.ChargingStarted);
       } else if (prevMode === ChargerOperationMode.Charging) {
@@ -198,6 +203,10 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
           () => undefined,
         );
         await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanCompleted);
+        await sendPushToAllSubscribers({
+          title: "Charging stopped",
+          body: `Reached ${Number(schedule.targetEnergyKwh).toFixed(1)} kWh on ${schedule.chargerName}.`,
+        }).catch(() => undefined);
         await db
           .update(chargeSchedules)
           .set({
@@ -223,6 +232,13 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
         // means that; a "pause" means the car started too early and we told
         // it to wait, which is the opposite of started.
         const isFirstResume = decision.action === "resume" && schedule.startedAt == null;
+        if (isFirstResume) {
+          await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanChargingStarted);
+          await sendPushToAllSubscribers({
+            title: "Charging started",
+            body: `Your planned charge started on ${schedule.chargerName}.`,
+          }).catch(() => undefined);
+        }
         await db
           .update(chargeSchedules)
           .set({

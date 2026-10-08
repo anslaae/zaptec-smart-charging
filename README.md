@@ -48,6 +48,7 @@ See `.env.example` for the full list and how to generate each secret. You'll nee
 - `ZAPTEC_USERNAME` / `ZAPTEC_PASSWORD` — your Zaptec account, used server-side only, to call the Zaptec API on your app's behalf. This account needs owner/service access to the charger(s).
 - `CRON_SECRET` — shared secret the cron job must present; checked in `/api/cron/tick`.
 - `ZAPTEC_WEBHOOK_USERNAME` / `ZAPTEC_WEBHOOK_PASSWORD` — pick any values; you'll enter the same ones in the Zaptec Portal when configuring the webhook.
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — optional, for push notifications (see "Push notifications" below). Without them the app runs fine; notifications just silently don't send.
 
 ## Deploying
 
@@ -112,6 +113,16 @@ In the Zaptec Portal, under the installation's Authentication settings, set the 
 ```
 
 Returns `200` when the database is reachable and the scheduler tick isn't stale (same threshold as the dashboard's badge), `503` otherwise. It deliberately doesn't check Zaptec API connectivity, to avoid adding uptime-monitor-driven polling on top of what the app already does. The `sha`/`env` fields are also how the dashboard's own debug mode (`?debug=1`) shows which deployment is actually running.
+
+### 8. Push notifications (optional)
+
+Each household member can turn on browser push notifications from the "Enable notifications" link in the dashboard header -- off by default, and purely a per-browser/device opt-in (there's no app-wide switch). Notified events are deliberately narrow: a car getting plugged in, a planned charge starting, and a planned charge finishing. Manual start/stop never notifies, since the person doing it already knows.
+
+To enable it:
+
+1. Generate a VAPID keypair: `node -e "console.log(require('web-push').generateVAPIDKeys())"`.
+2. Set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (same value as `VAPID_PUBLIC_KEY`) in Vercel's environment variables.
+3. Redeploy. No webhook or external service needed -- `src/lib/push/send.ts` sends directly from the scheduler tick via the `web-push` package, straight to each browser's own push service (Apple/Google), which is why it works even when the app is closed. On iPhone this only works for the PWA installed to the home screen, matching Apple's general Web Push restriction, not something this app can work around.
 
 ## Tech stack
 
