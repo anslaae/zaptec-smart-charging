@@ -1,6 +1,4 @@
-// cron-job.org calls /api/cron/tick every minute; flag as stale past 3
-// missed ticks rather than 1, to tolerate an occasional delay.
-const STALE_AFTER_SECONDS = 3 * 60;
+import { STALE_AFTER_SECONDS } from "@/lib/scheduler/heartbeat";
 
 function formatAgo(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s ago`;

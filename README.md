@@ -96,6 +96,23 @@ If you're on Vercel Pro and would rather use Vercel Cron instead, re-add a `cron
 
 In the Zaptec Portal, under the installation's Authentication settings, set the "after session ends" webhook URL to `https://<your-domain>/api/webhooks/zaptec/session-end`, using Basic Auth with the `ZAPTEC_WEBHOOK_USERNAME` / `ZAPTEC_WEBHOOK_PASSWORD` you configured. Do **not** configure the "before authorizing a session" webhook unless you've separately confirmed its payload/response contract — see Known Limitations above.
 
+### 7. Health check (optional, for uptime monitoring)
+
+`GET /api/health` is public (excluded from the auth proxy) and returns plain JSON with the right HTTP status for an uptime monitor to alert on:
+
+```json
+{
+  "status": "ok",
+  "sha": "41f45c5",
+  "env": "production",
+  "time": "2026-10-08T20:30:00.000Z",
+  "database": { "ok": true },
+  "scheduler": { "lastTickAt": "2026-10-08T20:29:12.000Z", "secondsSinceLastTick": 48, "stale": false }
+}
+```
+
+Returns `200` when the database is reachable and the scheduler tick isn't stale (same threshold as the dashboard's badge), `503` otherwise. It deliberately doesn't check Zaptec API connectivity, to avoid adding uptime-monitor-driven polling on top of what the app already does. The `sha`/`env` fields are also how the dashboard's own debug mode (`?debug=1`) shows which deployment is actually running.
+
 ## Tech stack
 
 - Next.js 16 (App Router, Turbopack, React 19) — note: this project was scaffolded against Next 16, which has real breaking changes vs. earlier versions (e.g. `proxy.ts` instead of `middleware.ts`, fully async `cookies()`/`params`). See `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md` if upgrading further.

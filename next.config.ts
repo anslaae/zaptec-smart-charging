@@ -7,8 +7,10 @@ const nextConfig: NextConfig = {
     // vars at runtime" setting) -- lets the debug panel show exactly which
     // deployment is actually running, to settle "am I seeing the old
     // version?" questions without guessing.
-    BUILD_SHA: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7),
-    BUILD_ENV: process.env.VERCEL_ENV ?? "local",
+    // `||` rather than `??` -- `vercel env pull` can leave these set to an
+    // empty string locally, which `??` wouldn't treat as "missing".
+    BUILD_SHA: (process.env.VERCEL_GIT_COMMIT_SHA || "local").slice(0, 7),
+    BUILD_ENV: process.env.VERCEL_ENV || "local",
   },
 };
 
