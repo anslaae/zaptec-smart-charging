@@ -53,6 +53,17 @@ export function zonedDateKey(date: Date, timeZone: string): string {
   }).format(date);
 }
 
+// Shared display format for any timestamp shown to the household -- always
+// Europe/Oslo wall-clock time regardless of the server's own timezone, 24h.
+export function formatOsloDateTime(date: string | Date): string {
+  return new Date(date).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: HOUSEHOLD_TIME_ZONE,
+    hour12: false,
+  });
+}
+
 // A "YYYY-MM-DDTHH:mm" string for a datetime-local input's defaultValue,
 // representing tomorrow at the given time, in `timeZone`.
 export function tomorrowAtLocalValue(timeZone: string, hour: number, minute: number): string {

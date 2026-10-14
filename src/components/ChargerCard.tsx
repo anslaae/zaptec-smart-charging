@@ -13,7 +13,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
 import { useDebugScenario } from "@/components/DebugProvider";
 import { DEBUG_SCENARIOS } from "@/lib/debug/scenarios";
-import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
+import { formatOsloDateTime } from "@/lib/datetime";
 import type { chargeSchedules } from "@/lib/db/schema";
 
 type Schedule = typeof chargeSchedules.$inferSelect;
@@ -29,15 +29,6 @@ function formatDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-}
-
-function formatOsloDateTime(date: string | Date): string {
-  return new Date(date).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: HOUSEHOLD_TIME_ZONE,
-    hour12: false,
-  });
 }
 
 function liveChargingSummary(state: ChargerState): string {
@@ -135,7 +126,14 @@ export function ChargerCard({
 
   return (
     <div className="rounded-xl border border-black/10 p-4 dark:border-white/15">
-      <h2 className="text-base font-semibold">{name}</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-base font-semibold">{name}</h2>
+        {effectiveStateOfCharge && (
+          <span className="text-sm font-semibold text-black/70 dark:text-white/70">
+            {effectiveStateOfCharge.percent}%
+          </span>
+        )}
+      </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <SchedulerStatusBadge lastTickAt={lastTickAt} />
@@ -210,10 +208,7 @@ export function ChargerCard({
               <p>Max charge rate: {effectiveState.maxPowerKw.toFixed(1)} kW</p>
             )}
             {effectiveStateOfCharge && (
-              <p>
-                Car battery: {effectiveStateOfCharge.percent}% (as of{" "}
-                {formatOsloDateTime(effectiveStateOfCharge.oemUpdatedAt)})
-              </p>
+              <p>Battery reading as of {formatOsloDateTime(effectiveStateOfCharge.oemUpdatedAt)}</p>
             )}
           </div>
         </details>

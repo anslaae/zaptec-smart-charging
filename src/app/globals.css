@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --slider-track-remaining: rgba(0, 0, 0, 0.1);
 }
 
 @theme inline {
@@ -16,6 +17,7 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --slider-track-remaining: rgba(255, 255, 255, 0.15);
   }
 }
 
@@ -32,4 +34,47 @@ body {
   input[type="date"]::-webkit-calendar-picker-indicator {
     filter: invert(1);
   }
+}
+
+/* The "Battery now" slider's track is painted as a 3-stop gradient (set via
+   an inline `background` style, computed from the live Smartcar reading vs.
+   the slider's current value) rather than the browser's single-color native
+   fill. Both engines paint the native track as an opaque pseudo-element on
+   top of the input's own background by default, so it has to be made
+   transparent here for that inline gradient to actually show through. */
+.battery-slider {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  height: 0.375rem;
+  border-radius: 9999px;
+  outline: none;
+}
+.battery-slider::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 0.375rem;
+  border-radius: 9999px;
+}
+.battery-slider::-moz-range-track {
+  background: transparent;
+  height: 0.375rem;
+  border-radius: 9999px;
+}
+.battery-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -0.375rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 9999px;
+  background: var(--foreground);
+  border: 2px solid var(--background);
+  cursor: pointer;
+}
+.battery-slider::-moz-range-thumb {
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 9999px;
+  background: var(--foreground);
+  border: 2px solid var(--background);
+  cursor: pointer;
 }

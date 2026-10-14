@@ -4,10 +4,16 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { createSchedule, type CreateScheduleState } from "@/lib/schedules/actions";
 import { VEHICLE_BATTERY_CAPACITY_KWH } from "@/lib/vehicle";
-import { HOUSEHOLD_TIME_ZONE, tomorrowAtLocalValue, zonedDateTimeToUtc } from "@/lib/datetime";
+import {
+  HOUSEHOLD_TIME_ZONE,
+  formatOsloDateTime,
+  tomorrowAtLocalValue,
+  zonedDateTimeToUtc,
+} from "@/lib/datetime";
 import { estimateChargingPlan } from "@/lib/scheduler/engine";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState } from "@/lib/zaptec/types";
+import type { StateOfCharge } from "@/lib/smartcar/types";
 
 const initialState: CreateScheduleState = {};
 const TARGET_OPTIONS = [80, 100] as const;
@@ -30,15 +36,41 @@ const [DEFAULT_READY_BY_HOUR, DEFAULT_READY_BY_MINUTE] = DEFAULT_READY_BY_TIME.s
 const HOURS = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0"));
 const MINUTES = Array.from({ length: 12 }, (_, m) => String(m * 5).padStart(2, "0"));
 
+// The "Battery now" slider's track is a 3-stop gradient rather than a plain
+// fill: the portion up to the live Smartcar reading (if any) is distinct
+// from any further manual adjustment away from it, since the reading can be
+// several hours stale (see HANDOVER.md's "Smartcar API reality") and the
+// household member dragging the slider is the one who actually knows better
+// right now.
+const SLIDER_COLOR_REPORTED = "#22c55e"; // green-500
+const SLIDER_COLOR_ADJUSTED = "#3b82f6"; // blue-500
+const SLIDER_COLOR_REMAINING = "var(--slider-track-remaining)";
+
+function batterySliderBackground(reportedPercent: number | null, sliderPercent: number): string {
+  if (reportedPercent == null) {
+    return `linear-gradient(to right, ${SLIDER_COLOR_REPORTED} 0%, ${SLIDER_COLOR_REPORTED} ${sliderPercent}%, ${SLIDER_COLOR_REMAINING} ${sliderPercent}%, ${SLIDER_COLOR_REMAINING} 100%)`;
+  }
+  const lower = Math.min(reportedPercent, sliderPercent);
+  const upper = Math.max(reportedPercent, sliderPercent);
+  return `linear-gradient(to right, ${SLIDER_COLOR_REPORTED} 0%, ${SLIDER_COLOR_REPORTED} ${lower}%, ${SLIDER_COLOR_ADJUSTED} ${lower}%, ${SLIDER_COLOR_ADJUSTED} ${upper}%, ${SLIDER_COLOR_REMAINING} ${upper}%, ${SLIDER_COLOR_REMAINING} 100%)`;
+}
+
 export function QuickScheduleForm({
   chargers,
   chargerState,
+  stateOfCharge,
 }: {
   chargers: { id: string; name: string }[];
   chargerState: ChargerState | null;
+  stateOfCharge: StateOfCharge | null;
 }) {
   const [state, formAction, pending] = useActionState(createSchedule, initialState);
-  const [currentPercent, setCurrentPercent] = useState(50);
+  // Prefilled from the live Smartcar reading when available (still just a
+  // default -- the slider below stays fully editable, since the reading can
+  // be stale).
+  const [currentPercent, setCurrentPercent] = useState(() =>
+    stateOfCharge ? Math.min(100, Math.max(0, Math.round(stateOfCharge.percent))) : 50,
+  );
   const [targetPercent, setTargetPercent] = useState<(typeof TARGET_OPTIONS)[number]>(80);
   const [readyByDate, setReadyByDate] = useState(DEFAULT_READY_BY_DATE);
   const [readyByHour, setReadyByHour] = useState(DEFAULT_READY_BY_HOUR);
@@ -113,10 +145,16 @@ export function QuickScheduleForm({
             step={1}
             value={currentPercent}
             onChange={(event) => setCurrentPercent(Number(event.target.value))}
-            className="flex-1 cursor-pointer"
+            className="battery-slider flex-1 cursor-pointer"
+            style={{ background: batterySliderBackground(stateOfCharge?.percent ?? null, currentPercent) }}
           />
           <span className="w-12 text-right text-sm font-medium">{currentPercent}%</span>
         </div>
+        {stateOfCharge && (
+          <p className="text-xs text-black/50 dark:text-white/50">
+            Car reported {stateOfCharge.percent}% as of {formatOsloDateTime(stateOfCharge.oemUpdatedAt)}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1">
