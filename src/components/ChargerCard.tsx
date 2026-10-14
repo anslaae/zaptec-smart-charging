@@ -4,6 +4,7 @@ import { useActionState, useEffect } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import type { ChargerState } from "@/lib/zaptec/types";
+import type { StateOfCharge } from "@/lib/smartcar/types";
 import { describeOperationMode, isCurrentlyCharging, appHasControl } from "@/lib/zaptec/state";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import { ManualChargeButton } from "@/components/ManualChargeButton";
@@ -90,6 +91,7 @@ export function ChargerCard({
   schedule,
   startTime,
   lastTickAt,
+  stateOfCharge,
 }: {
   name: string;
   address: string;
@@ -97,6 +99,7 @@ export function ChargerCard({
   schedule: Schedule | null;
   startTime: string | null;
   lastTickAt: Date | null;
+  stateOfCharge: StateOfCharge | null;
 }) {
   // A debug scenario is a pure front-end preview -- it replaces what's
   // rendered without touching real data, and (below) the real action
@@ -108,6 +111,10 @@ export function ChargerCard({
   const effectiveState = effective?.state ?? state;
   const effectiveSchedule = effective ? effective.schedule : schedule;
   const effectiveStartTime = effective ? effective.startTime : startTime;
+  // A debug preview swaps in fake charger state; a real battery reading
+  // shown alongside it would be misleading, so it's hidden during preview
+  // too, same as the real action buttons are.
+  const effectiveStateOfCharge = isPreview ? null : stateOfCharge;
 
   const charging = isCurrentlyCharging(effectiveState);
   const noCarConnected = effectiveState.operationMode === ChargerOperationMode.Disconnected;
@@ -183,7 +190,10 @@ export function ChargerCard({
         </div>
       )}
 
-      {(address || effectiveState.lastCompletedSession || effectiveState.maxPowerKw != null) && (
+      {(address ||
+        effectiveState.lastCompletedSession ||
+        effectiveState.maxPowerKw != null ||
+        effectiveStateOfCharge) && (
         <details className="mt-3 group">
           <summary className="cursor-pointer list-none text-xs font-medium text-black/50 [&::-webkit-details-marker]:hidden dark:text-white/50">
             Details
@@ -198,6 +208,12 @@ export function ChargerCard({
             )}
             {effectiveState.maxPowerKw != null && (
               <p>Max charge rate: {effectiveState.maxPowerKw.toFixed(1)} kW</p>
+            )}
+            {effectiveStateOfCharge && (
+              <p>
+                Car battery: {effectiveStateOfCharge.percent}% (as of{" "}
+                {formatOsloDateTime(effectiveStateOfCharge.oemUpdatedAt)})
+              </p>
             )}
           </div>
         </details>

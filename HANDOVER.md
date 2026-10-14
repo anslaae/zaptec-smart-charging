@@ -21,7 +21,7 @@ After almost any code change in this repo, the pattern is: verify (`tsc`, `lint`
 ## Architecture map
 
 ```
-src/lib/env.ts                       zod-validated env vars (VAPID keys are optional — see below)
+src/lib/env.ts                       zod-validated env vars (VAPID keys and Smartcar vars are optional — see below)
 src/lib/db/schema.ts                 Drizzle schema (see table list below)
 src/lib/db/index.ts                  Drizzle client (postgres-js)
 src/lib/datetime.ts                  Europe/Oslo-aware formatting/parsing helpers (server runs in UTC)
@@ -42,6 +42,12 @@ src/lib/scheduler/
   engine.test.ts                    unit tests for the above
   heartbeat.ts                      STALE_AFTER_SECONDS, shared between the dashboard badge and /api/health
   run.ts                            the cron tick: enforceAuthorizedCharging() (security net), logStateTransitions() (activity log), then per-schedule decide/act loop
+
+src/lib/smartcar/
+  auth.ts                           OAuth2 Client Credentials (app-level) token fetch + in-memory cache
+  client.ts                        getStateOfCharge() — null if unconfigured or on any failure, see "Smartcar API reality" below
+  state.ts                          PURE parseStateOfCharge() (no "server-only" import, so it's unit-testable)
+  types.ts, constants.ts           wire response shapes + the signal code/API base URLs
 
 src/lib/schedules/actions.ts         createSchedule / cancelSchedule / deleteSchedule server actions
 src/lib/activity/log.ts              ActivityType enum + logActivity() — the activity feed shown on /history
@@ -81,6 +87,17 @@ scripts/add-user.mts                 CLI to insert a household user — no signu
 - Zaptec's own **native Eco Mode** is an installation-level feature flag (`EnabledFeatures` bitmask, bit 8), separate from anything charger-level — it's off for this household (confirmed, was a real source of a bug early on when it silently conflicted with manual commands).
 - The `/api/chargehistory` endpoint is Zaptec-deprecated (phase-out from 2026-08-01) in favor of `/api/sessions/archived` — not yet migrated in this codebase; check if it still works before assuming it does.
 - Fair-use policy: avoid aggressive polling. `listChargers()`/`getInstallationRequiresAuth()` are cached (1h / 5min via Next's fetch cache); `AutoRefresh` on the dashboard is 60s, not sub-minute; `/api/health` deliberately does **not** check Zaptec connectivity, to avoid adding uptime-monitor-driven load.
+
+## Smartcar API reality (car battery state of charge)
+
+Shows the connected car's traction battery % on the dashboard (`src/lib/smartcar/`), entirely separate from the Zaptec integration — read-only, optional, and never on the critical path (every call returns `null` rather than throwing if unconfigured or if anything goes wrong).
+
+- **Deliberately not using the official `smartcar/node-sdk`.** It's in maintenance mode, unsupported after 2026-12-01, and built around the **v2.0** Vehicles API (per-vehicle OAuth, `exchangeCode`/`exchangeRefreshToken`) — which sunsets the same day. Direct HTTP calls against the current **v3** API, same approach this codebase already takes for Zaptec.
+- **v3 auth is app-level, not per-vehicle.** One OAuth2 Client Credentials token (`POST https://iam.smartcar.com/oauth2/token`, 1h validity, no refresh token — just re-fetch) authenticates every request; `src/lib/smartcar/auth.ts` caches it the same way `zaptec/auth.ts` does. Every vehicle/signal call additionally needs an `sc-user-id` header — the permanent identifier Smartcar assigned when the car was connected via Smartcar Connect (obtained once, not an expiring token; see `GET /v3/connections?filter[vehicleId]=...` if it's ever lost).
+- **No webhooks.** They'd need a public endpoint + signature verification + dashboard webhook config, for one slowly-changing number — not worth it here. Polling with a generous cache (`next: { revalidate: 1800 }`, 30 min) instead, same fair-use reasoning as the Zaptec client.
+- **OEM data is noticeably stale.** Observed `oemUpdatedAt` several hours behind `retrievedAt` on this Opel Mokka (Stellantis apparently doesn't push updates to Smartcar often) — the UI always shows "as of HH:MM" alongside the percentage rather than implying it's live. This is also why the live reading isn't (yet) used to prefill `QuickScheduleForm`'s "Battery now" slider — a stale value could be wrong mid- or post-charge; flagged as a possible follow-up, not done.
+- Required scope in the Smartcar Dashboard's Vehicle Access config: `read_battery`.
+- Env vars: `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET`, `SMARTCAR_VEHICLE_ID`, `SMARTCAR_USER_ID` — all optional in `env.ts`, same "silently no-op if unset" pattern as the VAPID keys.
 
 ## The security model: free charging + software enforcement
 

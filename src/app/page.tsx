@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { chargeSchedules, schedulerHeartbeat } from "@/lib/db/schema";
 import { listChargers, getChargerState } from "@/lib/zaptec/client";
+import { getStateOfCharge } from "@/lib/smartcar/client";
 import { estimateChargingPlan } from "@/lib/scheduler/engine";
 import { ChargerCard } from "@/components/ChargerCard";
 import { ScheduleCreatedToast } from "@/components/ScheduleCreatedToast";
@@ -16,7 +17,7 @@ import { NotificationToggle } from "@/components/NotificationToggle";
 export default async function DashboardPage() {
   const user = await getCurrentUser();
 
-  const [chargers, schedules, heartbeat] = await Promise.all([
+  const [chargers, schedules, heartbeat, stateOfCharge] = await Promise.all([
     listChargers(),
     db
       .select()
@@ -28,6 +29,7 @@ export default async function DashboardPage() {
       .from(schedulerHeartbeat)
       .where(eq(schedulerHeartbeat.id, "singleton"))
       .then((rows) => rows[0] ?? null),
+    getStateOfCharge(),
   ]);
 
   const chargerStates = await Promise.all(
@@ -81,6 +83,7 @@ export default async function DashboardPage() {
                 schedule={schedule}
                 startTime={startTime}
                 lastTickAt={heartbeat?.lastTickAt ?? null}
+                stateOfCharge={stateOfCharge}
               />
             );
           })}

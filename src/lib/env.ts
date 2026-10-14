@@ -15,6 +15,14 @@ const envSchema = z.object({
   // app shouldn't go down because notifications aren't configured yet.
   VAPID_PUBLIC_KEY: z.string().min(1).optional(),
   VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+  // Optional, not required: Smartcar (car battery state of charge) is a
+  // nice-to-have alongside the Zaptec charger integration -- until these are
+  // set, src/lib/smartcar/client.ts silently no-ops rather than crashing the
+  // dashboard, same reasoning as the VAPID keys above.
+  SMARTCAR_CLIENT_ID: z.string().min(1).optional(),
+  SMARTCAR_CLIENT_SECRET: z.string().min(1).optional(),
+  SMARTCAR_VEHICLE_ID: z.string().min(1).optional(),
+  SMARTCAR_USER_ID: z.string().min(1).optional(),
 });
 
 export const env = envSchema.parse({
@@ -27,4 +35,8 @@ export const env = envSchema.parse({
   ZAPTEC_WEBHOOK_PASSWORD: process.env.ZAPTEC_WEBHOOK_PASSWORD,
   VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY,
   VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
+  SMARTCAR_CLIENT_ID: process.env.SMARTCAR_CLIENT_ID,
+  SMARTCAR_CLIENT_SECRET: process.env.SMARTCAR_CLIENT_SECRET,
+  SMARTCAR_VEHICLE_ID: process.env.SMARTCAR_VEHICLE_ID,
+  SMARTCAR_USER_ID: process.env.SMARTCAR_USER_ID,
 });
