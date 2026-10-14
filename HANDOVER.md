@@ -47,7 +47,10 @@ src/lib/smartcar/
   auth.ts                           OAuth2 Client Credentials (app-level) token fetch + in-memory cache
   client.ts                        getStateOfCharge() — null if unconfigured or on any failure, see "Smartcar API reality" below
   state.ts                          PURE parseStateOfCharge() (no "server-only" import, so it's unit-testable)
-  types.ts, constants.ts           wire response shapes + the signal code/API base URLs
+  webhook.ts                        PURE HMAC signature verification + VEHICLE_STATE payload parsing, see api/webhooks/smartcar below
+  types.ts, constants.ts           wire response shapes + the signal codes/API base URLs
+
+src/lib/scheduler/accuracy.ts        PURE evaluateScheduleAccuracy() — "did we estimate the charging time well," attached to the PlanCompleted activity log entry in run.ts
 
 src/lib/schedules/actions.ts         createSchedule / cancelSchedule / deleteSchedule server actions
 src/lib/activity/log.ts              ActivityType enum + logActivity() — the activity feed shown on /history
@@ -65,6 +68,7 @@ src/app/
   api/cron/tick/route.ts            Bearer CRON_SECRET-protected, calls runSchedulerTick()
   api/health/route.ts               PUBLIC (excluded from auth proxy) — build SHA/env, DB reachability, tick staleness, 200/503
   api/webhooks/zaptec/session-end/route.ts   Basic-Auth protected, logs completed sessions
+  api/webhooks/smartcar/route.ts   HMAC-signed (SC-Signature), records battery/odometer history — see "Smartcar API reality" below
 
 src/components/                      ChargerCard (the big one — status pills, live summary, Details<collapsible>, actions), ManualChargeButton, DebugProvider (?debug=1 + scenario picker), NotificationToggle, SchedulerStatusBadge, AutoRefresh (pauses when tab hidden), DeleteScheduleButton, various toasts
 public/sw.js                         service worker for Web Push (show notification + focus/open on click)
@@ -74,7 +78,7 @@ scripts/add-user.mts                 CLI to insert a household user — no signu
 
 ### DB tables (see `src/lib/db/schema.ts` for the source of truth)
 
-`users`, `charge_schedules`, `schedule_actions` (log of commands sent per schedule), `charge_sessions` (from the session-end webhook), `scheduler_heartbeat` (singleton row, last tick time), `charger_observed_state` (singleton-per-charger, last operationMode seen, for diffing), `activity_events` (the human-readable activity feed, optional `user_id`), `manual_charge_sessions` (open-ended "someone manually started this" authorization), `push_subscriptions` (one row per opted-in browser), `webhook_events` (raw webhook payload log).
+`users`, `charge_schedules` (has `estimated_duration_minutes`, captured once when charging actually starts — see "Smartcar API reality"'s accuracy note), `schedule_actions` (log of commands sent per schedule), `charge_sessions` (from the session-end webhook), `scheduler_heartbeat` (singleton row, last tick time), `charger_observed_state` (singleton-per-charger, last operationMode seen, for diffing), `activity_events` (the human-readable activity feed, optional `user_id`), `manual_charge_sessions` (open-ended "someone manually started this" authorization), `push_subscriptions` (one row per opted-in browser), `webhook_events` (raw webhook payload log, both Zaptec's and Smartcar's), `vehicle_telemetry` (one row per genuinely new battery%/odometer reading from the Smartcar webhook — see below).
 
 ## Zaptec API reality (hard-won, verified against the live account — not just docs)
 
@@ -88,16 +92,18 @@ scripts/add-user.mts                 CLI to insert a household user — no signu
 - The `/api/chargehistory` endpoint is Zaptec-deprecated (phase-out from 2026-08-01) in favor of `/api/sessions/archived` — not yet migrated in this codebase; check if it still works before assuming it does.
 - Fair-use policy: avoid aggressive polling. `listChargers()`/`getInstallationRequiresAuth()` are cached (1h / 5min via Next's fetch cache); `AutoRefresh` on the dashboard is 60s, not sub-minute; `/api/health` deliberately does **not** check Zaptec connectivity, to avoid adding uptime-monitor-driven load.
 
-## Smartcar API reality (car battery state of charge)
+## Smartcar API reality (car battery/odometer)
 
-Shows the connected car's traction battery % on the dashboard (`src/lib/smartcar/`), entirely separate from the Zaptec integration — read-only, optional, and never on the critical path (every call returns `null` rather than throwing if unconfigured or if anything goes wrong).
+Shows the connected car's traction battery % on the dashboard (`src/lib/smartcar/`) and records battery/odometer history for the `/history` charts, entirely separate from the Zaptec integration — read-only, optional, and never on the critical path (every call/write path returns `null`/no-ops rather than throwing if unconfigured or if anything goes wrong).
 
 - **Deliberately not using the official `smartcar/node-sdk`.** It's in maintenance mode, unsupported after 2026-12-01, and built around the **v2.0** Vehicles API (per-vehicle OAuth, `exchangeCode`/`exchangeRefreshToken`) — which sunsets the same day. Direct HTTP calls against the current **v3** API, same approach this codebase already takes for Zaptec.
-- **v3 auth is app-level, not per-vehicle.** One OAuth2 Client Credentials token (`POST https://iam.smartcar.com/oauth2/token`, 1h validity, no refresh token — just re-fetch) authenticates every request; `src/lib/smartcar/auth.ts` caches it the same way `zaptec/auth.ts` does. Every vehicle/signal call additionally needs an `sc-user-id` header — the permanent identifier Smartcar assigned when the car was connected via Smartcar Connect (obtained once, not an expiring token; see `GET /v3/connections?filter[vehicleId]=...` if it's ever lost).
-- **No webhooks.** They'd need a public endpoint + signature verification + dashboard webhook config, for one slowly-changing number — not worth it here. Polling with a generous cache (`next: { revalidate: 1800 }`, 30 min) instead, same fair-use reasoning as the Zaptec client.
-- **OEM data is noticeably stale.** Observed `oemUpdatedAt` several hours behind `retrievedAt` on this Opel Mokka (Stellantis apparently doesn't push updates to Smartcar often) — the UI always shows "as of HH:MM" alongside the percentage rather than implying it's live. This is also why the live reading isn't (yet) used to prefill `QuickScheduleForm`'s "Battery now" slider — a stale value could be wrong mid- or post-charge; flagged as a possible follow-up, not done.
-- Required scope in the Smartcar Dashboard's Vehicle Access config: `read_battery`.
-- Env vars: `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET`, `SMARTCAR_VEHICLE_ID`, `SMARTCAR_USER_ID` — all optional in `env.ts`, same "silently no-op if unset" pattern as the VAPID keys.
+- **v3 auth is app-level, not per-vehicle.** One OAuth2 Client Credentials token (`POST https://iam.smartcar.com/oauth2/token`, 1h validity, no refresh token — just re-fetch) authenticates every GET request; `src/lib/smartcar/auth.ts` caches it the same way `zaptec/auth.ts` does. Every vehicle/signal GET additionally needs an `sc-user-id` header — the permanent identifier Smartcar assigned when the car was connected via Smartcar Connect (obtained once, not an expiring token; see `GET /v3/connections?filter[vehicleId]=...` if it's ever lost).
+- **GET does not make Smartcar re-poll the vehicle — confirmed empirically, not just from docs.** Re-querying the same signal ~2.5h apart returned a byte-identical response, including `retrievedAt`/`ingestedAt` (Smartcar's own docs: those are when *Smartcar* last retrieved the data, not when we called the API). A GET just reads Smartcar's last-cached snapshot; only an active webhook subscription makes Smartcar actually monitor the vehicle and refresh it. **This is why there's both a GET-based path (`client.ts`, for the dashboard's on-demand display) and a webhook (`api/webhooks/smartcar/route.ts`, for `vehicle_telemetry` history)** — an earlier version of this doc said "no webhooks" based on the display-only use case; that reasoning doesn't hold once you need a real time series.
+- **The webhook**: HMAC-SHA256 verified via `SC-Signature` (raw body, before JSON parsing) using `SMARTCAR_APPLICATION_MANAGEMENT_TOKEN` — a separate credential from the client ID/secret, from the Smartcar Dashboard. Handles the one-time `VERIFY` handshake (HMAC of the challenge itself) and ongoing `VEHICLE_STATE` deliveries. Configured in the Smartcar Dashboard with triggers **and** data-payload signals set to `TractionBattery.StateOfCharge` + `Odometer.TraveledDistance` (both, so every delivery carries both values). **Scalable by construction, not by cadence**: a new `vehicle_telemetry` row is only inserted when at least one signal's `oemUpdatedAt` actually changed vs. the last stored row (also gives free idempotency against Smartcar's at-least-once redelivery) — rows don't grow with delivery/retry volume, only with real OEM updates.
+- **OEM data is noticeably stale.** Observed `oemUpdatedAt` several hours behind `retrievedAt`/delivery time on this Opel Mokka (Stellantis apparently doesn't push updates to Smartcar often) — the dashboard always shows "as of HH:MM" alongside the percentage rather than implying it's live. This is also why the live reading isn't (yet) used to prefill `QuickScheduleForm`'s "Battery now" slider — a stale value could be wrong mid- or post-charge; flagged as a possible follow-up, not done.
+- Required scopes in the Smartcar Dashboard's Vehicle Access config: `read_battery`, `read_odometer` (both already granted on this connection — confirmed live, no reconnect was needed).
+- **Planned-charge estimate accuracy** (not a Smartcar feature, but lives alongside it conceptually): `charge_schedules.estimated_duration_minutes` is captured once, the moment charging actually starts, from `estimateChargingPlan()`'s `remainingKwh`/`powerKw` at that instant. When the plan completes, `src/lib/scheduler/accuracy.ts` compares that prediction against the real duration and the ready-by deadline, and the result becomes the `detail` on the `PlanCompleted` activity log entry (visible on `/history`'s Activity section). Deliberately *not* comparing actual-vs-predicted start time — `decideNextAction` only resumes once `now >= latestStartTime`, so that comparison is circular (always ~0).
+- Env vars: `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET`, `SMARTCAR_VEHICLE_ID`, `SMARTCAR_USER_ID`, `SMARTCAR_APPLICATION_MANAGEMENT_TOKEN` — all optional in `env.ts`, same "silently no-op if unset" pattern as the VAPID keys.
 
 ## The security model: free charging + software enforcement
 

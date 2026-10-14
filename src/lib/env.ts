@@ -23,6 +23,9 @@ const envSchema = z.object({
   SMARTCAR_CLIENT_SECRET: z.string().min(1).optional(),
   SMARTCAR_VEHICLE_ID: z.string().min(1).optional(),
   SMARTCAR_USER_ID: z.string().min(1).optional(),
+  // Used only to verify Smartcar webhook deliveries (HMAC-SHA256 of the raw
+  // body/challenge) -- separate credential from the client ID/secret above.
+  SMARTCAR_APPLICATION_MANAGEMENT_TOKEN: z.string().min(1).optional(),
 });
 
 export const env = envSchema.parse({
@@ -39,4 +42,5 @@ export const env = envSchema.parse({
   SMARTCAR_CLIENT_SECRET: process.env.SMARTCAR_CLIENT_SECRET,
   SMARTCAR_VEHICLE_ID: process.env.SMARTCAR_VEHICLE_ID,
   SMARTCAR_USER_ID: process.env.SMARTCAR_USER_ID,
+  SMARTCAR_APPLICATION_MANAGEMENT_TOKEN: process.env.SMARTCAR_APPLICATION_MANAGEMENT_TOKEN,
 });

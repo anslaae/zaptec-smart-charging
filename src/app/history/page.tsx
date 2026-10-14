@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { desc, inArray } from "drizzle-orm";
+import { asc, desc, gte, inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
-import { chargeSchedules, activityEvents, users } from "@/lib/db/schema";
+import { chargeSchedules, activityEvents, users, vehicleTelemetry } from "@/lib/db/schema";
 import { listChargers, getChargeHistory } from "@/lib/zaptec/client";
 import { ChargingStats } from "@/components/ChargingStats";
+import { VehicleStats } from "@/components/VehicleStats";
 import { DeleteScheduleButton } from "@/components/DeleteScheduleButton";
 import { HOUSEHOLD_TIME_ZONE } from "@/lib/datetime";
 import { ACTIVITY_LABEL, type ActivityType } from "@/lib/activity/log";
@@ -52,7 +53,9 @@ function groupByRecency<T>(items: T[], getDate: (item: T) => Date, now: Date) {
 export default async function HistoryPage() {
   await getCurrentUser();
 
-  const [pastSchedules, chargers, activity, householdUsers] = await Promise.all([
+  const now = new Date();
+  const telemetryWindowStart = new Date(now.getTime() - 90 * 86_400_000);
+  const [pastSchedules, chargers, activity, householdUsers, telemetry] = await Promise.all([
     db
       .select()
       .from(chargeSchedules)
@@ -62,6 +65,11 @@ export default async function HistoryPage() {
     listChargers(),
     db.select().from(activityEvents).orderBy(desc(activityEvents.createdAt)).limit(200),
     db.select({ id: users.id, name: users.name }).from(users),
+    db
+      .select()
+      .from(vehicleTelemetry)
+      .where(gte(vehicleTelemetry.createdAt, telemetryWindowStart))
+      .orderBy(asc(vehicleTelemetry.createdAt)),
   ]);
   // A small household, so just load everyone and look names up in memory
   // rather than joining -- avoids repeating the join across three tables.
@@ -75,7 +83,6 @@ export default async function HistoryPage() {
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   const sessionById = new Map(sessions.map((s) => [s.id, s]));
 
-  const now = new Date();
   const scheduleGroups = groupByRecency(pastSchedules, (s) => s.updatedAt, now);
   const sessionGroups = groupByRecency(sessions, (s) => new Date(s.startedAt), now);
   const activityGroups = groupByRecency(activity, (e) => e.createdAt, now);
@@ -127,6 +134,11 @@ export default async function HistoryPage() {
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold">Charging activity</h2>
         <ChargingStats sessions={sessions} />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-base font-semibold">Vehicle</h2>
+        <VehicleStats readings={telemetry} />
       </section>
 
       <section className="flex flex-col gap-3">

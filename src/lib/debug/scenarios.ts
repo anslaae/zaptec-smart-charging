@@ -41,6 +41,7 @@ function baseSchedule(overrides: Partial<Schedule>): Schedule {
     startedAt: null,
     endedAt: null,
     zaptecSessionId: null,
+    estimatedDurationMinutes: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

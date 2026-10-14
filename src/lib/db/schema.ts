@@ -51,6 +51,12 @@ export const chargeSchedules = pgTable("charge_schedules", {
   // the history page link back to the real session's actual energy/duration
   // via getChargeHistory().
   zaptecSessionId: text("zaptec_session_id"),
+  // Predicted charging duration (minutes), captured once at the moment
+  // charging actually starts (estimateChargingPlan()'s remainingKwh/powerKw
+  // at that instant) -- compared against the real duration once the plan
+  // completes, see src/lib/scheduler/accuracy.ts. Null for schedules created
+  // before this existed, and for ones that never actually started charging.
+  estimatedDurationMinutes: integer("estimated_duration_minutes"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -157,6 +163,22 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+});
+
+// One row per genuinely new OEM reading from the Smartcar webhook (not one
+// row per delivery -- see the dedup logic in
+// src/app/api/webhooks/smartcar/route.ts). Each row is a complete combined
+// snapshot: whichever signal didn't change in a given delivery carries
+// forward its previous value, so charting never has to merge two separate
+// series. Expected to stay small -- OEM updates have been observed on the
+// order of hours, not minutes.
+export const vehicleTelemetry = pgTable("vehicle_telemetry", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  batteryPercent: integer("battery_percent"),
+  batteryReportedAt: timestamp("battery_reported_at", { withTimezone: true }),
+  odometerKm: numeric("odometer_km", { precision: 8, scale: 1 }),
+  odometerReportedAt: timestamp("odometer_reported_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const webhookEvents = pgTable("webhook_events", {

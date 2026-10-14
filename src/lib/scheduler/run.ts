@@ -11,7 +11,8 @@ import {
 import { listChargers, getChargerState, sendChargerCommand, isCurrentlyCharging } from "@/lib/zaptec/client";
 import { ZaptecCommand, ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState, ZaptecCharger } from "@/lib/zaptec/types";
-import { decideNextAction } from "./engine";
+import { decideNextAction, estimateChargingPlan } from "./engine";
+import { evaluateScheduleAccuracy } from "./accuracy";
 import { logActivity, ActivityType } from "@/lib/activity/log";
 import { sendPushToAllSubscribers } from "@/lib/push/send";
 
@@ -202,7 +203,32 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
         await applyCommand(schedule, "complete", ZaptecCommand.StopChargingFinal).catch(
           () => undefined,
         );
-        await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanCompleted);
+        // A quick "did we estimate this well" check, attached to the
+        // activity log entry below -- only possible when startedAt is known
+        // (a schedule can in principle reach "complete" without ever having
+        // gone through a tracked "resume", e.g. the car was already charging
+        // on its own when the schedule was created).
+        let accuracyDetail: string | undefined;
+        if (schedule.startedAt) {
+          const resumeActions = await db
+            .select()
+            .from(scheduleActions)
+            .where(
+              and(eq(scheduleActions.scheduleId, schedule.id), eq(scheduleActions.action, "resume")),
+            );
+          accuracyDetail = evaluateScheduleAccuracy({
+            readyBy: schedule.readyBy,
+            startedAt: schedule.startedAt,
+            finishedAt: now,
+            estimatedDurationMinutes: schedule.estimatedDurationMinutes,
+            targetEnergyKwh: Number(schedule.targetEnergyKwh),
+            deliveredEnergyKwh: state.sessionEnergyKwh ?? 0,
+            wasPaused: resumeActions.length > 1,
+          }).summary;
+        }
+        await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanCompleted, {
+          detail: accuracyDetail,
+        });
         await sendPushToAllSubscribers({
           title: "Charging stopped",
           body: `Reached ${Number(schedule.targetEnergyKwh).toFixed(1)} kWh on ${schedule.chargerName}.`,
@@ -239,6 +265,20 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
             body: `Your planned charge started on ${schedule.chargerName}.`,
           }).catch(() => undefined);
         }
+        // Predicted duration, captured once at the moment charging actually
+        // starts -- compared against the real duration once the plan
+        // completes (see accuracy.ts). Recomputed here rather than reusing
+        // decideNextAction's internal estimate, since that one doesn't
+        // surface remainingKwh/powerKw.
+        const estimatedDurationMinutes = isFirstResume
+          ? (() => {
+              const { remainingKwh, powerKw } = estimateChargingPlan(
+                { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
+                state,
+              );
+              return Math.round((remainingKwh / powerKw) * 60);
+            })()
+          : null;
         await db
           .update(chargeSchedules)
           .set({
@@ -251,6 +291,7 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
             ...(isFirstResume && {
               startedAt: now,
               zaptecSessionId: state.sessionId,
+              estimatedDurationMinutes,
             }),
           })
           .where(eq(chargeSchedules.id, schedule.id));
