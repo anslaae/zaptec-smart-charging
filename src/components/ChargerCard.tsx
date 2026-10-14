@@ -126,12 +126,17 @@ export function ChargerCard({
 
   return (
     <div className="rounded-xl border border-black/10 p-4 dark:border-white/15">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-start justify-between gap-2">
         <h2 className="text-base font-semibold">{name}</h2>
         {effectiveStateOfCharge && (
-          <span className="text-sm font-semibold text-black/70 dark:text-white/70">
-            {effectiveStateOfCharge.percent}%
-          </span>
+          <div className="text-right leading-tight">
+            <span className="block text-sm font-semibold text-black/70 dark:text-white/70">
+              {effectiveStateOfCharge.percent}%
+            </span>
+            <span className="block text-[11px] text-black/40 dark:text-white/40">
+              as of {formatOsloDateTime(effectiveStateOfCharge.oemUpdatedAt)}
+            </span>
+          </div>
         )}
       </div>
 
@@ -188,10 +193,7 @@ export function ChargerCard({
         </div>
       )}
 
-      {(address ||
-        effectiveState.lastCompletedSession ||
-        effectiveState.maxPowerKw != null ||
-        effectiveStateOfCharge) && (
+      {(address || effectiveState.lastCompletedSession || effectiveState.maxPowerKw != null) && (
         <details className="mt-3 group">
           <summary className="cursor-pointer list-none text-xs font-medium text-black/50 [&::-webkit-details-marker]:hidden dark:text-white/50">
             Details
@@ -206,9 +208,6 @@ export function ChargerCard({
             )}
             {effectiveState.maxPowerKw != null && (
               <p>Max charge rate: {effectiveState.maxPowerKw.toFixed(1)} kW</p>
-            )}
-            {effectiveStateOfCharge && (
-              <p>Battery reading as of {formatOsloDateTime(effectiveStateOfCharge.oemUpdatedAt)}</p>
             )}
           </div>
         </details>
