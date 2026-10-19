@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import type { ChargerState } from "@/lib/zaptec/types";
@@ -8,6 +8,7 @@ import type { StateOfCharge } from "@/lib/smartcar/types";
 import { describeOperationMode, isCurrentlyCharging, appHasControl } from "@/lib/zaptec/state";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import { ManualChargeButton } from "@/components/ManualChargeButton";
+import { PreheatButton } from "@/components/PreheatButton";
 import { cancelSchedule, type ActionResult } from "@/lib/schedules/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
@@ -24,6 +25,14 @@ const STATUS_LABEL: Record<Schedule["status"], string> = {
   completed: "Completed",
   cancelled: "Cancelled",
 };
+
+// myOpel's App Store listing -- tapping this opens the app directly if it's
+// already installed (standard iOS behavior for an apps.apple.com link) or
+// the install page if not. There's no confirmed custom URL scheme for
+// myOpel to deep-link straight into climate control, so this is the honest
+// option rather than a guessed scheme that could silently do nothing.
+const MYOPEL_APP_STORE_URL = "https://apps.apple.com/app/id1439342035";
+const MYOPEL_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.psa.mym.myopel";
 
 function formatDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
@@ -115,6 +124,12 @@ export function ChargerCard({
     cancelSchedule.bind(null, schedule?.id ?? ""),
     cancelInitialState,
   );
+
+  // Survives the Preheat button being swapped out for "Stop charging" once
+  // charging actually starts (see PreheatButton's onStarted comment) --
+  // resets on a real page load/navigation, which is fine for a one-shot
+  // nudge like this.
+  const [preheatStarted, setPreheatStarted] = useState(false);
 
   useEffect(() => {
     if (cancelState.error) {
@@ -238,10 +253,31 @@ export function ChargerCard({
           </div>
         ) : (
           <div className="flex items-center justify-end gap-2">
+            {preheatStarted && (
+              <a
+                href={
+                  typeof navigator !== "undefined" && /android/i.test(navigator.userAgent)
+                    ? MYOPEL_PLAY_STORE_URL
+                    : MYOPEL_APP_STORE_URL
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-9 shrink-0 items-center justify-center rounded-md border border-black/10 px-3 text-sm font-medium hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+              >
+                Open myOpel →
+              </a>
+            )}
             {charging ? (
               <ManualChargeButton chargerId={state.chargerId} chargerName={name} mode="stop" />
             ) : noCarConnected ? null : (
-              <ManualChargeButton chargerId={state.chargerId} chargerName={name} mode="start" />
+              <>
+                <PreheatButton
+                  chargerId={state.chargerId}
+                  chargerName={name}
+                  onStarted={() => setPreheatStarted(true)}
+                />
+                <ManualChargeButton chargerId={state.chargerId} chargerName={name} mode="start" />
+              </>
             )}
             <Link
               href="/schedule/quick"

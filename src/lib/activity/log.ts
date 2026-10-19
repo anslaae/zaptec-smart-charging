@@ -12,6 +12,10 @@ export const ActivityType = {
   ChargingStopped: "charging_stopped",
   ManualStart: "manual_start",
   ManualStop: "manual_stop",
+  // Same mechanism as ManualStart (ResumeCharging + a manual_charge_sessions
+  // row) -- logged separately so the activity feed shows *why* charging
+  // started rather than lumping it in with a plain "Charge now" tap.
+  PreheatStarted: "preheat_started",
   PlanCreated: "plan_created",
   PlanCancelled: "plan_cancelled",
   PlanChargingStarted: "plan_charging_started",
@@ -32,6 +36,7 @@ export const ACTIVITY_LABEL: Record<ActivityType, string> = {
   charging_stopped: "Charging stopped",
   manual_start: "Started manually",
   manual_stop: "Stopped manually",
+  preheat_started: "Preheat started",
   plan_created: "Charging plan created",
   plan_cancelled: "Charging plan cancelled",
   plan_charging_started: "Planned charging started",

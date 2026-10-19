@@ -41,6 +41,34 @@ export async function startChargingNow(
   return { success: true };
 }
 
+// Winter preheat: Smartcar has no climate command for this Opel (confirmed
+// against its Compatibility API -- the only commands it exposes for any
+// Opel model are charge-start/charge-stop, nothing climate-related), so
+// there's no way to trigger the car's climate control from here. What this
+// *can* do is make sure the car draws preheat power from the grid rather
+// than its own battery: Zaptec has no distinct "allow power but don't
+// charge" mode either -- ResumeCharging is the only lever, identical to
+// startChargingNow above -- so this just authorizes the same way and lets
+// the car's own firmware decide how to use the available power. Climate
+// control itself still has to be started by hand in the myOpel app.
+export async function startPreheat(
+  chargerId: string,
+  chargerName: string,
+  _prevState: ActionResult,
+  _formData: FormData,
+): Promise<ActionResult> {
+  const session = await verifySession();
+  try {
+    await sendChargerCommand(chargerId, ZaptecCommand.ResumeCharging);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to start charging." };
+  }
+  await db.insert(manualChargeSessions).values({ chargerId, startedByUserId: session.userId });
+  await logActivity(chargerId, chargerName, ActivityType.PreheatStarted, { userId: session.userId });
+  revalidatePath("/");
+  return { success: true };
+}
+
 export async function stopChargingNow(
   chargerId: string,
   chargerName: string,
