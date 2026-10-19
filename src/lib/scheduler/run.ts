@@ -15,6 +15,13 @@ import { decideNextAction, estimateChargingPlan } from "./engine";
 import { evaluateScheduleAccuracy } from "./accuracy";
 import { logActivity, ActivityType } from "@/lib/activity/log";
 import { sendPushToAllSubscribers } from "@/lib/push/send";
+import { canSkipDbTouch, type QuietTickMemory } from "./tick-gate";
+
+// Module-level, so it survives across ticks on a warm Vercel instance but
+// resets (safely -- see tick-gate.ts) on a cold start. Not shared across
+// instances, and doesn't need to be: it only ever permits *skipping* a
+// database check, never authorizes anything.
+let lastFullTick: QuietTickMemory | null = null;
 
 // Records the decision, so there's an internal log of what the scheduler
 // actually sent over time, not just the latest state.
@@ -40,7 +47,9 @@ async function applyCommand(
 // deliberately limited to these four transitions rather than every mode
 // change, so routine idle/paused flapping doesn't turn the activity log into
 // noise. This runs for every charger regardless of schedules, since it's
-// about physical reality, not app intent.
+// about physical reality, not app intent. Also skips the chargerObservedState
+// write entirely when the mode hasn't changed -- the stored row is already
+// correct, and most ticks find nothing new (see tick-gate.ts).
 async function logStateTransitions(
   chargers: ZaptecCharger[],
   stateCache: Map<string, ChargerState>,
@@ -55,7 +64,9 @@ async function logStateTransitions(
     const prevMode = previousByCharger.get(charger.id);
     const currentMode = state.operationMode;
 
-    if (prevMode !== undefined && prevMode !== currentMode) {
+    if (prevMode === currentMode) continue; // nothing changed -- no write needed, see tick-gate.ts
+
+    if (prevMode !== undefined) {
       if (currentMode === ChargerOperationMode.Disconnected) {
         await logActivity(charger.id, charger.name, ActivityType.Unplugged);
       } else if (prevMode === ChargerOperationMode.Disconnected) {
@@ -92,11 +103,16 @@ async function logStateTransitions(
 // resume on its own -- it stays off until someone we recognize starts it
 // again. This only runs at the cron cadence (currently every minute), so an
 // unrecognized session can draw power for up to that long before it's cut.
+// Returns whether any manual-charge-session row is still open once this tick
+// is done, so the caller can fold that into the tick-gate memory -- an open
+// session must never be treated as "quiet" (see tick-gate.ts), since it's
+// exactly the thing that needs a real check on the next tick (closing it
+// once the car disconnects).
 async function enforceAuthorizedCharging(
   chargers: ZaptecCharger[],
   scheduledChargerIds: Set<string>,
   stateCache: Map<string, ChargerState>,
-): Promise<void> {
+): Promise<{ anyOpenSessionsRemain: boolean }> {
   const openSessions = await db
     .select()
     .from(manualChargeSessions)
@@ -118,6 +134,7 @@ async function enforceAuthorizedCharging(
         .update(manualChargeSessions)
         .set({ endedAt: new Date() })
         .where(and(eq(manualChargeSessions.chargerId, charger.id), isNull(manualChargeSessions.endedAt)));
+      openChargerIds.delete(charger.id);
       continue;
     }
 
@@ -131,15 +148,37 @@ async function enforceAuthorizedCharging(
     await sendChargerCommand(charger.id, ZaptecCommand.StopChargingFinal).catch(() => undefined);
     await logActivity(charger.id, charger.name, ActivityType.StoppedUnplanned);
   }
+
+  return { anyOpenSessionsRemain: openChargerIds.size > 0 };
 }
 
-export async function runSchedulerTick(): Promise<{ processed: number }> {
+export async function runSchedulerTick(): Promise<{ processed: number; skipped?: boolean }> {
   const now0 = new Date();
   const tickStartedAt = now0.toISOString();
 
-  // Recorded unconditionally, even with zero schedules, so the dashboard can
-  // tell whether the external cron (cron-job.org) is actually still calling
-  // this at all -- not just whether a given schedule has been evaluated.
+  // Zaptec calls cost nothing in Neon terms, so they happen before any
+  // database access -- that's what lets the gate below decide whether this
+  // tick needs the database at all without touching it first.
+  const chargers = await listChargers();
+  const chargerById = new Map(chargers.map((charger) => [charger.id, charger]));
+  const stateCache = new Map<string, ChargerState>();
+  for (const charger of chargers) {
+    stateCache.set(
+      charger.id,
+      await getChargerState(charger.id, charger.isOnline, charger.circuitId, charger.installationId),
+    );
+  }
+  const modes = chargers.map((charger) => stateCache.get(charger.id)?.operationMode ?? null);
+
+  if (canSkipDbTouch(modes, now0, lastFullTick)) {
+    return { processed: 0, skipped: true };
+  }
+
+  // Recorded unconditionally whenever a full tick runs, even with zero
+  // schedules, so the dashboard can tell whether the external cron
+  // (cron-job.org) is actually still calling this at all -- not just whether
+  // a given schedule has been evaluated. While nothing's happening this only
+  // runs once per FULL_TICK_INTERVAL_MS (see tick-gate.ts), not every tick.
   await db
     .insert(schedulerHeartbeat)
     .values({ id: "singleton", lastTickAt: now0 })
@@ -154,20 +193,22 @@ export async function runSchedulerTick(): Promise<{ processed: number }> {
     `[scheduler] tick at ${tickStartedAt}: ${schedules.length} pending/active schedule(s)`,
   );
 
-  const chargers = await listChargers();
-  const chargerById = new Map(chargers.map((charger) => [charger.id, charger]));
-  const stateCache = new Map<string, ChargerState>();
-
   // Runs for every charger regardless of whether any schedule exists, since
   // an unauthorized session can happen on a charger with no schedule at all.
-  // This populates stateCache for every charger, so the transition log below
-  // can run purely off the cache.
-  await enforceAuthorizedCharging(
+  // stateCache is already populated for every charger from the Zaptec calls
+  // above, so neither this nor the transition log below needs to re-fetch.
+  const { anyOpenSessionsRemain } = await enforceAuthorizedCharging(
     chargers,
     new Set(schedules.map((s) => s.chargerId)),
     stateCache,
   );
   await logStateTransitions(chargers, stateCache);
+
+  const allDisconnected = modes.every((mode) => mode === ChargerOperationMode.Disconnected);
+  lastFullTick = {
+    checkedAt: now0,
+    allQuiet: allDisconnected && schedules.length === 0 && !anyOpenSessionsRemain,
+  };
 
   if (schedules.length === 0) {
     return { processed: 0 };

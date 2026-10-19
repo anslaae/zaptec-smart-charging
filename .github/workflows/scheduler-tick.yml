@@ -3,9 +3,10 @@ name: Scheduler tick (manual)
 # GitHub Actions' `schedule` trigger turned out to be unreliable for this --
 # GitHub explicitly documents it as best-effort and deprioritizes it under
 # load, especially on low-traffic repos. In practice this fired hours apart
-# instead of every 5 minutes. cron-job.org (https://cron-job.org) now calls
-# /api/cron/tick directly on a real 5-minute schedule; see the README. This
-# workflow is kept only for manually testing the tick from the GitHub UI.
+# instead of on the intended cadence. cron-job.org (https://cron-job.org) now
+# calls /api/cron/tick directly on a real schedule (every minute as of this
+# writing; see the README). This workflow is kept only for manually testing
+# the tick from the GitHub UI.
 
 on:
   workflow_dispatch:

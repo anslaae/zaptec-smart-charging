@@ -17,31 +17,45 @@ interface SchedulerHealth {
   stale: boolean;
 }
 
-export async function GET() {
-  const now = new Date();
-  let databaseOk = true;
-  let scheduler: SchedulerHealth;
+// An uptime monitor's ping interval is outside this app's control, and every
+// ping otherwise reads the database -- which, on a warm Vercel instance,
+// would on its own be enough to keep Neon's compute from ever going idle
+// regardless of how infrequently the scheduler tick touches it (see
+// tick-gate.ts). This cache just deduplicates the DB read itself, so it only
+// caches the raw lastTickAt/databaseOk -- secondsSinceLastTick and stale are
+// still derived fresh against the real current time on every request.
+const HEALTH_CACHE_TTL_MS = 60 * 1000;
+let cachedRow: { lastTickAt: Date | null; databaseOk: boolean; at: number } | null = null;
 
+async function getCachedLastTick(now: number): Promise<{ lastTickAt: Date | null; databaseOk: boolean }> {
+  if (cachedRow && now - cachedRow.at < HEALTH_CACHE_TTL_MS) {
+    return cachedRow;
+  }
   try {
     const [row] = await db
       .select({ lastTickAt: schedulerHeartbeat.lastTickAt })
       .from(schedulerHeartbeat)
       .where(eq(schedulerHeartbeat.id, "singleton"))
       .limit(1);
-
-    const lastTickAt = row?.lastTickAt ?? null;
-    const secondsSinceLastTick = lastTickAt
-      ? Math.floor((now.getTime() - lastTickAt.getTime()) / 1000)
-      : null;
-    scheduler = {
-      lastTickAt: lastTickAt ? lastTickAt.toISOString() : null,
-      secondsSinceLastTick,
-      stale: secondsSinceLastTick == null || secondsSinceLastTick > STALE_AFTER_SECONDS,
-    };
+    cachedRow = { lastTickAt: row?.lastTickAt ?? null, databaseOk: true, at: now };
   } catch {
-    databaseOk = false;
-    scheduler = { lastTickAt: null, secondsSinceLastTick: null, stale: true };
+    cachedRow = { lastTickAt: null, databaseOk: false, at: now };
   }
+  return cachedRow;
+}
+
+export async function GET() {
+  const now = new Date();
+  const { lastTickAt, databaseOk } = await getCachedLastTick(now.getTime());
+
+  const secondsSinceLastTick = lastTickAt
+    ? Math.floor((now.getTime() - lastTickAt.getTime()) / 1000)
+    : null;
+  const scheduler: SchedulerHealth = {
+    lastTickAt: lastTickAt ? lastTickAt.toISOString() : null,
+    secondsSinceLastTick,
+    stale: secondsSinceLastTick == null || secondsSinceLastTick > STALE_AFTER_SECONDS,
+  };
 
   const healthy = databaseOk && !scheduler.stale;
 

@@ -40,8 +40,9 @@ src/lib/zaptec/
 src/lib/scheduler/
   engine.ts                         PURE decideNextAction(schedule, state, now) → resume/pause/complete/none. estimateChargingPlan() shared with the UI's live estimate.
   engine.test.ts                    unit tests for the above
-  heartbeat.ts                      STALE_AFTER_SECONDS, shared between the dashboard badge and /api/health
-  run.ts                            the cron tick: enforceAuthorizedCharging() (security net), logStateTransitions() (activity log), then per-schedule decide/act loop
+  heartbeat.ts                      STALE_AFTER_SECONDS, shared between the dashboard badge and /api/health -- sized around tick-gate.ts's FULL_TICK_INTERVAL_MS, not the 1-minute cron cadence
+  tick-gate.ts                      PURE canSkipDbTouch() -- see "Neon compute / cron cadence" below
+  run.ts                            the cron tick: Zaptec calls first (free), tick-gate.ts decides whether to touch Neon at all, then enforceAuthorizedCharging() (security net), logStateTransitions() (activity log), then per-schedule decide/act loop
 
 src/lib/smartcar/
   auth.ts                           OAuth2 Client Credentials (app-level) token fetch + in-memory cache
@@ -117,6 +118,18 @@ The charger sits in a public/shared area, so "Require authentication" should sta
 - A per-charger "App not in control" badge (`appHasControl()` in `state.ts`) shows if "Require authentication" ever gets switched back on and there's no existing session to manage — manual/plan controls are hidden in that state rather than silently doing nothing.
 
 **The "correct" alternative is OCPP** (switch the installation to OCPP mode, run our own CSMS that issues real `RemoteStartTransaction`/authorizes at the protocol level) — this was explained in detail to the user and **explicitly deferred**: it needs a new always-on server (can't run on Vercel's serverless functions — OCPP needs a persistent inbound WebSocket), a nontrivial OCPP 1.6 implementation, and probably loses some native Zaptec app convenience. Don't build this unprompted; it's a deliberate future project, not a bug to fix.
+
+## Neon compute / cron cadence
+
+Neon (free tier) auto-suspends its compute after a few idle minutes, but the 1-minute cron tick was touching Neon on **every single invocation** (heartbeat upsert, schedule read, `manual_charge_sessions` read, a `charger_observed_state` upsert per charger even when nothing changed) — so it never got the chance to suspend, and was burning through the free compute-hour allowance (discovered 2026-10-19 at 85 CU-hrs spent). Measured against real usage first (`activity_events`'s plugged-in/unplugged timeline): this household's charger sits disconnected for days at a stretch between uses, so the fix is a gate, not a slower cron:
+
+- `src/lib/scheduler/tick-gate.ts`'s `canSkipDbTouch()` (pure, unit-tested) lets `run.ts` skip the database **entirely** on a tick where every charger is disconnected *right now* (checked live against Zaptec — free in Neon terms) and the last tick that actually touched Neon found the same (no pending/active schedules, no open `manual_charge_sessions` row) within the last `FULL_TICK_INTERVAL_MS` (10 minutes).
+- It's self-healing by construction: a cold Vercel instance has no memory of the last check, so it always falls through to a real one; the memory only ever permits *skipping*, never *authorizes* anything. `enforceAuthorizedCharging()` still runs, unskipped, on every tick where a charger could plausibly be drawing power — the free-charging security model above is unaffected.
+- The one real trade-off: if a schedule's deadline passes while the car is still disconnected (the "needs to charge but no car is connected" problem case in `engine.ts`), surfacing that as `lastError` can lag by up to `FULL_TICK_INTERVAL_MS` instead of the next minute, since that write only happens on a full tick. Given this only matters while nothing is actually charging, this was judged an acceptable bound, not a feature loss — re-evaluate if that stops being true.
+- The scheduler heartbeat (`heartbeat.ts`) is written only on a full tick, so `STALE_AFTER_SECONDS` is sized well above `FULL_TICK_INTERVAL_MS` rather than the raw cron cadence — the dashboard badge and `/api/health` would otherwise flap to "stale" every time nothing's happening, which is the normal case this gate targets.
+- `/api/health`'s own DB read is cached in-memory for 60s per warm instance (`src/app/api/health/route.ts`) — this only helps if the external uptime monitor's ping interval is short enough to land on the same warm instance; check the monitor's actual configured interval if compute still isn't suspending after this change.
+- `postgres-js`'s client (`src/lib/db/index.ts`) sets `idle_timeout: 20` so a warm instance doesn't hold an idle TCP connection open indefinitely, which can itself block Neon's scale-to-zero independent of query frequency.
+- After any further change here, confirm in the Neon console that compute actually shows `Suspended` periods — don't assume from the code alone.
 
 ## Activity log, not alarms
 
