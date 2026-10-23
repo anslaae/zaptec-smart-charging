@@ -8,9 +8,11 @@ import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { chargeSchedules } from "@/lib/db/schema";
 import { HOUSEHOLD_TIME_ZONE, zonedDateTimeToUtc } from "@/lib/datetime";
-import { sendChargerCommand } from "@/lib/zaptec/client";
+import { listChargers, getChargerState, sendChargerCommand } from "@/lib/zaptec/client";
 import { ZaptecCommand } from "@/lib/zaptec/constants";
 import { logActivity, ActivityType } from "@/lib/activity/log";
+import { estimateChargingPlan } from "@/lib/scheduler/engine";
+import { getLearnedPowerKw } from "@/lib/scheduler/powerHistory.server";
 
 const CreateScheduleSchema = z.object({
   chargerId: z.string().min(1),
@@ -78,10 +80,31 @@ export async function createSchedule(
     userId: session.userId,
   });
 
+  // Mirrors decideNextAction's own math: the scheduler starts charging
+  // immediately regardless (never blocks or delays on a tight deadline), but
+  // the person creating the plan should know upfront that's what's about to
+  // happen rather than finding out later from a silent immediate start.
+  const startsImmediately = await (async () => {
+    const charger = (await listChargers()).find((c) => c.id === parsed.data.chargerId);
+    if (!charger) return false;
+    const [state, learnedPowerKw] = await Promise.all([
+      getChargerState(charger.id, charger.isOnline, charger.circuitId, charger.installationId),
+      getLearnedPowerKw(),
+    ]);
+    const { latestStartTime } = estimateChargingPlan(
+      { targetEnergyKwh: parsed.data.targetEnergyKwh, readyBy },
+      state,
+      learnedPowerKw,
+    );
+    return latestStartTime <= new Date();
+  })().catch(() => false); // a lookup failure here shouldn't block plan creation
+
   revalidatePath("/");
   // ?created=1 lets the dashboard fire a one-off success toast on arrival --
-  // this component is about to unmount (redirect), so it can't show one itself.
-  redirect("/?created=1");
+  // this component is about to unmount (redirect), so it can't show one
+  // itself. &tight=1 additionally flags that there wasn't enough time to
+  // finish comfortably, so charging will start right away.
+  redirect(`/?created=1${startsImmediately ? "&tight=1" : ""}`);
 }
 
 export interface ActionResult {

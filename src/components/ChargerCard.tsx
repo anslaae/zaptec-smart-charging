@@ -90,6 +90,7 @@ export function ChargerCard({
   state,
   schedule,
   startTime,
+  startsImmediately,
   lastTickAt,
   stateOfCharge,
   learnedPowerKw,
@@ -99,6 +100,7 @@ export function ChargerCard({
   state: ChargerState;
   schedule: Schedule | null;
   startTime: string | null;
+  startsImmediately: boolean;
   lastTickAt: Date | null;
   stateOfCharge: StateOfCharge | null;
   learnedPowerKw: number | null;
@@ -113,6 +115,9 @@ export function ChargerCard({
   const effectiveState = effective?.state ?? state;
   const effectiveSchedule = effective ? effective.schedule : schedule;
   const effectiveStartTime = effective ? effective.startTime : startTime;
+  // Debug scenarios are static fixtures with a fixed future startTime, so
+  // none of them represent a too-tight deadline.
+  const effectiveStartsImmediately = effective ? false : startsImmediately;
   // A debug preview swaps in fake charger state; a real battery reading
   // shown alongside it would be misleading, so it's hidden during preview
   // too, same as the real action buttons are.
@@ -179,8 +184,10 @@ export function ChargerCard({
                 {effectiveSchedule.lastNote ? ` · ${effectiveSchedule.lastNote}` : ""}
               </p>
               {effectiveSchedule.status === "pending" && effectiveStartTime && (
-                <p className="text-black/50 dark:text-white/50">
-                  Starts around {formatOsloDateTime(effectiveStartTime)}
+                <p className={effectiveStartsImmediately ? "text-amber-600 dark:text-amber-500" : "text-black/50 dark:text-white/50"}>
+                  {effectiveStartsImmediately
+                    ? "Not enough time left to finish comfortably -- will start charging as soon as possible"
+                    : `Starts around ${formatOsloDateTime(effectiveStartTime)}`}
                 </p>
               )}
               {effectiveSchedule.lastError && (

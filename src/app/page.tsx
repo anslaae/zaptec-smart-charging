@@ -69,14 +69,21 @@ export default async function DashboardPage() {
             // createSchedule() rejects overlapping schedules per charger, so
             // there's at most one pending/active plan per charger.
             const schedule = schedules.find((s) => s.chargerId === c.id) ?? null;
-            const startTime =
+            const pendingPlan =
               schedule?.status === "pending"
                 ? estimateChargingPlan(
                     { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
                     state,
                     learnedPowerKw,
-                  ).latestStartTime.toISOString()
+                  )
                 : null;
+            // The scheduler itself (decideNextAction) already starts charging
+            // the moment latestStartTime arrives, even if that's already in
+            // the past when the plan is created -- so a too-tight deadline
+            // never blocks or delays charging. This just tells the person
+            // that's what's about to happen, instead of a silent "Starts
+            // around <time already passed>".
+            const startsImmediately = pendingPlan ? pendingPlan.latestStartTime <= new Date() : false;
             return (
               <ChargerCard
                 key={c.id}
@@ -84,7 +91,8 @@ export default async function DashboardPage() {
                 address={c.installationName}
                 state={state}
                 schedule={schedule}
-                startTime={startTime}
+                startTime={pendingPlan?.latestStartTime.toISOString() ?? null}
+                startsImmediately={startsImmediately}
                 lastTickAt={heartbeat?.lastTickAt ?? null}
                 stateOfCharge={stateOfCharge}
                 learnedPowerKw={learnedPowerKw}

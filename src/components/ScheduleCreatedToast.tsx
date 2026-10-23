@@ -13,7 +13,13 @@ export function ScheduleCreatedToast() {
 
   useEffect(() => {
     if (searchParams.get("created") === "1") {
-      toast.success("Charging planned");
+      if (searchParams.get("tight") === "1") {
+        toast.warning("Charging planned", {
+          description: "Not enough time to finish comfortably by the deadline -- charging will start right away.",
+        });
+      } else {
+        toast.success("Charging planned");
+      }
       router.replace("/");
     }
   }, [searchParams, router]);
