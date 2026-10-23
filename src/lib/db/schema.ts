@@ -66,6 +66,23 @@ export const chargeSchedules = pgTable("charge_schedules", {
     precision: 6,
     scale: 2,
   }),
+  // Zaptec resets sessionEnergyKwh to 0 when the car is unplugged and
+  // replugged (a new session starts), so without this a disconnect mid-plan
+  // would make the completion check think almost nothing had been
+  // delivered and re-charge the full target from scratch. priorSessionEnergyKwh
+  // is the running total from sessions that have already ended under this
+  // schedule; lastObservedSessionEnergyKwh is the most recent reading for
+  // whichever session zaptecSessionId currently points at, carried forward
+  // into priorSessionEnergyKwh the moment a new session is observed. See
+  // reconcileSessionEnergy() in engine.ts.
+  priorSessionEnergyKwh: numeric("prior_session_energy_kwh", {
+    precision: 6,
+    scale: 2,
+  }),
+  lastObservedSessionEnergyKwh: numeric("last_observed_session_energy_kwh", {
+    precision: 6,
+    scale: 2,
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

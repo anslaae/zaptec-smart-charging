@@ -11,7 +11,7 @@ import {
 import { listChargers, getChargerState, sendChargerCommand, isCurrentlyCharging } from "@/lib/zaptec/client";
 import { ZaptecCommand, ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState, ZaptecCharger } from "@/lib/zaptec/types";
-import { decideNextAction, estimateChargingPlan } from "./engine";
+import { decideNextAction, estimateChargingPlan, reconcileSessionEnergy } from "./engine";
 import { evaluateScheduleAccuracy } from "./accuracy";
 import { getLearnedPowerKw } from "./powerHistory.server";
 import { logActivity, ActivityType } from "@/lib/activity/log";
@@ -235,9 +235,39 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         stateCache.set(schedule.chargerId, state);
       }
 
+      // A disconnect/reconnect mid-schedule starts a new Zaptec session with
+      // its own sessionEnergyKwh counter back at 0 -- reconcile against what
+      // prior sessions under this schedule already delivered so the
+      // completion check (and the estimate below) sees the true running
+      // total, not just the newest session's. Only applies once charging has
+      // actually started (zaptecSessionId set); see reconcileSessionEnergy.
+      let effectiveState = state;
+      let sessionEnergyUpdate: {
+        zaptecSessionId: string | null;
+        priorSessionEnergyKwh: string;
+        lastObservedSessionEnergyKwh: string;
+      } | null = null;
+      if (schedule.zaptecSessionId != null) {
+        const { effectiveSessionEnergyKwh, nextTracker } = reconcileSessionEnergy(
+          {
+            zaptecSessionId: schedule.zaptecSessionId,
+            priorSessionEnergyKwh: Number(schedule.priorSessionEnergyKwh ?? 0),
+            lastObservedSessionEnergyKwh: Number(schedule.lastObservedSessionEnergyKwh ?? 0),
+          },
+          state.sessionId,
+          state.sessionEnergyKwh ?? 0,
+        );
+        effectiveState = { ...state, sessionEnergyKwh: effectiveSessionEnergyKwh };
+        sessionEnergyUpdate = {
+          zaptecSessionId: nextTracker.zaptecSessionId,
+          priorSessionEnergyKwh: nextTracker.priorSessionEnergyKwh.toString(),
+          lastObservedSessionEnergyKwh: nextTracker.lastObservedSessionEnergyKwh.toString(),
+        };
+      }
+
       const decision = decideNextAction(
         { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
-        state,
+        effectiveState,
         now,
         learnedPowerKw,
       );
@@ -270,7 +300,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
             finishedAt: now,
             estimatedDurationMinutes: schedule.estimatedDurationMinutes,
             targetEnergyKwh: Number(schedule.targetEnergyKwh),
-            deliveredEnergyKwh: state.sessionEnergyKwh ?? 0,
+            deliveredEnergyKwh: effectiveState.sessionEnergyKwh ?? 0,
             wasPaused: resumeActions.length > 1,
           }).summary;
         }
@@ -291,6 +321,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
             lastError: null,
             endedAt: now,
             updatedAt: now,
+            ...sessionEnergyUpdate,
           })
           .where(eq(chargeSchedules.id, schedule.id));
         continue;
@@ -343,7 +374,13 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
                   (firstResumeEstimate.remainingKwh / firstResumeEstimate.powerKw) * 60,
                 ),
                 remainingKwhAtStart: firstResumeEstimate.remainingKwh.toString(),
+                // Baseline for reconcileSessionEnergy -- nothing from a prior
+                // session yet, and this is the first reading of the one
+                // we're now tracking.
+                priorSessionEnergyKwh: "0",
+                lastObservedSessionEnergyKwh: (state.sessionEnergyKwh ?? 0).toString(),
               }),
+            ...(!isFirstResume && sessionEnergyUpdate),
           })
           .where(eq(chargeSchedules.id, schedule.id));
         continue;
@@ -367,6 +404,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
           lastError: decision.isProblem ? decision.reason : null,
           lastEvaluatedAt: now,
           updatedAt: now,
+          ...sessionEnergyUpdate,
         })
         .where(eq(chargeSchedules.id, schedule.id));
     } catch (error) {

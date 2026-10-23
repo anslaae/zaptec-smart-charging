@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideNextAction, type ScheduleInput } from "./engine";
+import { decideNextAction, reconcileSessionEnergy, type ScheduleInput } from "./engine";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState } from "@/lib/zaptec/types";
 
@@ -95,5 +95,58 @@ describe("decideNextAction", () => {
     });
     const decision = decideNextAction(schedule, state, new Date("2026-01-01T06:59:00Z"));
     expect(decision).toEqual({ action: "resume" });
+  });
+});
+
+describe("reconcileSessionEnergy", () => {
+  it("passes through the live reading while the session hasn't changed", () => {
+    const result = reconcileSessionEnergy(
+      { zaptecSessionId: "session-a", priorSessionEnergyKwh: 0, lastObservedSessionEnergyKwh: 3 },
+      "session-a",
+      5,
+    );
+    expect(result.effectiveSessionEnergyKwh).toBe(5);
+    expect(result.nextTracker).toEqual({
+      zaptecSessionId: "session-a",
+      priorSessionEnergyKwh: 0,
+      lastObservedSessionEnergyKwh: 5,
+    });
+  });
+
+  it("carries the last-seen reading forward when a new session starts (a disconnect/reconnect)", () => {
+    // The car delivered 8 kWh on session-a, then got unplugged and replugged
+    // -- session-b starts back at 0.5 kWh. The target comparison should see
+    // 8.5 kWh delivered overall, not 0.5.
+    const result = reconcileSessionEnergy(
+      { zaptecSessionId: "session-a", priorSessionEnergyKwh: 0, lastObservedSessionEnergyKwh: 8 },
+      "session-b",
+      0.5,
+    );
+    expect(result.effectiveSessionEnergyKwh).toBe(8.5);
+    expect(result.nextTracker).toEqual({
+      zaptecSessionId: "session-b",
+      priorSessionEnergyKwh: 8,
+      lastObservedSessionEnergyKwh: 0.5,
+    });
+  });
+
+  it("keeps accumulating correctly across a second reconnect", () => {
+    const result = reconcileSessionEnergy(
+      { zaptecSessionId: "session-b", priorSessionEnergyKwh: 8, lastObservedSessionEnergyKwh: 3 },
+      "session-c",
+      0,
+    );
+    expect(result.effectiveSessionEnergyKwh).toBe(11);
+    expect(result.nextTracker.priorSessionEnergyKwh).toBe(11);
+  });
+
+  it("doesn't roll over before a session has ever been tracked", () => {
+    const result = reconcileSessionEnergy(
+      { zaptecSessionId: null, priorSessionEnergyKwh: 0, lastObservedSessionEnergyKwh: 0 },
+      "session-a",
+      1.5,
+    );
+    expect(result.effectiveSessionEnergyKwh).toBe(1.5);
+    expect(result.nextTracker.zaptecSessionId).toBe("session-a");
   });
 });

@@ -43,6 +43,8 @@ function baseSchedule(overrides: Partial<Schedule>): Schedule {
     zaptecSessionId: null,
     estimatedDurationMinutes: null,
     remainingKwhAtStart: null,
+    priorSessionEnergyKwh: null,
+    lastObservedSessionEnergyKwh: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

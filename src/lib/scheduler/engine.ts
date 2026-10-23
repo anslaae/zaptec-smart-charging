@@ -68,6 +68,56 @@ export function estimateChargingPlan(
   return { remainingKwh, powerKw, latestStartTime };
 }
 
+export interface SessionEnergyTracker {
+  zaptecSessionId: string | null;
+  /** Cumulative kWh from sessions that have already ended under this schedule. */
+  priorSessionEnergyKwh: number;
+  /** The most recent sessionEnergyKwh reading for whichever session zaptecSessionId currently points at. */
+  lastObservedSessionEnergyKwh: number;
+}
+
+export interface SessionEnergyReconciliation {
+  /** Total delivered across every session seen under this schedule so far -- use this in place of the charger's raw sessionEnergyKwh. */
+  effectiveSessionEnergyKwh: number;
+  /** What to persist for next tick. */
+  nextTracker: SessionEnergyTracker;
+}
+
+/**
+ * Zaptec's own sessionEnergyKwh resets to 0 whenever the car is unplugged
+ * and replugged (a new session starts) -- confirmed by the session ID
+ * changing. Without this, a disconnect partway through a schedule would make
+ * the completion check think almost nothing had been delivered and
+ * re-deliver the full target on top of what the car already got. We don't
+ * have the ended session's exact final reading (it may have kept climbing
+ * for up to one tick after our last observation of it), so the last value we
+ * saw is carried forward -- undercounting by at most one tick's worth of
+ * energy, which is a far smaller error than ignoring it entirely.
+ */
+export function reconcileSessionEnergy(
+  tracker: SessionEnergyTracker,
+  currentSessionId: string | null,
+  currentSessionEnergyKwh: number,
+): SessionEnergyReconciliation {
+  const sessionChanged =
+    tracker.zaptecSessionId != null &&
+    currentSessionId != null &&
+    currentSessionId !== tracker.zaptecSessionId;
+
+  const priorSessionEnergyKwh = sessionChanged
+    ? tracker.priorSessionEnergyKwh + tracker.lastObservedSessionEnergyKwh
+    : tracker.priorSessionEnergyKwh;
+
+  return {
+    effectiveSessionEnergyKwh: priorSessionEnergyKwh + currentSessionEnergyKwh,
+    nextTracker: {
+      zaptecSessionId: currentSessionId ?? tracker.zaptecSessionId,
+      priorSessionEnergyKwh,
+      lastObservedSessionEnergyKwh: currentSessionEnergyKwh,
+    },
+  };
+}
+
 export function decideNextAction(
   schedule: ScheduleInput,
   state: ChargerState,
