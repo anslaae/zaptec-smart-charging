@@ -37,10 +37,17 @@ export interface ChargingPlanEstimate {
  * The core time-budget math, shared by decideNextAction (to know whether
  * charging must start *now*) and the UI (to show the user when that will
  * be, before it's actually time to start).
+ *
+ * learnedPowerKw, when available, is the real-world rate this car has
+ * actually drawn on past sessions (see powerHistory.ts) -- preferred over
+ * state.maxPowerKw, which is only the circuit's theoretical ceiling and was
+ * found to overestimate the real charge rate by ~40-65% (the car's onboard
+ * charger draws well under what the circuit allows).
  */
 export function estimateChargingPlan(
   schedule: ScheduleInput,
   state: ChargerState,
+  learnedPowerKw?: number | null,
 ): ChargingPlanEstimate {
   const sessionEnergyKwh = state.sessionEnergyKwh ?? 0;
   const remainingKwh = Math.max(0, schedule.targetEnergyKwh - sessionEnergyKwh);
@@ -48,7 +55,8 @@ export function estimateChargingPlan(
     state.instantPowerWatts && state.instantPowerWatts > 0
       ? state.instantPowerWatts / 1000
       : null;
-  const powerKw = observedPowerKw ?? state.maxPowerKw ?? DEFAULT_ASSUMED_POWER_KW;
+  const powerKw =
+    observedPowerKw ?? learnedPowerKw ?? state.maxPowerKw ?? DEFAULT_ASSUMED_POWER_KW;
   const estimatedHoursNeeded = remainingKwh / powerKw;
 
   const latestStartTime = new Date(
@@ -64,6 +72,7 @@ export function decideNextAction(
   schedule: ScheduleInput,
   state: ChargerState,
   now: Date,
+  learnedPowerKw?: number | null,
 ): SchedulerDecision {
   const sessionEnergyKwh = state.sessionEnergyKwh ?? 0;
 
@@ -75,7 +84,7 @@ export function decideNextAction(
     return { action: "none", reason: "Charger is offline" };
   }
 
-  const { latestStartTime } = estimateChargingPlan(schedule, state);
+  const { latestStartTime } = estimateChargingPlan(schedule, state, learnedPowerKw);
   const mustBeChargingNow = now >= latestStartTime || now >= schedule.readyBy;
 
   if (mustBeChargingNow) {

@@ -13,6 +13,7 @@ import { ZaptecCommand, ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState, ZaptecCharger } from "@/lib/zaptec/types";
 import { decideNextAction, estimateChargingPlan } from "./engine";
 import { evaluateScheduleAccuracy } from "./accuracy";
+import { getLearnedPowerKw } from "./powerHistory.server";
 import { logActivity, ActivityType } from "@/lib/activity/log";
 import { sendPushToAllSubscribers } from "@/lib/push/send";
 import { canSkipDbTouch, type QuietTickMemory } from "./tick-gate";
@@ -214,6 +215,11 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
     return { processed: 0 };
   }
 
+  // One query per tick, shared by every schedule below -- see
+  // powerHistory.server.ts for why this is preferred over the circuit's
+  // theoretical max power.
+  const learnedPowerKw = await getLearnedPowerKw();
+
   for (const schedule of schedules) {
     const now = new Date();
     try {
@@ -233,6 +239,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
         state,
         now,
+        learnedPowerKw,
       );
 
       const decisionDetail = decision.action === "none" ? ` — ${decision.reason}` : "";
@@ -306,19 +313,18 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
             body: `Your planned charge started on ${schedule.chargerName}.`,
           }).catch(() => undefined);
         }
-        // Predicted duration, captured once at the moment charging actually
-        // starts -- compared against the real duration once the plan
-        // completes (see accuracy.ts). Recomputed here rather than reusing
+        // Predicted duration (and the remainingKwh it was based on -- stored
+        // so it can later be compared against the real duration to refine
+        // learnedPowerKw, see powerHistory.ts), captured once at the moment
+        // charging actually starts. Recomputed here rather than reusing
         // decideNextAction's internal estimate, since that one doesn't
         // surface remainingKwh/powerKw.
-        const estimatedDurationMinutes = isFirstResume
-          ? (() => {
-              const { remainingKwh, powerKw } = estimateChargingPlan(
-                { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
-                state,
-              );
-              return Math.round((remainingKwh / powerKw) * 60);
-            })()
+        const firstResumeEstimate = isFirstResume
+          ? estimateChargingPlan(
+              { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
+              state,
+              learnedPowerKw,
+            )
           : null;
         await db
           .update(chargeSchedules)
@@ -329,11 +335,15 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
             lastEvaluatedAt: now,
             lastError: null,
             updatedAt: now,
-            ...(isFirstResume && {
-              startedAt: now,
-              zaptecSessionId: state.sessionId,
-              estimatedDurationMinutes,
-            }),
+            ...(isFirstResume &&
+              firstResumeEstimate && {
+                startedAt: now,
+                zaptecSessionId: state.sessionId,
+                estimatedDurationMinutes: Math.round(
+                  (firstResumeEstimate.remainingKwh / firstResumeEstimate.powerKw) * 60,
+                ),
+                remainingKwhAtStart: firstResumeEstimate.remainingKwh.toString(),
+              }),
           })
           .where(eq(chargeSchedules.id, schedule.id));
         continue;

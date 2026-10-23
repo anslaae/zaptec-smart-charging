@@ -59,10 +59,12 @@ export function QuickScheduleForm({
   chargers,
   chargerState,
   stateOfCharge,
+  learnedPowerKw,
 }: {
   chargers: { id: string; name: string }[];
   chargerState: ChargerState | null;
   stateOfCharge: StateOfCharge | null;
+  learnedPowerKw: number | null;
 }) {
   const [state, formAction, pending] = useActionState(createSchedule, initialState);
   // Prefilled from the live Smartcar reading when available (still just a
@@ -89,8 +91,9 @@ export function QuickScheduleForm({
     if (!chargerState || targetEnergyKwh <= 0) return null;
     const readyBy = zonedDateTimeToUtc(readyByValue, HOUSEHOLD_TIME_ZONE);
     if (Number.isNaN(readyBy.getTime())) return null;
-    return estimateChargingPlan({ targetEnergyKwh, readyBy }, chargerState).latestStartTime;
-  }, [chargerState, targetEnergyKwh, readyByValue]);
+    return estimateChargingPlan({ targetEnergyKwh, readyBy }, chargerState, learnedPowerKw)
+      .latestStartTime;
+  }, [chargerState, targetEnergyKwh, readyByValue, learnedPowerKw]);
 
   const noCarConnected = chargerState?.operationMode === ChargerOperationMode.Disconnected;
 

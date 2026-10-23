@@ -57,6 +57,15 @@ export const chargeSchedules = pgTable("charge_schedules", {
   // completes, see src/lib/scheduler/accuracy.ts. Null for schedules created
   // before this existed, and for ones that never actually started charging.
   estimatedDurationMinutes: integer("estimated_duration_minutes"),
+  // estimateChargingPlan()'s remainingKwh, captured at the same moment as
+  // estimatedDurationMinutes above -- kept separately so that once the
+  // schedule completes, (remainingKwhAtStart / actual duration) gives the
+  // real-world charge rate for that session, used to learn a better power
+  // estimate than the circuit's theoretical max (see powerHistory.ts).
+  remainingKwhAtStart: numeric("remaining_kwh_at_start", {
+    precision: 6,
+    scale: 2,
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -1,0 +1,1 @@
+ALTER TABLE "charge_schedules" ADD COLUMN "remaining_kwh_at_start" numeric(6, 2);
