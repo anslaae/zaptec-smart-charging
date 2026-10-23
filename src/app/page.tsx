@@ -87,6 +87,7 @@ export default async function DashboardPage() {
                 startTime={startTime}
                 lastTickAt={heartbeat?.lastTickAt ?? null}
                 stateOfCharge={stateOfCharge}
+                learnedPowerKw={learnedPowerKw}
               />
             );
           })}

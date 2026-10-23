@@ -92,6 +92,7 @@ export function ChargerCard({
   startTime,
   lastTickAt,
   stateOfCharge,
+  learnedPowerKw,
 }: {
   name: string;
   address: string;
@@ -100,6 +101,7 @@ export function ChargerCard({
   startTime: string | null;
   lastTickAt: Date | null;
   stateOfCharge: StateOfCharge | null;
+  learnedPowerKw: number | null;
 }) {
   // A debug scenario is a pure front-end preview -- it replaces what's
   // rendered without touching real data, and (below) the real action
@@ -208,7 +210,10 @@ export function ChargerCard({
         </div>
       )}
 
-      {(address || effectiveState.lastCompletedSession || effectiveState.maxPowerKw != null) && (
+      {(address ||
+        effectiveState.lastCompletedSession ||
+        effectiveState.maxPowerKw != null ||
+        learnedPowerKw != null) && (
         <details className="mt-3 group">
           <summary className="cursor-pointer list-none text-xs font-medium text-black/50 [&::-webkit-details-marker]:hidden dark:text-white/50">
             Details
@@ -223,6 +228,16 @@ export function ChargerCard({
             )}
             {effectiveState.maxPowerKw != null && (
               <p>Max charge rate: {effectiveState.maxPowerKw.toFixed(1)} kW</p>
+            )}
+            {/* Not a debug-preview field -- it's real charging history, not
+                part of the fake state the preview swaps in, so it's shown
+                as-is even while previewing a scenario. Surfaced here so the
+                "starts around"/estimate above can be sanity-checked against
+                what it's actually based on. */}
+            {learnedPowerKw != null ? (
+              <p>Estimates use a learned rate of {learnedPowerKw.toFixed(1)} kW (from past sessions)</p>
+            ) : (
+              <p>Estimates use the max charge rate above -- not enough charging history yet to learn a real rate</p>
             )}
           </div>
         </details>
