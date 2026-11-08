@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
   MYOPEL_APP_STORE_URL,
+  MYOPEL_DEEPLINK_URL,
   MYOPEL_PLAY_STORE_URL,
   MYOPEL_SCHEME_URL,
-  myOpelAndroidLauncherIntent,
+  myOpelAndroidDeepLinkIntent,
   myOpelAndroidSchemeIntent,
 } from "@/lib/myopel";
 
@@ -19,46 +20,58 @@ interface Candidate {
   platform: Platform;
 }
 
+// Round 2. Round 1 showed: "launch by package" intents go to the Play Store
+// (myOpel's launcher screen isn't web-openable), and the mymopsdk scheme only
+// works while myOpel is already running on Android but does open it on iOS.
 const CANDIDATES: Candidate[] = [
   {
-    id: "launcher-intent",
-    label: "A. Intent: launch by package",
-    description: "Starts myOpel's main screen by its Android package name. No fallback, so if it isn't installed nothing happens.",
-    href: myOpelAndroidLauncherIntent(),
+    id: "deeplink-intent",
+    label: "1. Intent: myOpel's deep-link address",
+    description:
+      "Opens https://deeplink-op.mym.awsmpsa.com/ in the myOpel app specifically. Try it with myOpel fully closed (swipe it away first). No fallback.",
+    href: myOpelAndroidDeepLinkIntent(),
     platform: "android",
   },
   {
+    id: "deeplink-intent-fallback",
+    label: "2. Same as 1 + Play Store fallback",
+    description: "Same as 1, but goes to the Play Store if myOpel isn't installed. Likely final version for Android.",
+    href: myOpelAndroidDeepLinkIntent(MYOPEL_PLAY_STORE_URL),
+    platform: "android",
+  },
+  {
+    id: "deeplink-url",
+    label: "3. Plain deep-link address",
+    description:
+      "Plain https link to myOpel's deep-link domain. On iPhone it should open myOpel with no prompt. On Android it only works if you've switched the address on under myOpel's \"Open by default\".",
+    href: MYOPEL_DEEPLINK_URL,
+    platform: "both",
+  },
+  {
+    id: "scheme-url",
+    label: "4. Plain mymopsdk:// link (was D)",
+    description: "Already works on iPhone, after an \"Open in My Opel\" prompt. For comparison with 3.",
+    href: MYOPEL_SCHEME_URL,
+    platform: "ios",
+  },
+  {
     id: "scheme-intent",
-    label: "B. Intent: mymopsdk scheme",
-    description: "Opens myOpel through its own URL scheme, limited to the myOpel package. No fallback.",
+    label: "5. Intent: mymopsdk scheme (was B)",
+    description: "Works only while myOpel is already running. For comparison with 1.",
     href: myOpelAndroidSchemeIntent(),
     platform: "android",
   },
   {
-    id: "launcher-intent-fallback",
-    label: "C. Intent A + Play Store fallback",
-    description: "Same as A, but goes to the Play Store if myOpel isn't installed. This is the likely final version for Android.",
-    href: myOpelAndroidLauncherIntent(MYOPEL_PLAY_STORE_URL),
-    platform: "android",
-  },
-  {
-    id: "scheme-url",
-    label: "D. Plain mymopsdk:// link",
-    description: "Bare custom-scheme link. The only option that can also work on iPhone.",
-    href: MYOPEL_SCHEME_URL,
-    platform: "both",
-  },
-  {
     id: "play-store",
-    label: "E. Play Store link (current button)",
-    description: "What the dashboard does today on Android. Baseline for comparison.",
+    label: "6. Play Store link (current button)",
+    description: "What the dashboard does today on Android.",
     href: MYOPEL_PLAY_STORE_URL,
     platform: "android",
   },
   {
     id: "app-store",
-    label: "F. App Store link (current iPhone button)",
-    description: "What the dashboard does today on iPhone. Baseline for comparison.",
+    label: "7. App Store link (current iPhone button)",
+    description: "What the dashboard does today on iPhone.",
     href: MYOPEL_APP_STORE_URL,
     platform: "ios",
   },
