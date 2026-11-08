@@ -101,9 +101,16 @@ export default async function DashboardPage() {
           })}
         </section>
 
-        <Link href="/history" className="text-sm text-black/50 underline underline-offset-2 dark:text-white/50">
-          View history
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href="/history" className="text-sm text-black/50 underline underline-offset-2 dark:text-white/50">
+            View history
+          </Link>
+          {/* Temporary: the installed home-screen app has no address bar, so
+              this is the only way to reach the myOpel link test from it. */}
+          <Link href="/debug/opel" className="text-sm text-black/50 underline underline-offset-2 dark:text-white/50">
+            Test myOpel link
+          </Link>
+        </div>
       </DebugProvider>
     </main>
   );

@@ -15,7 +15,7 @@ import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
 import { useDebugScenario } from "@/components/DebugProvider";
 import { DEBUG_SCENARIOS } from "@/lib/debug/scenarios";
 import { formatOsloDateTime } from "@/lib/datetime";
-import { MYOPEL_APP_STORE_URL, MYOPEL_PLAY_STORE_URL } from "@/lib/myopel";
+import { detectMyOpelPlatform, myOpelOpenUrl } from "@/lib/myopel";
 import type { chargeSchedules } from "@/lib/db/schema";
 
 type Schedule = typeof chargeSchedules.$inferSelect;
@@ -27,9 +27,26 @@ const STATUS_LABEL: Record<Schedule["status"], string> = {
   cancelled: "Cancelled",
 };
 
-// The "Open myOpel" button below still links to the store listings; which
-// link actually opens the installed app is being tested on real phones via
-// /debug/opel (see src/lib/myopel.ts) before this button is changed.
+// The "Open myOpel" button picks a per-platform app link (src/lib/myopel.ts,
+// confirmed on real phones via /debug/opel). It only renders after a
+// client-side Preheat success, so reading navigator here can't cause a
+// server/client hydration mismatch.
+function OpenMyOpelLink() {
+  const platform =
+    typeof navigator === "undefined" ? "other" : detectMyOpelPlatform(navigator.userAgent, navigator.maxTouchPoints);
+  return (
+    <a
+      href={myOpelOpenUrl(platform)}
+      // App links must open in place: in a new tab, Android leaves a blank
+      // tab behind. Only the desktop store fallback gets one.
+      target={platform === "other" ? "_blank" : undefined}
+      rel="noopener noreferrer"
+      className="flex h-9 shrink-0 items-center justify-center rounded-md border border-black/10 px-3 text-sm font-medium hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+    >
+      Open myOpel →
+    </a>
+  );
+}
 
 function formatDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
@@ -272,20 +289,7 @@ export function ChargerCard({
           </div>
         ) : (
           <div className="flex items-center justify-end gap-2">
-            {preheatStarted && (
-              <a
-                href={
-                  typeof navigator !== "undefined" && /android/i.test(navigator.userAgent)
-                    ? MYOPEL_PLAY_STORE_URL
-                    : MYOPEL_APP_STORE_URL
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex h-9 shrink-0 items-center justify-center rounded-md border border-black/10 px-3 text-sm font-medium hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
-              >
-                Open myOpel →
-              </a>
-            )}
+            {preheatStarted && <OpenMyOpelLink />}
             {charging ? (
               <ManualChargeButton chargerId={state.chargerId} chargerName={name} mode="stop" />
             ) : noCarConnected ? null : (

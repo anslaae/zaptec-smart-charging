@@ -46,6 +46,37 @@ export function myOpelAndroidDeepLinkIntent(fallbackUrl?: string): string {
   return intentUrl(`${MYOPEL_DEEPLINK_HOST}/`, ["scheme=https", "action=android.intent.action.VIEW"], fallbackUrl);
 }
 
+export type MyOpelPlatform = "android" | "ios" | "other";
+
+// iPadOS Safari reports a desktop "Macintosh" user agent, so a Mac UA with a
+// touchscreen is treated as iOS.
+export function detectMyOpelPlatform(userAgent: string, maxTouchPoints = 0): MyOpelPlatform {
+  if (/android/i.test(userAgent)) return "android";
+  if (/iphone|ipad|ipod/i.test(userAgent)) return "ios";
+  if (/macintosh/i.test(userAgent) && maxTouchPoints > 1) return "ios";
+  return "other";
+}
+
+// The link the dashboard's "Open myOpel" button uses, per platform. Both
+// phone choices were confirmed on real devices via /debug/opel (round 2):
+// - Android: intent pinned to the deep-link address + package, falling back
+//   to the Play Store when myOpel isn't installed. Opens myOpel even from a
+//   fully closed state.
+// - iOS: the plain https deep link (Universal Link) -- opens myOpel directly,
+//   with no "Open in My Opel?" prompt (unlike mymopsdk://). If myOpel isn't
+//   installed, iOS just loads that address in the browser instead.
+// - Anything else (desktop): neither app link can work, so the store page.
+export function myOpelOpenUrl(platform: MyOpelPlatform): string {
+  switch (platform) {
+    case "android":
+      return myOpelAndroidDeepLinkIntent(MYOPEL_PLAY_STORE_URL);
+    case "ios":
+      return MYOPEL_DEEPLINK_URL;
+    default:
+      return MYOPEL_APP_STORE_URL;
+  }
+}
+
 // Android Chrome "intent:" URL for the mymopsdk scheme, pinned to the myOpel
 // package. Kept only as a comparison: it works only while myOpel is running.
 export function myOpelAndroidSchemeIntent(fallbackUrl?: string): string {
