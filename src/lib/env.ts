@@ -29,7 +29,12 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse({
-  DATABASE_URL: process.env.DATABASE_URL,
+  // Neon -> Supabase migration, staged: SUPABASE_DATABASE_URL wins when set,
+  // so adding it in Vercel (next to Neon's integration-managed DATABASE_URL)
+  // and redeploying switches databases, and removing it switches back. Once
+  // Neon is gone, rename it to DATABASE_URL and drop this fallback (also in
+  // drizzle.config.ts and scripts/add-user.mts).
+  DATABASE_URL: process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL,
   SESSION_SECRET: process.env.SESSION_SECRET,
   ZAPTEC_USERNAME: process.env.ZAPTEC_USERNAME,
   ZAPTEC_PASSWORD: process.env.ZAPTEC_PASSWORD,

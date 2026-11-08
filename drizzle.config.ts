@@ -8,6 +8,7 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL!,
+    // Same precedence as src/lib/env.ts (staged Neon -> Supabase migration).
+    url: (process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL)!,
   },
 });
