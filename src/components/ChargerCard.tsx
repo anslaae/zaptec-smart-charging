@@ -15,6 +15,7 @@ import { SchedulerStatusBadge } from "@/components/SchedulerStatusBadge";
 import { useDebugScenario } from "@/components/DebugProvider";
 import { DEBUG_SCENARIOS } from "@/lib/debug/scenarios";
 import { formatOsloDateTime } from "@/lib/datetime";
+import { MYOPEL_APP_STORE_URL, MYOPEL_PLAY_STORE_URL } from "@/lib/myopel";
 import type { chargeSchedules } from "@/lib/db/schema";
 
 type Schedule = typeof chargeSchedules.$inferSelect;
@@ -26,13 +27,9 @@ const STATUS_LABEL: Record<Schedule["status"], string> = {
   cancelled: "Cancelled",
 };
 
-// myOpel's App Store listing -- tapping this opens the app directly if it's
-// already installed (standard iOS behavior for an apps.apple.com link) or
-// the install page if not. There's no confirmed custom URL scheme for
-// myOpel to deep-link straight into climate control, so this is the honest
-// option rather than a guessed scheme that could silently do nothing.
-const MYOPEL_APP_STORE_URL = "https://apps.apple.com/app/id1439342035";
-const MYOPEL_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.psa.mym.myopel";
+// The "Open myOpel" button below still links to the store listings; which
+// link actually opens the installed app is being tested on real phones via
+// /debug/opel (see src/lib/myopel.ts) before this button is changed.
 
 function formatDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
