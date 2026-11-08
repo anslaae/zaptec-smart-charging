@@ -19,7 +19,8 @@ The scheduling decision logic is pure and unit-tested in `src/lib/scheduler/engi
 ## Known limitations (deliberate v1 scope)
 
 - **No price or solar optimization yet.** v1 is schedule-only, as agreed. Price-based ("cheapest hours") or solar-surplus charging would slot into the same `decideNextAction` function later.
-- **Energy, not battery %.** Zaptec doesn't expose vehicle battery state, so "how much to charge" is in kWh delivered this session, not a target percentage. The "Quick schedule" flow converts a target % to kWh itself, using a hardcoded battery capacity for the household car (`VEHICLE_BATTERY_CAPACITY_KWH` in `src/lib/vehicle.ts`) — not anything Zaptec reports.
+- **Energy, not battery %, from Zaptec's own side.** Zaptec doesn't expose vehicle battery state, so "how much to charge" is in kWh delivered this session, not a target percentage. The "Quick schedule" flow converts a target % to kWh itself, using a hardcoded battery capacity for the household car (`VEHICLE_BATTERY_CAPACITY_KWH` in `src/lib/vehicle.ts`) — not anything Zaptec reports. If Smartcar is configured (see below), the form's starting-% slider is prefilled from the car's actual reported battery level instead of a blind guess — still just a default, since that reading can be several hours stale.
+- **Optional Smartcar integration** (`src/lib/smartcar/`) shows the connected car's battery % and odometer on the dashboard and `/history`, and records history over time via a Smartcar webhook — entirely separate from the Zaptec integration, and the app works fine with none of it configured. See `HANDOVER.md`'s "Smartcar API reality" section for the full picture (why there's no SDK, the v3 auth model, why a webhook rather than polling) and "Environment variables"/"Deploying" below for setup.
 - **One schedule ≈ one physical charging session.** Progress is tracked via Zaptec's session energy counter, which resets when a new charging session starts (e.g. car unplugged and replugged).
 - **Power estimate.** If the charger isn't actively reporting power, the engine assumes 7 kW to estimate how long charging will take. Adjust `DEFAULT_ASSUMED_POWER_KW` in `engine.ts` if your charger's actual rate differs a lot.
 - **No pre-charge authorization webhook.** Zaptec also supports a webhook that gates whether a session is allowed to start at all. Its request/response contract isn't publicly documented, and misconfiguring it could block *all* charging — not just scheduled charging — so it's intentionally not implemented. Only the informational session-end webhook is wired up.
@@ -49,6 +50,7 @@ See `.env.example` for the full list and how to generate each secret. You'll nee
 - `CRON_SECRET` — shared secret the cron job must present; checked in `/api/cron/tick`.
 - `ZAPTEC_WEBHOOK_USERNAME` / `ZAPTEC_WEBHOOK_PASSWORD` — pick any values; you'll enter the same ones in the Zaptec Portal when configuring the webhook.
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — optional, for push notifications (see "Push notifications" below). Without them the app runs fine; notifications just silently don't send.
+- `SMARTCAR_CLIENT_ID` / `SMARTCAR_CLIENT_SECRET` / `SMARTCAR_VEHICLE_ID` / `SMARTCAR_USER_ID` / `SMARTCAR_APPLICATION_MANAGEMENT_TOKEN` — optional, for the Smartcar integration (battery %, odometer, see "Smartcar (optional)" below). Without them the app runs fine; the dashboard just omits the battery reading and `/history`'s "Vehicle" section stays empty.
 
 ## Deploying
 
@@ -123,6 +125,15 @@ To enable it:
 1. Generate a VAPID keypair: `node -e "console.log(require('web-push').generateVAPIDKeys())"`.
 2. Set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (same value as `VAPID_PUBLIC_KEY`) in Vercel's environment variables.
 3. Redeploy. No webhook or external service needed -- `src/lib/push/send.ts` sends directly from the scheduler tick via the `web-push` package, straight to each browser's own push service (Apple/Google), which is why it works even when the app is closed. On iPhone this only works for the PWA installed to the home screen, matching Apple's general Web Push restriction, not something this app can work around.
+
+### 9. Smartcar (optional, for battery %/odometer)
+
+1. Create a Smartcar Developer account and app at [dashboard.smartcar.com](https://dashboard.smartcar.com), and run its Connect flow once to link the household car — this gives you the vehicle ID and the `userId` (returned on the Connect redirect, or via `GET /v3/connections`).
+2. In the Dashboard's **Vehicle Access** config, enable the `read_battery` and `read_odometer` signals/permissions.
+3. Set `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET` (API Credentials tab), `SMARTCAR_VEHICLE_ID`, and `SMARTCAR_USER_ID` in Vercel, and deploy.
+4. For battery/odometer **history** (the `/history` page's "Vehicle" charts): find the **Application Management Token** in the Dashboard, set it as `SMARTCAR_APPLICATION_MANAGEMENT_TOKEN` in Vercel, and redeploy. Then create a webhook in the Dashboard pointed at `https://<your-domain>/api/webhooks/smartcar`, with both triggers **and** data-payload signals set to `TractionBattery.StateOfCharge` and `Odometer.TraveledDistance`, subscribe the vehicle to it, and click "Verify this webhook" (the endpoint must already be deployed and live for this handshake to succeed).
+
+See `HANDOVER.md`'s "Smartcar API reality" section for why this needs a webhook at all (a plain GET doesn't make Smartcar re-poll the vehicle) and the reasoning behind every other design choice here.
 
 ## Tech stack
 

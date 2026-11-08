@@ -2,7 +2,7 @@
 
 Context for picking this project up in a fresh session with minimal re-exploration. Repo: https://github.com/anslaae/zaptec-smart-charging (private, owner `anslaae`). Local path: `/Users/rogera.slaaen/repo/zaptec-smart-charging`. Live at https://zaptec-smart-charging.vercel.app.
 
-Last substantially updated: 2026-10-14. If this date is old relative to `git log -5`, treat the "Current status" and "Backlog" sections as possibly stale and verify against the code/DB before relying on them.
+Last substantially updated: 2026-11-08. If this date is old relative to `git log -5`, treat the "Current status" and "Backlog" sections as possibly stale and verify against the code/DB before relying on them.
 
 ## What this is
 
@@ -12,7 +12,7 @@ Stack: Next.js 16 (App Router, Turbopack) + TypeScript, Postgres (Neon, via Verc
 
 ## Current status: live and in daily use
 
-Deployed, migrated, has real household users, and the owner actively uses it to charge a real car. This is **not** a toy/demo — treat production data and the real charger with the same care you'd give any live system. Schema is at migration `0009`; check `drizzle/` for the actual latest before assuming.
+Deployed, migrated, has real household users, and the owner actively uses it to charge a real car. This is **not** a toy/demo — treat production data and the real charger with the same care you'd give any live system. Schema is at migration `0012`; check `drizzle/` for the actual latest before assuming. **There is no staging/test database** — `.env.local`'s `DATABASE_URL` points at the real production Neon instance, so local `npm run dev` and any one-off script hit real data. If you need to simulate something that writes rows (e.g. a fake webhook delivery to test signature verification), clean up the rows you inserted afterward.
 
 ## The standing workflow — use the `ship` skill
 
@@ -42,6 +42,8 @@ src/lib/scheduler/
   engine.test.ts                    unit tests for the above
   heartbeat.ts                      STALE_AFTER_SECONDS, shared between the dashboard badge and /api/health -- sized around tick-gate.ts's FULL_TICK_INTERVAL_MS, not the 1-minute cron cadence
   tick-gate.ts                      PURE canSkipDbTouch() -- see "Neon compute / cron cadence" below
+  powerHistory.ts                   PURE computeLearnedPowerKw() -- median realized kW from past sessions, see "Charging estimate refinements" below
+  powerHistory.server.ts           getLearnedPowerKw() -- queries recent completed, never-paused schedules for powerHistory.ts
   run.ts                            the cron tick: Zaptec calls first (free), tick-gate.ts decides whether to touch Neon at all, then enforceAuthorizedCharging() (security net), logStateTransitions() (activity log), then per-schedule decide/act loop
 
 src/lib/smartcar/
@@ -71,7 +73,7 @@ src/app/
   api/webhooks/zaptec/session-end/route.ts   Basic-Auth protected, logs completed sessions
   api/webhooks/smartcar/route.ts   HMAC-signed (SC-Signature), records battery/odometer history — see "Smartcar API reality" below
 
-src/components/                      ChargerCard (the big one — status pills, live summary, Details<collapsible>, actions), ManualChargeButton, DebugProvider (?debug=1 + scenario picker), NotificationToggle, SchedulerStatusBadge, AutoRefresh (pauses when tab hidden), DeleteScheduleButton, various toasts
+src/components/                      ChargerCard (the big one — status pills, live summary, Details<collapsible>, actions), ManualChargeButton, PreheatButton (see "Preheat" below), DebugProvider (?debug=1 + scenario picker), NotificationToggle, SchedulerStatusBadge, AutoRefresh (pauses when tab hidden), DeleteScheduleButton, various toasts
 public/sw.js                         service worker for Web Push (show notification + focus/open on click)
 scripts/add-user.mts                 CLI to insert a household user — no signup UI by design
 .github/workflows/scheduler-tick.yml manual (workflow_dispatch) only, for testing — NOT the real cron trigger (see below)
@@ -79,7 +81,7 @@ scripts/add-user.mts                 CLI to insert a household user — no signu
 
 ### DB tables (see `src/lib/db/schema.ts` for the source of truth)
 
-`users`, `charge_schedules` (has `estimated_duration_minutes`, captured once when charging actually starts — see "Smartcar API reality"'s accuracy note), `schedule_actions` (log of commands sent per schedule), `charge_sessions` (from the session-end webhook), `scheduler_heartbeat` (singleton row, last tick time), `charger_observed_state` (singleton-per-charger, last operationMode seen, for diffing), `activity_events` (the human-readable activity feed, optional `user_id`), `manual_charge_sessions` (open-ended "someone manually started this" authorization), `push_subscriptions` (one row per opted-in browser), `webhook_events` (raw webhook payload log, both Zaptec's and Smartcar's), `vehicle_telemetry` (one row per genuinely new battery%/odometer reading from the Smartcar webhook — see below).
+`users`, `charge_schedules` (has `estimated_duration_minutes`/`remaining_kwh_at_start`, captured once when charging actually starts — see "Smartcar API reality"'s accuracy note and "Charging estimate refinements" below; also `prior_session_energy_kwh`/`last_observed_session_energy_kwh`, the running-total tracker for a disconnect mid-schedule, see the same section), `schedule_actions` (log of commands sent per schedule), `charge_sessions` (from the session-end webhook), `scheduler_heartbeat` (singleton row, last tick time), `charger_observed_state` (singleton-per-charger, last operationMode seen, for diffing), `activity_events` (the human-readable activity feed, optional `user_id`), `manual_charge_sessions` (open-ended "someone manually started this" authorization), `push_subscriptions` (one row per opted-in browser), `webhook_events` (raw webhook payload log, both Zaptec's and Smartcar's), `vehicle_telemetry` (one row per genuinely new battery%/odometer reading from the Smartcar webhook — see below).
 
 ## Zaptec API reality (hard-won, verified against the live account — not just docs)
 
@@ -117,6 +119,8 @@ The charger sits in a public/shared area, so "Require authentication" should sta
 - This is **poll-based**, not instant — an unrecognized plug-in can draw power for up to one cron interval (currently 1 minute) before it's cut. That gap is the known, accepted cost of this approach.
 - A per-charger "App not in control" badge (`appHasControl()` in `state.ts`) shows if "Require authentication" ever gets switched back on and there's no existing session to manage — manual/plan controls are hidden in that state rather than silently doing nothing.
 
+**Preheat** (`PreheatButton.tsx`, `startPreheat()` in `zaptec/actions.ts`): a winter-climate workaround, not a real climate-control integration. Smartcar has no climate command for this Opel at all — confirmed against its Compatibility API, the only commands it exposes for any Opel model are `charge-start`/`charge-stop` — and Zaptec has no "allow power without charging" mode either, only `ResumeCharging`/`StopChargingFinal`. So Preheat just calls `ResumeCharging` (identical to manual "Charge now", same `manual_charge_sessions` authorization, logged under its own `PreheatStarted` activity type so the feed shows *why*) so the car can draw preheat power from the grid instead of its own battery, then shows an "Open myOpel" link for the user to actually start climate control by hand in Opel's own app (no confirmed deep-link scheme into myOpel exists, so this is just the App/Play Store listing). If Smartcar ever adds a real climate command for this make, this should be revisited rather than extended.
+
 **The "correct" alternative is OCPP** (switch the installation to OCPP mode, run our own CSMS that issues real `RemoteStartTransaction`/authorizes at the protocol level) — this was explained in detail to the user and **explicitly deferred**: it needs a new always-on server (can't run on Vercel's serverless functions — OCPP needs a persistent inbound WebSocket), a nontrivial OCPP 1.6 implementation, and probably loses some native Zaptec app convenience. Don't build this unprompted; it's a deliberate future project, not a bug to fix.
 
 ## Neon compute / cron cadence
@@ -130,6 +134,14 @@ Neon (free tier) auto-suspends its compute after a few idle minutes, but the 1-m
 - `/api/health`'s own DB read is cached in-memory for 60s per warm instance (`src/app/api/health/route.ts`) — this only helps if the external uptime monitor's ping interval is short enough to land on the same warm instance; check the monitor's actual configured interval if compute still isn't suspending after this change.
 - `postgres-js`'s client (`src/lib/db/index.ts`) sets `idle_timeout: 20` so a warm instance doesn't hold an idle TCP connection open indefinitely, which can itself block Neon's scale-to-zero independent of query frequency.
 - After any further change here, confirm in the Neon console that compute actually shows `Suspended` periods — don't assume from the code alone.
+
+## Charging estimate refinements
+
+Two fixes found by comparing predictions against what actually happened (same spirit as the planned-charge accuracy check in "Smartcar API reality" above, but both of these feed the *input* to the estimate rather than just grading it afterward):
+
+- **Learned charge rate** (`src/lib/scheduler/powerHistory.ts` + `powerHistory.server.ts`). `estimateChargingPlan()`'s fallback power (used whenever there's no live power reading yet — which is always true at the moment a schedule decides *when* to start) used to be `state.maxPowerKw`, the circuit's theoretical current-limit ceiling. Measured against this household's actual completed sessions, the car's onboard charger draws 40-65% less than that ceiling (recent sessions finished 56min–2h12m late because of it). `getLearnedPowerKw()` now queries the median realized kW (`remainingKwhAtStart / actualDuration`) from the last 10 completed, **never-paused** schedules (a paused session's wall-clock duration includes idle paused time, which would understate the rate) and sits between the live reading and the circuit ceiling in the fallback chain: `observed → learned → circuit max → DEFAULT_ASSUMED_POWER_KW`. `remainingKwhAtStart` is captured once per schedule (alongside `estimatedDurationMinutes`) the moment charging actually starts, specifically so it can feed this later. Returns `null` with no usable history yet (fresh install, or every past schedule predates this column) — `estimateChargingPlan`/`decideNextAction` both already treat a `null`/absent learned rate as "fall through to the next one in the chain," so this never needs special-casing by callers. Surfaced in `ChargerCard`'s Details section so a plan's "starts around" estimate can be sanity-checked against what it's actually based on.
+- **Session energy survives a disconnect mid-schedule** (`reconcileSessionEnergy()` in `engine.ts`, pure/tested). Zaptec resets `sessionEnergyKwh` to 0 whenever the car is unplugged and replugged (a new session starts, with a new session ID) — without reconciliation, the completion check would think almost nothing had been delivered and re-charge the full target again on top of whatever was already delivered before the disconnect. `priorSessionEnergyKwh`/`lastObservedSessionEnergyKwh` on `charge_schedules` track a running total across however many physical sessions one schedule spans; `run.ts` reconciles on every tick once `zaptecSessionId` is set, and the reconciled total is what's actually compared against the target and used in the estimate — never the charger's raw session counter directly. The exact final reading of an ended session isn't available (it may have kept climbing for up to one tick after the last observation), so the last value seen is carried forward — a small undercount, far better than ignoring it.
+- **The dashboard now says so when a plan doesn't leave enough time to finish comfortably.** `decideNextAction` already started charging immediately whenever the deadline was too tight to wait, and kept charging past the deadline until the target was reached — that logic was always correct. What was missing was telling the person: a tight plan silently showed "Starts around `<a time already in the past>`" with no indication anything was off. The schedule-creation toast and the dashboard's pending-plan line (`startsImmediately` in `page.tsx`/`ChargerCard.tsx`, derived from `latestStartTime <= now`) now flag this plainly instead.
 
 ## Activity log, not alarms
 
@@ -152,6 +164,8 @@ Opt-in per browser/device (toggle in the dashboard header, off by default — no
 - The shell variable name `status` is reserved/read-only in this zsh environment — use `dep_status` or similar in deploy-polling loops (also baked into the `ship` skill).
 - GitHub's push endpoint has had at least one transient outage (`Internal Server Error` on push, repeatable for several minutes) that also seems to eat the push→Vercel-webhook delivery even after the push itself later succeeds — if a deploy doesn't appear in `vercel ls` within ~30s of a successful push, an empty `git commit --allow-empty` + push re-triggers it reliably.
 - `git add` on a command line that includes `.env.local` by name gets blocked by the auto-mode data-exfiltration classifier even though the file is gitignored and the add would've been a no-op — just don't pass it explicitly to `git add`.
+- **Next 16's React Compiler ESLint rule flags `Date.now()`** (but not `new Date()`) as an impure call inside a Server Component's render body (`Cannot call impure function during render`). Compute `const now = new Date()` once near the top and derive everything else from it instead of calling `Date.now()` inline.
+- A one-off debug/inspection script (e.g. to query the DB directly, or simulate a webhook delivery with `fetch`) run via `npx tsx` from outside the repo (this session's scratchpad directory, `/private/tmp/...`) fails to resolve the repo's own `node_modules` (`ERR_MODULE_NOT_FOUND`) — Node resolves packages from the script's own directory upward, not the shell's cwd. Write the script temporarily inside the repo root instead (e.g. `./_scratch.mts`), run it, then delete it — never commit it, and never name it something `git add -A` might later sweep up by accident.
 
 ## Backlog (GitHub issues)
 
