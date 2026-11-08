@@ -28,7 +28,7 @@ const STATUS_LABEL: Record<Schedule["status"], string> = {
 };
 
 // The "Open myOpel" button picks a per-platform app link (src/lib/myopel.ts,
-// confirmed on real phones via /debug/opel). It only renders after a
+// confirmed on real phones). It only renders after a
 // client-side Preheat success, so reading navigator here can't cause a
 // server/client hydration mismatch.
 function OpenMyOpelLink() {

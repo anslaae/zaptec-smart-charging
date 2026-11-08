@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, Suspense } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { DEBUG_SCENARIOS, type DebugScenarioKey } from "@/lib/debug/scenarios";
 
@@ -123,9 +122,6 @@ export function DebugProvider({
               </option>
             ))}
           </select>
-          <Link href="/debug/opel" className="underline">
-            Test myOpel link
-          </Link>
           <button type="button" onClick={exitDebug} className="cursor-pointer underline">
             Exit debug
           </button>

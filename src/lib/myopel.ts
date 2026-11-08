@@ -1,49 +1,49 @@
-// How to get from this web app into Opel's own myOpel app. Kept free of any
-// React/"server-only" import so both the dashboard and the /debug/opel test
-// page can share the exact same strings.
+// How the dashboard's "Open myOpel" button (shown after Preheat) gets from
+// this web app into Opel's own myOpel app. Pure strings/functions, no React
+// or "server-only" import, so it's unit-testable.
 //
-// What's known (verified, not guessed):
-// - Android package com.psa.mym.myopel (Play Store listing).
-// - Custom scheme "mymopsdk" (flobz/psa_car_controller's brand table). It's
-//   myOpel's OAuth *redirect* receiver, not a general "open the app" entry:
-//   tested on Android it only brings myOpel forward if it's already running,
-//   and flashes back to the browser from a cold start. On iOS, a plain
-//   mymopsdk:// link shows an "Open in My Opel?" prompt and opens the app.
-// - Deep-link domain deeplink-op.mym.awsmpsa.com (listed under myOpel's
-//   "Open by default" -> supported links on Android). Its
-//   /.well-known/apple-app-site-association claims every path ("*") for the
-//   iOS app, and its /.well-known/assetlinks.json names com.psa.mym.myopel --
-//   but on the tested Android phone the link is NOT verified/enabled by
-//   default, so a plain https link stays in the browser there. An Android
-//   intent URL that names the package explicitly sidesteps that.
+// Tested on real phones (Nov 2026) with a temporary link test page:
+// - iOS (Safari tab and home-screen app): the plain https link to myOpel's
+//   deep-link domain is a Universal Link and opens myOpel directly, with no
+//   prompt. iOS is the priority platform for this household.
+// - Android (Chrome): an intent URL pinned to that same https address and to
+//   myOpel's package opens the app even from fully closed. myOpel seemed to
+//   crash at times after opening this way -- looked like the app's own
+//   problem, accepted as good enough. The plain https link does NOT work on
+//   Android: the domain isn't verified/enabled on the device by default, so
+//   Chrome loads it and the server returns an "access denied" XML page.
+// - Ruled out: launching myOpel by package name alone (Chrome falls through
+//   to the Play Store because myOpel's launcher screen isn't web-openable),
+//   and its "mymopsdk://" custom scheme -- that's the app's OAuth redirect
+//   receiver, which on Android only works while myOpel is already running.
+//   On iOS it does open the app, but behind an "Open in My Opel?" prompt.
+//
+// Where the identifiers come from: the package name is on the Play Store
+// listing; the deep-link domain is listed under myOpel's "Open by default"
+// settings on Android, and its /.well-known/apple-app-site-association
+// claims every path ("*") for the iOS myOpel app. None of this is documented
+// by Opel/Stellantis, so if the button stops working after a myOpel update,
+// re-check that file and the Android supported-links list first.
 
 export const MYOPEL_ANDROID_PACKAGE = "com.psa.mym.myopel";
-export const MYOPEL_URL_SCHEME = "mymopsdk";
 export const MYOPEL_DEEPLINK_HOST = "deeplink-op.mym.awsmpsa.com";
 
 export const MYOPEL_APP_STORE_URL = "https://apps.apple.com/app/id1439342035";
 export const MYOPEL_PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=${MYOPEL_ANDROID_PACKAGE}`;
 
-// Plain https deep link. On iOS this is a Universal Link (opens myOpel
-// directly when tapped from another site); on Android it only opens the app
-// if the user has enabled the domain under myOpel's "Open by default".
+// iOS Universal Link. If myOpel isn't installed, iOS just loads the address
+// in the browser, which shows the server's "access denied" page -- acceptable
+// here since the household has the app.
 export const MYOPEL_DEEPLINK_URL = `https://${MYOPEL_DEEPLINK_HOST}/`;
 
-// Plain custom-scheme URL -- confirmed to open myOpel on iOS (after a prompt).
-export const MYOPEL_SCHEME_URL = `${MYOPEL_URL_SCHEME}://`;
-
-function intentUrl(hostAndPath: string, extras: string[], fallbackUrl?: string): string {
-  const parts = [...extras, `package=${MYOPEL_ANDROID_PACKAGE}`];
-  if (fallbackUrl) parts.push(`S.browser_fallback_url=${encodeURIComponent(fallbackUrl)}`);
-  return `intent://${hostAndPath}#Intent;${parts.join(";")};end`;
-}
-
-// Android Chrome "intent:" URL for the https deep-link domain, pinned to the
+// Android Chrome "intent:" URL for the deep-link address, pinned to the
 // myOpel package so it opens the app even though the domain isn't verified
 // on the device. With a fallbackUrl, Chrome goes there if myOpel isn't
 // installed; without one, nothing happens in that case.
 export function myOpelAndroidDeepLinkIntent(fallbackUrl?: string): string {
-  return intentUrl(`${MYOPEL_DEEPLINK_HOST}/`, ["scheme=https", "action=android.intent.action.VIEW"], fallbackUrl);
+  const parts = ["scheme=https", "action=android.intent.action.VIEW", `package=${MYOPEL_ANDROID_PACKAGE}`];
+  if (fallbackUrl) parts.push(`S.browser_fallback_url=${encodeURIComponent(fallbackUrl)}`);
+  return `intent://${MYOPEL_DEEPLINK_HOST}/#Intent;${parts.join(";")};end`;
 }
 
 export type MyOpelPlatform = "android" | "ios" | "other";
@@ -57,15 +57,9 @@ export function detectMyOpelPlatform(userAgent: string, maxTouchPoints = 0): MyO
   return "other";
 }
 
-// The link the dashboard's "Open myOpel" button uses, per platform. Both
-// phone choices were confirmed on real devices via /debug/opel (round 2):
-// - Android: intent pinned to the deep-link address + package, falling back
-//   to the Play Store when myOpel isn't installed. Opens myOpel even from a
-//   fully closed state.
-// - iOS: the plain https deep link (Universal Link) -- opens myOpel directly,
-//   with no "Open in My Opel?" prompt (unlike mymopsdk://). If myOpel isn't
-//   installed, iOS just loads that address in the browser instead.
-// - Anything else (desktop): neither app link can work, so the store page.
+// The link the "Open myOpel" button uses, per platform (see the test results
+// at the top of this file). Desktop gets the store page, since neither app
+// link can work there.
 export function myOpelOpenUrl(platform: MyOpelPlatform): string {
   switch (platform) {
     case "android":
@@ -75,10 +69,4 @@ export function myOpelOpenUrl(platform: MyOpelPlatform): string {
     default:
       return MYOPEL_APP_STORE_URL;
   }
-}
-
-// Android Chrome "intent:" URL for the mymopsdk scheme, pinned to the myOpel
-// package. Kept only as a comparison: it works only while myOpel is running.
-export function myOpelAndroidSchemeIntent(fallbackUrl?: string): string {
-  return intentUrl("", [`scheme=${MYOPEL_URL_SCHEME}`], fallbackUrl);
 }
