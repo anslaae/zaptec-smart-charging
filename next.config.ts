@@ -3,6 +3,13 @@ import type { NextConfig } from "next";
 const MOCK_MODE = process.env.MOCK_MODE === "1";
 
 const nextConfig: NextConfig = {
+  // Tab switches without a server round trip: the tab bar prefetches the four
+  // tabs fully, and the client keeps them (and visited pages) for a short
+  // while. Hjem refreshes its live charger data on arrival when its copy is
+  // older than a few seconds (AutoRefresh), and every action revalidates.
+  experimental: {
+    staleTimes: { dynamic: 30, static: 60 },
+  },
   // Mock mode builds into its own folder, so `npm run dev:mock` can run next
   // to a normal `npm run dev` (Next refuses two dev servers sharing .next).
   distDir: MOCK_MODE ? ".next-mock" : ".next",

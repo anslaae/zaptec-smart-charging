@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { getCurrentUser } from "@/lib/auth/dal";
+import { getCurrentUser, verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { chargeSchedules, manualChargeSessions, schedulerHeartbeat } from "@/lib/db/schema";
 import { getLearnedPowerKw } from "@/lib/scheduler/powerHistory.server";
@@ -44,8 +44,9 @@ function Row({ label, value, amber }: { label: string; value: string; amber?: bo
 // System, Konto. Household-wide settings live in the settings table; the
 // notification switch and debug mode are per device.
 export default async function SettingsPage() {
-  const user = await getCurrentUser();
-  const [heartbeat, learnedPowerKw, settings, chargers, openGuests, openPlans] = await Promise.all([
+  await verifySession();
+  const [user, heartbeat, learnedPowerKw, settings, chargers, openGuests, openPlans] = await Promise.all([
+    getCurrentUser(),
     db
       .select({ lastTickAt: schedulerHeartbeat.lastTickAt })
       .from(schedulerHeartbeat)

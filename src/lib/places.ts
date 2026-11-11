@@ -18,16 +18,28 @@ export interface HomeContext {
 
 const DEFAULT_CAR_NAME = "Opel Mokka-e";
 
-/** Ensures location/charger/car rows exist for what Zaptec reports, and returns them. */
+/**
+ * Ensures location/charger/car rows exist for what Zaptec reports, and returns
+ * them. Runs on every page load, so the usual case is three reads in parallel
+ * (one database round trip) and no writes; it only writes when a row is
+ * missing or Zaptec's installation name changed.
+ */
 export async function getHomeContext(zaptecChargers: ZaptecCharger[]): Promise<HomeContext> {
   const first = zaptecChargers[0];
   if (!first) return { location: null, car: await getDefaultCar(null) };
 
-  let [location] = await db
-    .select({ id: locations.id, name: locations.name })
-    .from(locations)
-    .where(eq(locations.zaptecInstallationId, first.installationId))
-    .limit(1);
+  const [found, knownChargers, existingCar] = await Promise.all([
+    db
+      .select({ id: locations.id, name: locations.name })
+      .from(locations)
+      .where(eq(locations.zaptecInstallationId, first.installationId))
+      .limit(1)
+      .then((rows) => rows[0]),
+    db.select({ id: chargers.id }).from(chargers),
+    readCar(),
+  ]);
+
+  let location = found;
   // The name comes from Zaptec (the installation's name) and follows it --
   // renaming belongs in Zaptec, so the app shows it read-only.
   if (location && first.installationName && location.name !== first.installationName) {
@@ -49,14 +61,24 @@ export async function getHomeContext(zaptecChargers: ZaptecCharger[]): Promise<H
     )[0];
   }
 
-  for (const charger of zaptecChargers) {
+  const known = new Set(knownChargers.map((c) => c.id));
+  const missing = zaptecChargers.filter((c) => !known.has(c.id));
+  if (missing.length > 0) {
     await db
       .insert(chargers)
-      .values({ id: charger.id, locationId: location.id })
+      .values(missing.map((c) => ({ id: c.id, locationId: location.id })))
       .onConflictDoNothing();
   }
 
-  return { location, car: await getDefaultCar(location.id) };
+  return { location, car: existingCar ?? (await getDefaultCar(location.id)) };
+}
+
+async function readCar(): Promise<HomeContext["car"]> {
+  const [row] = await db
+    .select({ id: cars.id, name: cars.name, batteryCapacityKwh: cars.batteryCapacityKwh })
+    .from(cars)
+    .limit(1);
+  return row ? { ...row, batteryCapacityKwh: Number(row.batteryCapacityKwh) } : null;
 }
 
 /** The household car (created from vehicle.ts + SMARTCAR_VEHICLE_ID on first use). */

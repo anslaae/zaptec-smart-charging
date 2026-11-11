@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/auth/dal";
+import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getSettings, pricesOf } from "@/lib/settings";
@@ -68,7 +68,7 @@ function PersonBar({ name, kwh, costNok, max, muted }: { name: string; kwh: numb
 // app's own session records. Cost = energy (Norgespris) + estimated nettleie
 // energiledd, both from Innstillinger (src/lib/pricing.ts; DECISIONS.md D30).
 export default async function InsightsPage({ searchParams }: PageProps<"/insights">) {
-  await getCurrentUser();
+  await verifySession();
   const now = new Date();
   const current = monthKeyOf(now);
   const { month: monthParam } = await searchParams;

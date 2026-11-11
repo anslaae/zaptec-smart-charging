@@ -81,6 +81,8 @@ export function TabBar() {
               <li key={href} className="flex-1">
                 <Link
                   href={href}
+                  // Full prefetch, so switching tabs shows the page at once (staleTimes in next.config.ts).
+                  prefetch={true}
                   aria-current={active ? "page" : undefined}
                   className={`flex h-full min-h-11 flex-col items-center justify-center gap-1 text-[11px] font-semibold ${
                     active ? "text-accent" : "text-muted"

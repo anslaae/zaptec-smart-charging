@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { desc, eq, gte, inArray, isNull } from "drizzle-orm";
-import { getCurrentUser } from "@/lib/auth/dal";
+import { getCurrentUser, verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { activityEvents, chargeSchedules, manualChargeSessions, schedulerHeartbeat, users, vehicleTelemetry } from "@/lib/db/schema";
 import { ActivityType } from "@/lib/activity/log";
@@ -47,14 +47,15 @@ function osloClock(date: Date): { hour: number; minute: number } {
 //   ?sheet=preheat     Forvarm
 //   ?action=charge-now the "Lad nå" push action (asks before starting)
 export default async function HomePage({ searchParams }: PageProps<"/">) {
-  const user = await getCurrentUser();
+  await verifySession();
   const now = new Date();
   const params = await searchParams;
   const sheet = params.sheet === "plan" || params.sheet === "preheat" ? params.sheet : null;
   const chargeNowAction = params.action === "charge-now";
 
-  const [chargers, openSchedules, heartbeat, stateOfCharge, learnedPowerKw, openSessions, completed, recent, settings, telemetry, lastUnplug, people] =
+  const [user, chargers, openSchedules, heartbeat, stateOfCharge, learnedPowerKw, openSessions, completed, recent, settings, telemetry, lastUnplug, people] =
     await Promise.all([
+      getCurrentUser(),
       listChargers(),
       db
         .select()
@@ -321,7 +322,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
 
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 pt-6 pb-4">
-      <AutoRefresh />
+      <AutoRefresh renderedAtIso={now.toISOString()} />
       <Suspense fallback={null}>
         <ScheduleCreatedToast />
       </Suspense>

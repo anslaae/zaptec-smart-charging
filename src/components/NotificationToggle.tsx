@@ -20,10 +20,28 @@ type Support = "checking" | "unsupported" | "supported";
 // Opt-in, off by default -- this only ever reflects/changes the current
 // browser's own subscription (checked via the Push API itself on mount), not
 // some separate app-level setting, since that's what Web Push actually is.
+// The browser answers "is this device subscribed?" asynchronously, so the
+// switch used to draw as off and then flip on. It now stays unknown until the
+// answer is in -- starting from this device's last known answer (a per-device
+// convenience in localStorage), so it's usually right from the first frame.
+const LAST_KNOWN_KEY = "lading-push-subscribed";
+
+function remember(value: boolean) {
+  try {
+    localStorage.setItem(LAST_KNOWN_KEY, value ? "1" : "0");
+  } catch {
+    // storage unavailable: just no head start next time
+  }
+}
+
 export function NotificationToggle() {
   const [support, setSupport] = useState<Support>("checking");
-  const [subscribed, setSubscribed] = useState(false);
+  const [subscribed, setSubscribedState] = useState<boolean | null>(null);
   const [pending, setPending] = useState(false);
+  const setSubscribed = (value: boolean) => {
+    setSubscribedState(value);
+    remember(value);
+  };
 
   useEffect(() => {
     // Feature/subscription detection can only happen client-side, after
@@ -36,11 +54,20 @@ export function NotificationToggle() {
       return;
     }
     setSupport("supported");
+    try {
+      const last = localStorage.getItem(LAST_KNOWN_KEY);
+      if (last === "1" || last === "0") setSubscribedState(last === "1");
+    } catch {
+      // storage unavailable: wait for the real answer below
+    }
 
     navigator.serviceWorker
       .register("/sw.js")
       .then((registration) => registration.pushManager.getSubscription())
-      .then((existing) => setSubscribed(existing != null))
+      .then((existing) => {
+        setSubscribedState(existing != null);
+        remember(existing != null);
+      })
       .catch(() => setSupport("unsupported"));
   }, []);
 
@@ -103,7 +130,8 @@ export function NotificationToggle() {
     }
   }
 
-  if (support === "checking") return null;
+  // Keeps the row's height while the browser answers, so nothing jumps.
+  if (support === "checking") return <div className="h-11" aria-hidden />;
   if (support === "unsupported") {
     return <p className="text-sm text-muted">{nb.settings.notifications.unsupported}</p>;
   }
@@ -115,12 +143,17 @@ export function NotificationToggle() {
         <p className="text-[15px] font-semibold">{nb.settings.notifications.thisDevice}</p>
         <p className="text-xs text-muted">{nb.settings.notifications.thisDeviceSub}</p>
       </div>
-      <Switch
-        checked={subscribed}
-        disabled={pending}
-        label={nb.settings.notifications.thisDevice}
-        onChange={(next) => (next ? enable() : disable())}
-      />
+      {subscribed == null ? (
+        // Same footprint as the switch until the browser has answered.
+        <span className="h-11 w-[59px] shrink-0" aria-hidden />
+      ) : (
+        <Switch
+          checked={subscribed}
+          disabled={pending}
+          label={nb.settings.notifications.thisDevice}
+          onChange={(next) => (next ? enable() : disable())}
+        />
+      )}
     </div>
   );
 }

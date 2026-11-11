@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { desc, inArray } from "drizzle-orm";
-import { getCurrentUser } from "@/lib/auth/dal";
+import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { activityEvents, chargeSchedules, users } from "@/lib/db/schema";
 import { ACTIVITY_LABEL, type ActivityType } from "@/lib/activity/log";
@@ -247,7 +247,7 @@ async function ActivityTab({ now }: { now: Date }) {
 // Historikk (design/redesign/HANDOFF.md §5): Økter / Planer / Aktivitet,
 // one server-rendered segment per ?tab so each loads only its own data.
 export default async function HistoryPage({ searchParams }: PageProps<"/history">) {
-  await getCurrentUser();
+  await verifySession();
   const { tab: tabParam } = await searchParams;
   const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "sessions";
   const now = new Date();
