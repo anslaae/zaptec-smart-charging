@@ -31,11 +31,15 @@ export const nb = {
       statusNoBattery: "Ingen bil tilkoblet",
       sub: "ca. {kwh} kWh igjen",
       subNoBattery: "Sist tilkoblet {when}",
-      todayTitle: "Batteri i dag",
-      todayChange: "{change} % siden {time}",
-      unplugged: "koblet fra {time}",
       hint: "Du kan planlegge allerede nå. Ladingen starter når bilen kobles til.",
       primary: "Planlegg lading",
+      sinceTitle: "Koblet fra",
+      sinceBattery: "Batteri",
+      sinceBatteryValue: "{change} %",
+      sinceDriven: "Kjørt",
+      sinceDrivenValue: "ca. {km} km",
+      sinceMidnight: "midnatt",
+      sinceEndLabel: "{when} · {percent} %",
     },
     connected: {
       status: "Tilkoblet – ingen plan",
@@ -88,7 +92,9 @@ export const nb = {
       delivered: "Levert",
       duration: "Tid",
       cost: "Kostnad",
-      byUser: "Plan av {name}",
+      byUser: "{car} · plan av {name}",
+      // (app) no known person (smart plan): just the car
+      byCar: "{car}",
       persistNote: "Vises til bilen kobles fra eller du starter noe nytt",
       primary: "Planlegg lading"
     },
@@ -211,6 +217,7 @@ export const nb = {
     tabs: { sessions: "Økter", plans: "Planer", activity: "Aktivitet" },
     groups: { thisWeek: "Denne uken", lastWeek: "Forrige uke" },
     tags: { plan: "Plan", manual: "Lad nå", preheat: "Forvarming", guest: "Gjest", automatic: "Automatisk", smart: "Smart" },
+    carPrefix: "{car} · {detail}",
     automaticSummary: "Automatisk: {count} tilkobling stoppet {period}. Vises i Aktivitet.",
     // (app)
     automaticSummaryPlural: "Automatisk: {count} tilkoblinger stoppet {period}. Vises i Aktivitet.",
@@ -246,6 +253,8 @@ export const nb = {
     costSplit: "strøm {energy} kr · nettleie {grid} kr",
     // (app)
     prevMonth: "Forrige måned",
+    // (app) label before the Kjøring comparison line
+    prevMonthShort: "Forrige måned",
     nextMonth: "Neste måned",
     noComparison: "Ingen lading i {month} å sammenligne med",
     personRow: "{kwh} kWh · {kr} kr",
@@ -254,6 +263,24 @@ export const nb = {
     empty: "Ingen lading registrert denne måneden.",
     changePriceLink: "Om prisene ›",
     chartLabel: "Energi per dag i {month}",
+    car: { chipNote: "Gjestelading telles separat" },
+    drive: {
+      title: "Kjøring",
+      odometer: "km-stand {km} · målt {when}",
+      driven: "kjørt i {month}",
+      efficiency: "Effektivitet",
+      efficiencyValue: "{value} km/kWh",
+      consumption: "Forbruk",
+      consumptionValue: "{value} kWh/mil",
+      cost: "Kostnad",
+      costValue: "ca. {value} kr/mil",
+      previous: "{km} km · {eff} km/kWh · {cost} kr/mil",
+      notEnough: "For lite data til å regne forbruk ennå",
+      footnote: "Ut fra kilometerstand og batterinivå fra bilen (Smartcar). Kostnaden bruker snittprisen for lading hjemme.",
+      // (app) design copy said "tatt med i forbruket" -- the rule leaves those pairs out (DECISIONS D58)
+      awayCharges: "{count} lading et annet sted er holdt utenfor forbruket og kostnaden.",
+      awayChargesPlural: "{count} ladinger andre steder er holdt utenfor forbruket og kostnaden.",
+    },
   },
   settings: {
     title: "Innstillinger",

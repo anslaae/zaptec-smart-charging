@@ -96,6 +96,24 @@ function osloDayOffset(date: Date, now: Date): number {
   return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000);
 }
 
+/**
+ * A past moment with a day word, never a bare HH:MM: "i dag 07:31",
+ * "i går 18:40", "man. 16:40" within the last 6 days, else "tir. 3. nov. 16:40".
+ */
+export function formatPastDayAndTime(date: string | Date, now: Date = new Date()): string {
+  const d = new Date(date);
+  const offset = osloDayOffset(d, now);
+  const day =
+    offset === 0
+      ? "i dag"
+      : offset === -1
+        ? "i går"
+        : offset >= -6 && offset < 0
+          ? new Intl.DateTimeFormat(LOCALE, { weekday: "short", timeZone: HOUSEHOLD_TIME_ZONE }).format(d)
+          : formatShortDate(d);
+  return `${day} ${formatTime(d)}`;
+}
+
 /** "i dag" / "i morgen" / "i går", or null for any other day. */
 export function relativeDay(date: string | Date, now: Date = new Date()): string | null {
   switch (osloDayOffset(new Date(date), now)) {

@@ -8,7 +8,7 @@ import { BatteryRing, type RingBadge, type RingMode } from "@/components/Battery
 import { MyOpelLink } from "@/components/MyOpelLink";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ActionButton } from "@/components/ActionButton";
-import { BatteryTodayCard, LastSessionCard } from "@/components/HomeExtraCards";
+import { LastSessionCard, SinceUnplugCard } from "@/components/HomeExtraCards";
 import { SmartTimeline } from "@/components/SmartTimeline";
 
 /** Smart lading says "Lader i natt 03:46–06:00" for a night window, "Lader 13:00–15:00" otherwise. */
@@ -683,8 +683,8 @@ export function HomeCard({ data }: { data: HomeCardData }) {
         )}
 
         {/* Secondary cards (HANDOFF §3); hidden in debug previews, whose data is made up. */}
-        {!scenario && view.homeState === "noCar" && effective.batteryToday && (
-          <BatteryTodayCard data={effective.batteryToday} now={new Date(effective.nowIso)} />
+        {!scenario && view.homeState === "noCar" && effective.sinceUnplug && (
+          <SinceUnplugCard data={effective.sinceUnplug} now={new Date(effective.nowIso)} />
         )}
         {!scenario && view.homeState === "ready" && effective.lastPlan && <LastSessionCard plan={effective.lastPlan} />}
         {view.homeState === "smartWaiting" && schedule?.smart && (

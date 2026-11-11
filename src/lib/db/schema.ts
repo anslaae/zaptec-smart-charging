@@ -200,6 +200,8 @@ export const manualChargeSessions = pgTable("manual_charge_sessions", {
   // Automatic sessions ("Lad med en gang"): stop once this much energy is in (target % − battery);
   // null = charge until the car stops by itself (no battery reading at all).
   targetKwh: numeric("target_kwh", { precision: 6, scale: 2 }),
+  // The car charged (design 6c); null for guest windows -- a guest's car never counts for ours.
+  carId: uuid("car_id").references(() => cars.id),
   startedByUserId: uuid("started_by_user_id").references(() => users.id),
   startedAt: timestamp("started_at", { withTimezone: true })
     .notNull()
@@ -240,6 +242,8 @@ export const vehicleTelemetry = pgTable("vehicle_telemetry", {
   batteryReportedAt: timestamp("battery_reported_at", { withTimezone: true }),
   odometerKm: numeric("odometer_km", { precision: 8, scale: 1 }),
   odometerReportedAt: timestamp("odometer_reported_at", { withTimezone: true }),
+  // Which car reported (Smartcar vehicle id -> cars.smartcar_vehicle_id), design 6c.
+  carId: uuid("car_id").references(() => cars.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

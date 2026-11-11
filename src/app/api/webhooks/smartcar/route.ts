@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { webhookEvents, vehicleTelemetry } from "@/lib/db/schema";
 import { computeHmac, verifySignature, parseVehicleStateSignals } from "@/lib/smartcar/webhook";
 import type { SmartcarWebhookEvent } from "@/lib/smartcar/types";
+import { carIdForVehicle } from "@/lib/cars";
 
 // Records battery/odometer history from Smartcar's webhook (see
 // HANDOVER.md's "Smartcar API reality" for why this exists -- GET requests
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
       data?.signals as Parameters<typeof parseVehicleStateSignals>[0],
     );
     if (parsed.batteryReportedAt || parsed.odometerReportedAt) {
-      await recordTelemetryIfChanged(parsed);
+      await recordTelemetryIfChanged(parsed, data?.vehicle?.id ?? env.SMARTCAR_VEHICLE_ID ?? null);
     }
   }
 
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
 
 async function recordTelemetryIfChanged(
   parsed: ReturnType<typeof parseVehicleStateSignals>,
+  vehicleId: string | null,
 ): Promise<void> {
   const [lastRow] = await db
     .select()
@@ -99,5 +101,6 @@ async function recordTelemetryIfChanged(
     odometerKm:
       parsed.odometerKm != null ? String(parsed.odometerKm) : (lastRow?.odometerKm ?? null),
     odometerReportedAt,
+    carId: await carIdForVehicle(vehicleId),
   });
 }

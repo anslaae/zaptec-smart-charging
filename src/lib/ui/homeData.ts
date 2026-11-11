@@ -1,6 +1,6 @@
 import type { ChargerState } from "@/lib/zaptec/types";
 import type { Prices } from "@/lib/pricing";
-import type { BatteryToday } from "@/lib/ui/batteryToday";
+import type { SinceUnplug } from "@/lib/ui/sinceUnplug";
 
 /**
  * Everything the Hjem card needs for one charger, as plain serialisable data
@@ -39,9 +39,8 @@ export interface HomeCardData {
   capacityKwh: number;
   /** Norgespris + nettleie rates from Innstillinger (src/lib/pricing.ts). */
   prices: Prices;
-  /** The last completed plan, projected onto tomorrow, for the "connected" state. */
-  /** noCar: the car's battery readings today (HANDOFF §3 "Batteri i dag"); null = hide the card. */
-  batteryToday: BatteryToday | null;
+  /** noCar: what happened since the last unplug (HANDOFF §3 "Koblet fra"); null = hide the card. */
+  sinceUnplug: SinceUnplug | null;
   /** ready: the plan that just finished, for the status line and the "Siste lading" card. */
   lastPlan: {
     id: string;
@@ -53,6 +52,8 @@ export interface HomeCardData {
     endedAtIso: string | null;
     readyByIso: string;
     byName: string | null;
+    /** The car charged (design 6c): the line starts with it. */
+    carName: string | null;
     costNok: number | null;
   } | null;
   suggestion: {

@@ -1,11 +1,11 @@
 import { Suspense } from "react";
-import { desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { desc, eq, inArray, isNull } from "drizzle-orm";
 import { getCurrentUser, verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
-import { activityEvents, chargeSchedules, manualChargeSessions, schedulerHeartbeat, users, vehicleTelemetry } from "@/lib/db/schema";
+import { activityEvents, chargeSchedules, manualChargeSessions, schedulerHeartbeat, users } from "@/lib/db/schema";
 import { ActivityType } from "@/lib/activity/log";
-import { batteryToday } from "@/lib/ui/batteryToday";
-import { planDeliveredKwh } from "@/lib/records";
+import { sinceUnplug } from "@/lib/ui/sinceUnplug";
+import { loadDriveReadings, planDeliveredKwh } from "@/lib/records";
 import { reachedPercent } from "@/lib/push/notifications";
 import { sessionCost } from "@/lib/pricing";
 import { listChargers, getChargerState } from "@/lib/zaptec/client";
@@ -87,11 +87,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         .orderBy(desc(activityEvents.createdAt))
         .limit(2),
       getSettings(),
-      // "Batteri i dag" (noCar): readings from the last 36 h; batteryToday() picks the window.
-      db
-        .select({ percent: vehicleTelemetry.batteryPercent, at: vehicleTelemetry.batteryReportedAt })
-        .from(vehicleTelemetry)
-        .where(gte(vehicleTelemetry.batteryReportedAt, new Date(now.getTime() - 36 * 3_600_000))),
+      // "Koblet fra" (noCar): readings from the last 30 days; sinceUnplug() picks the window.
+      loadDriveReadings(null, new Date(now.getTime() - 30 * 86_400_000)),
       db
         .select({ chargerId: activityEvents.chargerId, createdAt: activityEvents.createdAt })
         .from(activityEvents)
@@ -203,10 +200,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       suggestion,
       capacityKwh,
       prices: pricesOf(settings),
-      batteryToday: batteryToday({
-        readings: telemetry
-          .filter((t) => t.percent != null && t.at != null)
-          .map((t) => ({ at: t.at!, percent: t.percent! })),
+      sinceUnplug: sinceUnplug({
+        readings: telemetry,
         lastUnplug: lastUnplug?.chargerId === charger.id ? lastUnplug.createdAt : null,
         now,
       }),
@@ -231,6 +226,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
               endedAtIso: lastCompleted.endedAt?.toISOString() ?? null,
               readyByIso: lastCompleted.readyBy.toISOString(),
               byName: people.find((p) => p.id === lastCompleted.createdByUserId)?.name ?? null,
+              carName: home.car?.name ?? null,
               costNok:
                 delivered != null && lastCompleted.startedAt
                   ? sessionCost(delivered, lastCompleted.startedAt, lastCompleted.endedAt, pricesOf(settings)).totalNok

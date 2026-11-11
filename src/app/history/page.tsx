@@ -17,6 +17,7 @@ import {
 } from "@/lib/ui/history";
 import { formatDayAndTime, formatDayLabel, formatDuration, formatNumber, formatTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
+import { carShortName } from "@/lib/ui/cars";
 
 const t = nb.history;
 type Tab = "sessions" | "plans" | "activity";
@@ -44,19 +45,30 @@ function Segments({ active }: { active: Tab }) {
   );
 }
 
-function Tag({ tag, guestName }: { tag: SessionRecord["tag"]; guestName?: string | null }) {
+function Tag({ tag }: { tag: SessionRecord["tag"] }) {
   return (
     <span
       className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
         tag === "plan" || tag === "smart" ? "bg-accent-tag text-accent" : "bg-track text-text-2"
       }`}
     >
-      {tag === "guest" && guestName ? `${t.tags.guest} · ${guestName}` : t.tags[tag]}
+      {t.tags[tag]}
     </span>
   );
 }
 
-function SessionRow({ record, now }: { record: SessionRecord; now: Date }) {
+/** "Mokka-e · 41 → 80 %"; guest rows "Gjest · {name}" -- a guest's car is never ours (HANDOFF.md §6c). */
+function sessionDetail(record: SessionRecord, carName: string | null): string | null {
+  if (record.tag === "guest") return record.guestName ? `${t.tags.guest} · ${record.guestName}` : null;
+  const percent =
+    record.startPercent != null && record.endPercent != null ? `${record.startPercent} → ${record.endPercent} %` : null;
+  const car = record.carId != null ? carName : null;
+  if (car && percent) return fill(t.carPrefix, { car, detail: percent });
+  return car ?? percent;
+}
+
+function SessionRow({ record, now, carName }: { record: SessionRecord; now: Date; carName: string | null }) {
+  const detail = sessionDetail(record, carName);
   const duration = record.endedAt ? (record.endedAt.getTime() - record.startedAt.getTime()) / 1000 : null;
   return (
     <li id={`session-${record.id}`} className="flex scroll-mt-4 items-start justify-between gap-3 py-3 target:bg-accent-tint">
@@ -65,13 +77,9 @@ function SessionRow({ record, now }: { record: SessionRecord; now: Date }) {
           <span className="text-[15px] font-semibold">
             {capitalize(formatDayLabel(record.startedAt, now))} · {formatTime(record.startedAt)}
           </span>
-          <Tag tag={record.tag} guestName={record.guestName} />
+          <Tag tag={record.tag} />
         </div>
-        {record.startPercent != null && record.endPercent != null && (
-          <p className="mt-0.5 text-sm text-text-2">
-            {record.startPercent} → {record.endPercent} %
-          </p>
-        )}
+        {detail && <p className="mt-0.5 text-sm text-text-2">{detail}</p>}
       </div>
       <div className="shrink-0 text-right">
         <p className="text-[15px] font-semibold tabular-nums">
@@ -92,7 +100,7 @@ function automaticLine(count: number, period: string): string | null {
   return fill(count === 1 ? t.automaticSummary : t.automaticSummaryPlural, { count, period });
 }
 
-function WeekSection({ group, now }: { group: WeekGroup; now: Date }) {
+function WeekSection({ group, now, carName }: { group: WeekGroup; now: Date; carName: string | null }) {
   const line = automaticLine(group.automaticStops, t.period[group.key]);
   return (
     <section>
@@ -110,7 +118,7 @@ function WeekSection({ group, now }: { group: WeekGroup; now: Date }) {
         ) : (
           <ul className="divide-y divide-divider">
             {group.records.map((record) => (
-              <SessionRow key={record.id} record={record} now={now} />
+              <SessionRow key={record.id} record={record} now={now} carName={carName} />
             ))}
           </ul>
         )}
@@ -120,7 +128,7 @@ function WeekSection({ group, now }: { group: WeekGroup; now: Date }) {
   );
 }
 
-function MonthSection({ group, now }: { group: MonthGroup; now: Date }) {
+function MonthSection({ group, now, carName }: { group: MonthGroup; now: Date; carName: string | null }) {
   const name = monthName(group.key);
   const line = automaticLine(group.automaticStops, fill(t.period.month, { month: name }));
   const count = group.records.length;
@@ -137,7 +145,7 @@ function MonthSection({ group, now }: { group: MonthGroup; now: Date }) {
       </summary>
       <ul className="divide-y divide-divider border-t border-divider">
         {group.records.map((record) => (
-          <SessionRow key={record.id} record={record} now={now} />
+          <SessionRow key={record.id} record={record} now={now} carName={carName} />
         ))}
       </ul>
       {line && <p className="border-t border-divider py-2.5 text-xs text-muted">{line}</p>}
@@ -148,20 +156,21 @@ function MonthSection({ group, now }: { group: MonthGroup; now: Date }) {
 async function SessionsTab({ now }: { now: Date }) {
   const since = new Date(now.getTime() - HISTORY_MONTHS * 31 * 86_400_000);
   const [settings, car] = await Promise.all([getSettings(), getDefaultCar(null)]);
-  const { records, automaticStops } = await loadSessionRecords(since, car?.batteryCapacityKwh ?? 46, pricesOf(settings));
+  const { records, automaticStops } = await loadSessionRecords(since, car?.batteryCapacityKwh ?? 46, pricesOf(settings), car?.id ?? null);
   if (records.length === 0 && automaticStops.length === 0) {
     return <p className="text-sm text-muted">{t.emptySessions}</p>;
   }
   const { weeks, months } = groupSessions(records, automaticStops, now);
+  const carName = car ? carShortName(car.name) : null;
   return (
     <div className="flex flex-col gap-5">
       {weeks.map((group) => (
-        <WeekSection key={group.key} group={group} now={now} />
+        <WeekSection key={group.key} group={group} now={now} carName={carName} />
       ))}
       {months.length > 0 && (
         <div className="flex flex-col gap-2">
           {months.map((group) => (
-            <MonthSection key={group.key} group={group} now={now} />
+            <MonthSection key={group.key} group={group} now={now} carName={carName} />
           ))}
         </div>
       )}

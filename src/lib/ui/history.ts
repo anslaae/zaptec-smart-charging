@@ -20,6 +20,8 @@ export interface SessionRecord {
   userId: string | null;
   /** Guest sessions: "Hvem låner?" from the lend dialog. */
   guestName?: string | null;
+  /** The car charged (design 6c); null for guest sessions, which never count for a car. */
+  carId?: string | null;
   /** Energy + estimated nettleie (src/lib/pricing.ts); null without kWh. */
   costNok: number | null;
   /** The nettleie part of costNok; null when no grid rates are set. */

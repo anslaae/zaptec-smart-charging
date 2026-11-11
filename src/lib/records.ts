@@ -1,7 +1,8 @@
 import "server-only";
-import { and, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { activityEvents, chargeSchedules, manualChargeSessions } from "@/lib/db/schema";
+import { activityEvents, chargeSchedules, manualChargeSessions, vehicleTelemetry } from "@/lib/db/schema";
+import type { DriveReading } from "@/lib/ui/driving";
 import { ActivityType } from "@/lib/activity/log";
 import { reachedPercent } from "@/lib/push/notifications";
 import type { SessionRecord, SessionTag } from "@/lib/ui/history";
@@ -42,6 +43,8 @@ export async function loadSessionRecords(
   since: Date,
   capacityKwh: number,
   prices: Prices,
+  /** Rows from before car attribution count for this car (design 6c); guest sessions never do. */
+  defaultCarId: string | null = null,
 ): Promise<{ records: SessionRecord[]; automaticStops: Date[] }> {
   const [plans, sessions, stops] = await Promise.all([
     db
@@ -82,6 +85,7 @@ export async function loadSessionRecords(
           ? reachedPercent({ startPercent: plan.startPercent, targetPercent: plan.targetPercent, deliveredKwh: kwh, capacityKwh })
           : null,
       userId: plan.source === "smart" ? null : plan.createdByUserId,
+      carId: plan.carId ?? defaultCarId,
       ...costOf(kwh, plan.startedAt!, plan.endedAt, prices),
     });
   }
@@ -98,6 +102,7 @@ export async function loadSessionRecords(
       // Per-person totals: guest and automatic sessions belong to nobody.
       userId: tag === "manual" || tag === "preheat" ? session.startedByUserId : null,
       guestName: session.guestName,
+      carId: tag === "guest" ? null : (session.carId ?? defaultCarId),
       ...costOf(session.energyKwh != null ? Number(session.energyKwh) : null, session.startedAt, session.endedAt, prices),
     });
   }
@@ -105,4 +110,30 @@ export async function loadSessionRecords(
     records: records.filter((r) => r.kwh == null || r.kwh >= MIN_SESSION_KWH),
     automaticStops: stops.map((s) => s.createdAt),
   };
+}
+
+/**
+ * Odometer + battery readings for one car (Kjøring in Innsikt, design 6c).
+ * Rows from before car attribution (car_id null) belong to the default car.
+ * A reading's time is the newer of its two signals' report times.
+ */
+export async function loadDriveReadings(carId: string | null, since: Date): Promise<DriveReading[]> {
+  const rows = await db
+    .select()
+    .from(vehicleTelemetry)
+    .where(
+      and(
+        gte(vehicleTelemetry.createdAt, since),
+        carId ? or(eq(vehicleTelemetry.carId, carId), isNull(vehicleTelemetry.carId)) : undefined,
+      ),
+    )
+    .orderBy(asc(vehicleTelemetry.createdAt));
+  return rows.map((row) => {
+    const times = [row.batteryReportedAt, row.odometerReportedAt].filter((d): d is Date => d != null);
+    return {
+      at: times.length > 0 ? new Date(Math.max(...times.map((d) => d.getTime()))) : row.createdAt,
+      odometerKm: row.odometerKm != null ? Number(row.odometerKm) : null,
+      batteryPercent: row.batteryPercent,
+    };
+  });
 }

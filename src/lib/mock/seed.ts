@@ -88,13 +88,33 @@ function historySql(now: Date): string {
   const plans: string[] = [];
   const sessions: string[] = [];
   const stops: string[] = [];
+  // Smartcar readings for Kjøring (design 6c): 07:00 and 19:00 UTC each day.
+  // The car drives during the day; the battery rises only over a home session
+  // in this history (night plan, Lad nå) -- except one charge elsewhere (d 20).
+  const telemetry: string[] = [];
+  let battery = 70;
+  let odometer = 17000;
+  const reading = (when: Date) =>
+    telemetry.push(`(${battery}, ${ts(when)}, ${odometer.toFixed(1)}, ${ts(when)}, ${ts(when)})`);
   const at = (base: Date, hours: number, minutes: number) => {
     const date = new Date(base);
     date.setUTCHours(hours, minutes, 0, 0);
     return date;
   };
-  for (let d = 3; d <= 58; d++) {
+  for (let d = 58; d >= 3; d--) {
     const base = new Date(now.getTime() - d * day);
+    {
+      // Morning: after a night plan the battery is at its target.
+      if (d % 3 === 0) battery = d % 4 === 0 ? 90 : 80;
+      reading(at(base, 7, 0));
+      // Daytime driving, ~6 km/kWh on a 46 kWh battery.
+      const km = 25 + ((d * 13) % 30);
+      odometer += km;
+      battery = Math.max(10, Math.round(battery - (km / 6.2 / 46) * 100));
+      if (d % 5 === 1) battery = Math.min(95, battery + Math.round(((4 + (d % 6)) / 46) * 100)); // Lad nå
+      if (d === 20) battery = Math.min(95, battery + 30); // charged elsewhere
+      reading(at(base, 19, 0));
+    }
     if (d % 3 === 0) {
       // A night plan, ready 06:30 UTC (07:30 Oslo in winter)
       const by = d % 2 === 0 ? roger.id : astrid.id;
@@ -139,5 +159,8 @@ INSERT INTO manual_charge_sessions (charger_id, started_by_user_id, kind, starte
 
 INSERT INTO activity_events (charger_id, charger_name, type, created_at) VALUES
   ${stops.join(",\n  ")};
+
+INSERT INTO vehicle_telemetry (battery_percent, battery_reported_at, odometer_km, odometer_reported_at, created_at) VALUES
+  ${telemetry.join(",\n  ")};
 `;
 }

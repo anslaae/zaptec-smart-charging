@@ -1,9 +1,8 @@
 import "server-only";
-import { inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chargeSchedules, manualChargeSessions, activityEvents, vehicleTelemetry } from "@/lib/db/schema";
 import { saveSettings, type HouseholdSettings } from "@/lib/settings";
-import { lastMorning } from "@/lib/ui/batteryToday";
 import { ZaptecCommand } from "@/lib/zaptec/constants";
 import { HOUSEHOLD_TIME_ZONE, formatTime, tomorrowAtLocalValue, zonedDateTimeToUtc } from "@/lib/datetime";
 import { ChargerSim } from "./charger";
@@ -116,17 +115,28 @@ export async function applyPreset(key: PresetKey): Promise<void> {
 
   switch (key) {
     case "noCar": {
-      // Unplugged 3 h ago at 80 %, driven since: feeds "Batteri i dag" whatever
-      // the time of day (the card reaches back to the unplug when it's before 06:00).
-      // Readings sit inside today's window (since 06:00, at most 3 h back), so the
-      // card shows even right after 06:00 or when a later unplug was logged.
+      // Unplugged 26 h ago at 80 % and driven 41 km since: feeds "Koblet fra"
+      // (battery −18 %, ca. 41 km, always one midnight on the line).
+      // A reading just before the unplug is the baseline for both figures.
       sim.setBattery(62, now);
-      const start = Math.max(lastMorning(now).getTime(), now.getTime() - 3 * 60 * MINUTE);
-      const unplugged = new Date(start);
-      const span = now.getTime() - start;
-      const at = [start + MINUTE, start + span / 2, now.getTime() - MINUTE];
-      const readings: [number, number][] = [80, 72, 62].map((percent, i) => [(now.getTime() - at[i]) / MINUTE, percent]);
-      sim.reading = { percent: 62, at: new Date(at[2]) };
+      const unplugged = new Date(now.getTime() - 26 * 60 * MINUTE);
+      const [lastOdo] = await db
+        .select({ km: vehicleTelemetry.odometerKm })
+        .from(vehicleTelemetry)
+        .where(isNotNull(vehicleTelemetry.odometerKm))
+        .orderBy(desc(vehicleTelemetry.createdAt))
+        .limit(1);
+      const odo = Number(lastOdo?.km ?? 18300);
+      const readings: [Date, number, number][] = [
+        [new Date(unplugged.getTime() - MINUTE), 80, odo],
+        [new Date(now.getTime() - 10 * 60 * MINUTE), 72, odo + 20],
+        [new Date(now.getTime() - MINUTE), 62, odo + 41],
+      ];
+      sim.reading = { percent: 62, at: readings[2][0] };
+      // This unplug must be the latest one (the seed and earlier scenarios log newer ones).
+      await db
+        .delete(activityEvents)
+        .where(and(eq(activityEvents.type, "unplugged"), gt(activityEvents.createdAt, unplugged)));
       await db.insert(activityEvents).values({
         chargerId: MOCK_CHARGER.id,
         chargerName: MOCK_CHARGER.name,
@@ -134,9 +144,12 @@ export async function applyPreset(key: PresetKey): Promise<void> {
         createdAt: unplugged,
       });
       await db.insert(vehicleTelemetry).values(
-        readings.map(([minutesAgo, percent]) => ({
+        readings.map(([at, percent, km]) => ({
           batteryPercent: percent,
-          batteryReportedAt: new Date(now.getTime() - minutesAgo * MINUTE),
+          batteryReportedAt: at,
+          odometerKm: km.toFixed(1),
+          odometerReportedAt: at,
+          createdAt: at,
         })),
       );
       break;

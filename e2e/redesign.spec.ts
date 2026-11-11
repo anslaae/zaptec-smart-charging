@@ -204,7 +204,27 @@ test("Innsikt: KPIs, chart, per person and month navigation", async ({ page }) =
   await expect(page.getByText("Per person")).toBeVisible();
   await page.getByRole("link", { name: "Forrige måned" }).click();
   await expect(page).toHaveURL(/month=\d{4}-\d{2}/);
-  await expect(page.getByText("Gjest")).toBeVisible();
+  await expect(page.getByText("Gjest", { exact: true })).toBeVisible();
+});
+
+test("Innsikt 6c: car chip and Kjøring card from the odometer", async ({ page }) => {
+  await page.goto("/insights");
+  await expect(page.getByText("Opel Mokka-e", { exact: true })).toBeVisible();
+  await expect(page.getByText("Gjestelading telles separat")).toBeVisible();
+  const drive = page.getByRole("region", { name: "Kjøring" });
+  await expect(drive.getByText(/^km-stand [\d\s\u00a0]+ · målt /)).toBeVisible();
+  await expect(drive.getByText(/^kjørt i /)).toBeVisible();
+  await expect(drive.getByText(/^\d+,\d km\/kWh$/)).toBeVisible();
+  await expect(drive.getByText(/^\d+,\d\d kWh\/mil$/)).toBeVisible();
+  await expect(drive.getByText(/^ca\. \d+,\d\d kr\/mil$/)).toBeVisible();
+  // Last month: the seeded charge elsewhere is left out and counted in the footnote
+  await page.getByRole("link", { name: "Forrige måned" }).click();
+  await expect(page.getByRole("region", { name: "Kjøring" }).getByText(/lading et annet sted er holdt utenfor/)).toBeVisible();
+});
+
+test("Historikk 6c: rows start with the car's short name", async ({ page }) => {
+  await page.goto("/history");
+  await expect(page.getByText(/^Mokka-e · \d+ → \d+ %$/).first()).toBeVisible();
 });
 
 test("UC14: 'Lad med en gang' lets an unplanned session run", async ({ page }) => {
@@ -253,7 +273,10 @@ test("UC16: Smart lading plans the night on plug-in and shows it on Hjem", async
   await expect(page.getByText(/^Lader (i natt )?\d\d:\d\d–\d\d:\d\d$/)).toBeVisible();
   await expect(page.getByText(/^Klar til \d\d:\d\d .+ · \+[\d,]+ kWh$/)).toBeVisible();
   await expect(page.getByText("Kveldstopp", { exact: true })).toBeVisible();
-  await expect(page.getByText(/sparer ca\. \d+ kr og kveldstoppen/)).toBeVisible();
+  // The saving vs charging now only exists while "now" is daytime rate; late in the
+  // evening charging now is nearly all night rate, so the line is (rightly) hidden.
+  const osloHour = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: "Europe/Oslo" }).format(new Date()));
+  if (osloHour >= 6 && osloHour < 20) await expect(page.getByText(/sparer ca\. \d+ kr og kveldstoppen/)).toBeVisible();
   await expect(page.getByText(/^ca\. \d+ kr$/)).toBeVisible();
   // "Endre for i natt" opens the plan sheet for this row
   await page.getByRole("link", { name: "Endre for i natt" }).click();
@@ -423,21 +446,25 @@ test("Fullfør plan in the mock panel ends in the ready state with the push", as
   await expect(page.getByText(/^Ferdig \d\d:\d\d · .+ (før|etter) fristen \d\d:\d\d$/)).toBeVisible();
   await expect(page.getByText("mål nådd")).toBeVisible();
   await expect(page.getByText("Siste lading")).toBeVisible();
-  await expect(page.getByText("Plan av Roger")).toBeVisible();
+  // Design 6c: the line starts with the car
+  await expect(page.getByText("Opel Mokka-e · plan av Roger")).toBeVisible();
   await expect(page.getByRole("link", { name: "Detaljer ›" })).toHaveAttribute("href", /\/history#session-/);
   await expect(page.getByRole("button", { name: "Lad nå" })).toBeVisible();
 });
 
-test("unplugged Hjem: last reading in the ring, kWh left and Batteri i dag", async ({ page }) => {
+test("unplugged Hjem: last reading in the ring, kWh left and Koblet fra", async ({ page }) => {
   await preset(page, "Ingen bil tilkoblet");
   await page.goto("/");
   await expect(page.getByText("Ikke tilkoblet", { exact: true })).toBeVisible();
   await expect(page.getByText(/^ca\. \d+ kWh igjen$/)).toBeVisible();
   await expect(page.getByRole("img", { name: /^Batteri 62 %, sist målt \d\d:\d\d$/ })).toBeVisible();
   await expect(page.getByText(/^målt \d\d:\d\d$/)).toBeVisible();
-  await expect(page.getByText("Batteri i dag")).toBeVisible();
-  await expect(page.getByText(/^−18 % siden \d\d:\d\d$/)).toBeVisible();
-  await expect(page.getByText(/^koblet fra \d\d:\d\d$/)).toBeVisible();
+  // Design 6c: since the unplug (26 h ago in the preset), with a day word, never a bare HH:MM
+  const card = page.getByRole("region", { name: "Koblet fra" });
+  await expect(card.getByText(/^i (dag|går) \d\d:\d\d$/)).toBeVisible();
+  await expect(card.getByText("−18 %", { exact: true })).toBeVisible();
+  await expect(card.getByText("ca. 41 km", { exact: true })).toBeVisible();
+  await expect(card.getByText(/^i dag \d\d:\d\d · 62 %$/)).toBeVisible();
 });
 
 test("Logg ut asks first; Avbryt keeps you logged in", async ({ page }) => {

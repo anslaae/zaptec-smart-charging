@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { manualChargeSessions } from "@/lib/db/schema";
 import type { ChargerState } from "@/lib/zaptec/types";
+import { defaultCarId } from "@/lib/cars";
 
 // Every non-plan authorisation lives in manual_charge_sessions with a `kind`
 // (see schema.ts): Lad nå, Forvarm, a guest window (UC15) or an automatic
@@ -42,6 +43,8 @@ export async function openSession(
   await db.insert(manualChargeSessions).values({
     chargerId,
     kind,
+    // A guest's car never counts for ours (design 6c).
+    carId: kind === "guest" ? null : await defaultCarId(),
     startedByUserId: userId,
     guestName,
     targetKwh: targetKwh == null ? null : targetKwh.toFixed(2),

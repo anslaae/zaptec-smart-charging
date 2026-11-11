@@ -5,10 +5,11 @@ import { users } from "@/lib/db/schema";
 import { getSettings, pricesOf } from "@/lib/settings";
 import { hasGridTariff } from "@/lib/pricing";
 import { getDefaultCar } from "@/lib/places";
-import { loadSessionRecords } from "@/lib/records";
+import { loadDriveReadings, loadSessionRecords } from "@/lib/records";
+import { latestOdometer, monthDriving, type MonthDriving } from "@/lib/ui/driving";
 import { capitalize, monthName } from "@/lib/ui/history";
 import { monthInsights, monthKeyOf, shiftMonth } from "@/lib/ui/insights";
-import { formatNumber } from "@/lib/datetime";
+import { formatNumber, formatPastDayAndTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
 
 const t = nb.insights;
@@ -64,6 +65,76 @@ function PersonBar({ name, kwh, costNok, max, muted }: { name: string; kwh: numb
   );
 }
 
+function DriveFigure({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className="mt-0.5 text-[15px] font-semibold tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+// Kjøring (HANDOFF.md §6c): km, efficiency and cost per mil for the month and car.
+function DriveCard({
+  d,
+  prev,
+  monthLabel,
+  odometer,
+  now,
+}: {
+  d: MonthDriving;
+  prev: MonthDriving;
+  monthLabel: string;
+  odometer: { km: number; at: Date } | null;
+  now: Date;
+}) {
+  const td = t.drive;
+  return (
+    <section aria-label={td.title} className="rounded-[var(--radius-card)] border border-border bg-surface p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.04em] text-muted">{td.title}</h2>
+        {odometer && (
+          <span className="text-right text-xs text-muted">
+            {fill(td.odometer, { km: formatNumber(odometer.km, 0), when: formatPastDayAndTime(odometer.at, now) })}
+          </span>
+        )}
+      </div>
+      <p className="mt-2 text-[26px] leading-tight font-semibold tabular-nums">
+        {formatNumber(d.km ?? 0, 0)} km{" "}
+        <span className="text-sm font-normal text-muted">{fill(td.driven, { month: monthLabel })}</span>
+      </p>
+      {d.enough ? (
+        <dl className="mt-3 grid grid-cols-3 gap-3 border-t border-divider pt-3">
+          <DriveFigure label={td.efficiency} value={fill(td.efficiencyValue, { value: formatNumber(d.kmPerKwh!, 1) })} />
+          <DriveFigure label={td.consumption} value={fill(td.consumptionValue, { value: formatNumber(d.kwhPerMil!, 2) })} />
+          <DriveFigure
+            label={td.cost}
+            value={d.nokPerMil != null ? fill(td.costValue, { value: formatNumber(d.nokPerMil, 2) }) : "–"}
+          />
+        </dl>
+      ) : (
+        <p className="mt-2 text-sm text-muted">{td.notEnough}</p>
+      )}
+      {prev.enough && (
+        <p className="mt-3 text-xs text-muted">
+          {t.prevMonthShort}:{" "}
+          {fill(td.previous, {
+            km: formatNumber(prev.km ?? 0, 0),
+            eff: formatNumber(prev.kmPerKwh!, 1),
+            cost: prev.nokPerMil != null ? formatNumber(prev.nokPerMil, 2) : "–",
+          })}
+        </p>
+      )}
+      <p className="mt-3 text-xs text-muted">
+        {td.footnote}
+        {d.awayCharges > 0 && (
+          <> {fill(d.awayCharges === 1 ? td.awayCharges : td.awayChargesPlural, { count: d.awayCharges })}</>
+        )}
+      </p>
+    </section>
+  );
+}
+
 // Innsikt (design/redesign/HANDOFF.md §5): one month at a time from the
 // app's own session records. Cost = energy (Norgespris) + estimated nettleie
 // energiledd, both from Innstillinger (src/lib/pricing.ts; DECISIONS.md D30).
@@ -82,8 +153,20 @@ export default async function InsightsPage({ searchParams }: PageProps<"/insight
     getDefaultCar(null),
     db.select({ id: users.id, name: users.name }).from(users),
   ]);
-  const { records } = await loadSessionRecords(new Date(Date.UTC(py, pm - 1, 1) - 86_400_000), car?.batteryCapacityKwh ?? 46, pricesOf(settings));
+  const capacityKwh = car?.batteryCapacityKwh ?? 46;
+  const since = new Date(Date.UTC(py, pm - 1, 1) - 86_400_000);
+  const [{ records }, readings] = await Promise.all([
+    loadSessionRecords(since, capacityKwh, pricesOf(settings), car?.id ?? null),
+    // A month further back than the previous one: the baseline reading "before the month".
+    loadDriveReadings(car?.id ?? null, new Date(since.getTime() - 31 * 86_400_000)),
+  ]);
   const m = monthInsights(records, month, now);
+  // Kjøring: home sessions for this car only (a guest's car never counts for ours).
+  const carSessions = records.filter((r) => r.carId != null && r.carId === car?.id);
+  const avgPrice = (x: { totalKwh: number; totalCostNok: number }) => (x.totalKwh > 0 ? x.totalCostNok / x.totalKwh : null);
+  const drive = monthDriving(readings, carSessions, month, capacityKwh, avgPrice(m));
+  const drivePrev = monthDriving(readings, carSessions, previous, capacityKwh, avgPrice(monthInsights(records, previous, now)));
+  const odometer = latestOdometer(readings, month);
   const grid = hasGridTariff(pricesOf(settings));
   const nameById = new Map(people.map((p) => [p.id, p.name]));
   const personMax = Math.max(...m.perPerson.map((p) => p.kwh), m.guestKwh, m.automaticKwh, m.smartKwh, 0);
@@ -100,7 +183,16 @@ export default async function InsightsPage({ searchParams }: PageProps<"/insight
 
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 pt-6 pb-4">
-      <h1 className="text-[28px] font-semibold">{t.title}</h1>
+      <div>
+        <h1 className="text-[28px] font-semibold">{t.title}</h1>
+        {car && (
+          // With one car a label, not a picker (HANDOFF.md §6c).
+          <p className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-surface-2 px-3 py-1 text-sm font-semibold">{car.name}</span>
+            <span className="text-xs text-muted">{t.car.chipNote}</span>
+          </p>
+        )}
+      </div>
 
       <nav className="flex items-center justify-between">
         <Link
@@ -170,6 +262,10 @@ export default async function InsightsPage({ searchParams }: PageProps<"/insight
             )}
           </ul>
         </section>
+      )}
+
+      {(drive.km != null || odometer) && (
+        <DriveCard d={drive} prev={drivePrev} monthLabel={monthName(month)} odometer={odometer} now={now} />
       )}
 
       <p className="px-1 text-xs text-muted">

@@ -58,7 +58,7 @@ One hero card plus one primary action. Derive a `homeState` in a pure, unit-test
 | homeState | When | Status line | Primary | Secondary |
 | --- | --- | --- | --- | --- |
 | `noControl` | `!appHasControl()` | Amber banner + "Tilkoblet – venter på innlogging" | none | none |
-| `noCar` | Disconnected, no plan | "Ikke tilkoblet" (we don't know where the car is; the % lives only in the ring; falls back to "Ingen bil tilkoblet" without Smartcar) | Planlegg lading | "Batteri i dag" card |
+| `noCar` | Disconnected, no plan | "Ikke tilkoblet" (we don't know where the car is; the % lives only in the ring; falls back to "Ingen bil tilkoblet" without Smartcar) | Planlegg lading | "Koblet fra" card |
 | `planWaiting` | Disconnected, pending plan | Plan klar – venter på bilen | Endre plan | Avbryt plan |
 | `connected` | Connected, idle, no plan | Tilkoblet – ingen plan | Planlegg lading | Lad nå, Forvarm bilen, one-tap suggestion |
 | `planned` | Connected, pending plan | Planlagt – starter ca. HH:MM (amber `tooTight` if `startsImmediately`) | Endre plan | Lad nå, Forvarm bilen |
@@ -76,7 +76,12 @@ One hero card plus one primary action. Derive a `homeState` in a pure, unit-test
     - No Smartcar: show plan progress in kWh.
     - `noCar`: the car's battery is still shown when it isn't plugged in, because Smartcar reports it regardless of the charger. The ring shows the latest `vehicle_telemetry` / `getStateOfCharge()` reading with "målt HH:MM", plus a small "unplugged" badge on the ring. Below the status line: "ca. N kWh igjen" (% × car capacity). Rule for every state: the battery % appears once, in the ring. Status lines never repeat it. Without any Smartcar reading: dashed track with a plug icon, as before.
     - `ready`: the ring is at the reached %, with the target tick and a lime check badge; "mål nådd" replaces "målt". The "Siste lading" card shows Fra % · Levert kWh · Tid · Kostnad (Norgespris), "Plan av {user}", and a "Detaljer ›" link to the session in Historikk. The state lasts until the car is unplugged (→ `noCar`; the session then appears in Siste hendelser/Historikk) or any new action starts (Planlegg, Lad nå, Forvarm). Derive it from the most recent `completed` schedule for the charger whose `zaptecSessionId` matches the current, still-connected session — no new table needed.
-    - "Batteri i dag" card (only in `noCar`): a sparkline of `vehicle_telemetry` battery % since 06:00, or since the last unplug if that was earlier. Mark the unplug time with a dashed line. Show the change, e.g. "−18 % siden 07:31". Hide the card if there are fewer than two readings.
+    - "Koblet fra" card (only in `noCar`; replaces "Batteri i dag"):
+        - The window always starts at the last unplug. The header shows that moment with a day word: "i dag 07:31", "i går 18:40", "man. 16:40", or a date if older than 6 days. Never a bare HH:MM, which is ambiguous across days.
+        - Two figures: **Batteri** change since the unplug ("−18 %"), from the latest reading of any age, and **Kjørt** = odometer now − last odometer reading at or before the unplug ("ca. 41 km").
+        - Show "Kjørt" only when the odometer moved by ≥ 1 km and there are readings on both sides of the unplug; otherwise leave the slot out. With sparse readings the figure is rough, hence "ca.".
+        - Sparkline of battery % from the unplug to the latest reading, capped to the last 7 days. Dashed lines mark each midnight (labelled "midnatt" when there is one). End labels: "{day word} HH:MM · NN %".
+        - Hide the whole card if there is no reading after the unplug.
     - `preheating`: sun icon in amber.
 - **Stats row while charging:** Levert (session kWh), Tid, Kostnad (kWh × Norgespris).
 - **Siste hendelser:** the last 2 `activity_events`.
@@ -188,6 +193,42 @@ Switching to `now` or `smart` shows the "anyone at the charger can charge" dialo
 **Notification** `smart_planned`: see `notifications.nb.json`.
 
 **Data:** add these keys to `settings`: `on_plugin_mode`, `on_plugin_mode_until`, `smart_target_percent`, `smart_ready_by_weekday`, `smart_ready_by_weekend`, `grid_tariff` (JSON of periods and prices; seeded with Elvia 2026), `energy_price_nok_per_kwh` (0.50). Add `charge_schedules.source` ('user' | 'smart') and `charge_schedules.blocks` (jsonb, nullable).
+
+## 6c. Driving stats and car attribution (design update 2026-11-12)
+
+Smartcar already reports `Odometer.TraveledDistance`; it is stored in `vehicle_telemetry.odometer_km` by the existing webhook. This adds km, efficiency and cost per distance to Innsikt, and makes it visible which car the stats are counted against.
+
+**Car attribution:**
+
+- Every non-guest session belongs to a car; today that is always the Opel Mokka, the location's default car.
+- Resolve the car at read time in `loadSessionRecords`: `row.carId ?? (tag === 'guest' ? null : defaultCar.id)`. Guest sessions have no car and are never mixed into a car's numbers. Automatic and smart sessions count for the default car, because the energy went into it (unless a guest window was open).
+- Going forward, store `car_id`:
+    - on `charge_schedules`: the column exists; set it on create;
+    - on `manual_charge_sessions`: new nullable column, null for `kind = 'guest'`;
+    - on `vehicle_telemetry`: new nullable column, filled from the webhook's vehicle id → `cars.smartcar_vehicle_id`.
+- **Backfill (owner decision):** one migration sets `car_id` to the default car on every existing `charge_schedules` row, every non-guest `manual_charge_sessions` row and every `vehicle_telemetry` row. Previous sessions are all the Mokka.
+- **UI:**
+    - Innsikt shows a car chip under the title: "Opel Mokka", with "Gjestelading telles separat". With one car it is a label, not a picker; with several cars it becomes the picker from "Ladere og biler".
+    - Historikk rows prefix the detail with the car's short name ("Mokka · 41 → 80 %"); guest rows show "Gjest · {name}".
+    - The `ready` "Siste lading" line starts with the car name.
+
+**Kjøring card in Innsikt** (below Per person), for the selected month and car:
+
+| Figure | Definition |
+| --- | --- |
+| Kjørt (km) | Last odometer reading in the month − last reading before the month (or the first reading in the month if there is none before) |
+| Forbruk (kWh/mil) | kWh consumed ÷ km × 10. kWh consumed = sum over consecutive telemetry pairs in the month where the odometer increased and the battery % fell: Δ% × car capacity |
+| Effektivitet (km/kWh) | km ÷ kWh consumed (the inverse of the line above) |
+| Kostnad (kr/mil) | Forbruk (kWh/mil) × the month's average home cost per kWh (energy + nettleie estimate, same as the Kostnad KPI) |
+| Comparison line | The same three figures for the previous month |
+
+**Rules:**
+
+- Use SoC drops, not home-charged kWh, for consumption, because the car may also charge elsewhere. A pair where the battery rose with no home session in between counts as "lading et annet sted": exclude it from consumption, count it in the footnote, and leave it out of cost.
+- Readings are sparse (hours apart) and the battery % is an integer, so these are monthly figures only, with no per-trip numbers. Show efficiency/consumption/cost only when the month has ≥ 100 km and ≥ 5 % total SoC drop; otherwise show km only, with "For lite data til å regne forbruk ennå".
+- Use "mil" (10 km), the Norwegian convention, for kWh and kr per distance, and km for distance and km/kWh. Format with a decimal comma: 6,1 km/kWh · 1,64 kWh/mil · ca. 2,65 kr/mil.
+- Header line: the latest odometer reading and its age ("km-stand 18 342 · målt i går 18:05"), honest about freshness.
+- Pure function: `monthDriving(telemetry, homeSessions, month, capacityKwh, avgNokPerKwh)` in `src/lib/ui/driving.ts`, unit-tested with sparse readings, an away charge and a month with no data.
 
 ## 7. Data model (prepare for multiple chargers and cars, show nothing extra yet)
 

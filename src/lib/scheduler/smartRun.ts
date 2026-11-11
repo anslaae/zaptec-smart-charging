@@ -13,6 +13,7 @@ import { logActivity, ActivityType } from "@/lib/activity/log";
 import { sendPushToAllSubscribers } from "@/lib/push/send";
 import { smartPlanned } from "@/lib/push/notifications";
 import { formatTime } from "@/lib/datetime";
+import { defaultCarId } from "@/lib/cars";
 import { planDeliveredNow, plannedPowerKw, type SchedulerDecision } from "./engine";
 import { decideSmart, nextSmartReadyBy, planSmartCharge, type SmartBlock, type SmartPlan } from "./smart";
 
@@ -213,6 +214,7 @@ export async function manageSmartRows(input: {
       .values({
         createdByUserId: null,
         source: "smart",
+        carId: await defaultCarId(),
         chargerId: charger.id,
         chargerName: charger.name,
         targetEnergyKwh: plan.neededKwh.toString(),

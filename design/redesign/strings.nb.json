@@ -33,11 +33,15 @@
       "statusNoBattery": "Ingen bil tilkoblet",
       "sub": "ca. {kwh} kWh igjen",
       "subNoBattery": "Sist tilkoblet {when}",
-      "todayTitle": "Batteri i dag",
-      "todayChange": "{change} % siden {time}",
-      "unplugged": "koblet fra {time}",
       "hint": "Du kan planlegge allerede nå. Ladingen starter når bilen kobles til.",
-      "primary": "Planlegg lading"
+      "primary": "Planlegg lading",
+      "sinceTitle": "Koblet fra",
+      "sinceBattery": "Batteri",
+      "sinceBatteryValue": "{change} %",
+      "sinceDriven": "Kjørt",
+      "sinceDrivenValue": "ca. {km} km",
+      "sinceMidnight": "midnatt",
+      "sinceEndLabel": "{when} · {percent} %"
     },
     "connected": {
       "status": "Tilkoblet – ingen plan",
@@ -93,7 +97,7 @@
       "delivered": "Levert",
       "duration": "Tid",
       "cost": "Kostnad",
-      "byUser": "Plan av {name}",
+      "byUser": "{car} · plan av {name}",
       "persistNote": "Vises til bilen kobles fra eller du starter noe nytt",
       "primary": "Planlegg lading"
     },
@@ -193,7 +197,8 @@
       "automatic": "Automatisk",
       "smart": "Smart"
     },
-    "automaticSummary": "Automatisk: {count} tilkobling stoppet {period}. Vises i Aktivitet."
+    "automaticSummary": "Automatisk: {count} tilkobling stoppet {period}. Vises i Aktivitet.",
+    "carPrefix": "{car} · {detail}"
   },
   "insights": {
     "title": "Innsikt",
@@ -204,7 +209,26 @@
     "perDay": "kWh per dag",
     "perPerson": "Per person",
     "guest": "Gjest",
-    "priceNote": "Pris: Norgespris. Sammenligning med spotpris kommer senere."
+    "priceNote": "Pris: Norgespris. Sammenligning med spotpris kommer senere.",
+    "car": {
+      "chipNote": "Gjestelading telles separat"
+    },
+    "drive": {
+      "title": "Kjøring",
+      "odometer": "km-stand {km} · målt {when}",
+      "driven": "kjørt i {month}",
+      "efficiency": "Effektivitet",
+      "efficiencyValue": "{value} km/kWh",
+      "consumption": "Forbruk",
+      "consumptionValue": "{value} kWh/mil",
+      "cost": "Kostnad",
+      "costValue": "ca. {value} kr/mil",
+      "previous": "{km} km · {eff} km/kWh · {cost} kr/mil",
+      "notEnough": "For lite data til å regne forbruk ennå",
+      "footnote": "Ut fra kilometerstand og batterinivå fra bilen (Smartcar). Kostnaden bruker snittprisen for lading hjemme.",
+      "awayCharges": "{count} lading et annet sted er tatt med i forbruket, ikke i kostnaden.",
+      "awayChargesPlural": "{count} ladinger andre steder er tatt med i forbruket, ikke i kostnaden."
+    }
   },
   "settings": {
     "title": "Innstillinger",
