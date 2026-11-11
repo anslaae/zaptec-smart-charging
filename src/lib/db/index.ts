@@ -13,8 +13,8 @@ function createDb(): PostgresJsDatabase<typeof schema> {
 
   // idle_timeout closes the TCP connection after 20s of no queries, so a warm
   // Vercel function instance doesn't hold one open indefinitely between
-  // invocations -- an open connection can itself be enough to keep Neon's
-  // compute from ever seeing this as idle, regardless of query frequency.
+  // invocations, tying up one of the Supabase session pooler's limited client
+  // slots (session mode pins a server connection to each client connection).
   const client = postgres(env.DATABASE_URL, { max: 1, idle_timeout: 20 });
   return drizzle(client, { schema });
 }

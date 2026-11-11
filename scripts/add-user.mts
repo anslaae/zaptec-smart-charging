@@ -17,10 +17,9 @@ async function main() {
     process.exit(1);
   }
 
-  // Same precedence as src/lib/env.ts (staged Neon -> Supabase migration).
-  const databaseUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+  const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
-    console.error("Neither SUPABASE_DATABASE_URL nor DATABASE_URL is set (check .env.local)");
+    console.error("DATABASE_URL is not set (check .env.local)");
     process.exit(1);
   }
 

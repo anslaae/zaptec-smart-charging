@@ -2,17 +2,17 @@
 
 Context for picking this project up in a fresh session with minimal re-exploration. Repo: https://github.com/anslaae/zaptec-smart-charging (private, owner `anslaae`). Local path: `/Users/rogera.slaaen/repo/zaptec-smart-charging`. Live at https://zaptec-smart-charging.vercel.app.
 
-Last substantially updated: 2026-11-08. If this date is old relative to `git log -5`, treat the "Current status" and "Backlog" sections as possibly stale and verify against the code/DB before relying on them.
+Last substantially updated: 2026-11-11 (database: Neon → Supabase). If this date is old relative to `git log -5`, treat the "Current status" and "Backlog" sections as possibly stale and verify against the code/DB before relying on them.
 
 ## What this is
 
 A private household web app for scheduled EV charging on a Zaptec charger, for a Norwegian household (Europe/Oslo). Set "charge +N kWh, ready by HH:MM" and a background job starts/stops charging to hit that deadline. No price/solar optimization (deliberately deferred v2 scope). One charger in practice; the code mostly assumes this (comments call it out where it matters).
 
-Stack: Next.js 16 (App Router, Turbopack) + TypeScript, Postgres (Neon, via Vercel) + Drizzle ORM, hand-rolled signed-cookie session auth (no NextAuth), deployed to Vercel (Hobby plan). BFF pattern — the browser never talks to Zaptec directly. PWA-installable (manifest + icons + Apple meta tags). Push notifications via Web Push (VAPID).
+Stack: Next.js 16 (App Router, Turbopack) + TypeScript, Postgres (Supabase, via its session pooler; moved off Neon in Nov 2026) + Drizzle ORM, hand-rolled signed-cookie session auth (no NextAuth), deployed to Vercel (Hobby plan). BFF pattern — the browser never talks to Zaptec directly. PWA-installable (manifest + icons + Apple meta tags). Push notifications via Web Push (VAPID).
 
 ## Current status: live and in daily use
 
-Deployed, migrated, has real household users, and the owner actively uses it to charge a real car. This is **not** a toy/demo — treat production data and the real charger with the same care you'd give any live system. Schema is at migration `0012`; check `drizzle/` for the actual latest before assuming. **There is no staging/test database** — `.env.local`'s `DATABASE_URL` points at the real production Neon instance, so local `npm run dev` and any one-off script hit real data. If you need to simulate something that writes rows (e.g. a fake webhook delivery to test signature verification), clean up the rows you inserted afterward.
+Deployed, migrated, has real household users, and the owner actively uses it to charge a real car. This is **not** a toy/demo — treat production data and the real charger with the same care you'd give any live system. Schema is at migration `0019`; check `drizzle/` for the actual latest before assuming. Migrations are applied with `npm run db:migrate` (drizzle-kit, using `.env.local`'s `DATABASE_URL`). **There is no staging/test database** — `.env.local`'s `DATABASE_URL` points at the real production Supabase database (session pooler, `*.pooler.supabase.com:5432`; the same URL is `DATABASE_URL` in Vercel), so local `npm run dev` and any one-off script hit real data. If you need to simulate something that writes rows (e.g. a fake webhook delivery to test signature verification), clean up the rows you inserted afterward.
 
 ## The standing workflow — use the `ship` skill
 
@@ -41,10 +41,10 @@ src/lib/scheduler/
   engine.ts                         PURE decideNextAction(schedule, state, now) → resume/pause/complete/none. estimateChargingPlan() shared with the UI's live estimate.
   engine.test.ts                    unit tests for the above
   heartbeat.ts                      STALE_AFTER_SECONDS, shared between the dashboard badge and /api/health -- sized around tick-gate.ts's FULL_TICK_INTERVAL_MS, not the 1-minute cron cadence
-  tick-gate.ts                      PURE canSkipDbTouch() -- see "Neon compute / cron cadence" below
+  tick-gate.ts                      PURE canSkipDbTouch() -- see "Database load / cron cadence" below
   powerHistory.ts                   PURE computeLearnedPowerKw() -- median realized kW from past sessions, see "Charging estimate refinements" below
   powerHistory.server.ts           getLearnedPowerKw() -- queries recent completed, never-paused schedules for powerHistory.ts
-  run.ts                            the cron tick: Zaptec calls first (free), tick-gate.ts decides whether to touch Neon at all, then enforceAuthorizedCharging() (security net), logStateTransitions() (activity log), then per-schedule decide/act loop
+  run.ts                            the cron tick: Zaptec calls first (free), tick-gate.ts decides whether to touch the database at all, then enforceAuthorizedCharging() (security net), logStateTransitions() (activity log), then per-schedule decide/act loop
 
 src/lib/smartcar/
   auth.ts                           OAuth2 Client Credentials (app-level) token fetch + in-memory cache
@@ -123,9 +123,11 @@ The charger sits in a public/shared area, so "Require authentication" should sta
 
 **The "correct" alternative is OCPP** (switch the installation to OCPP mode, run our own CSMS that issues real `RemoteStartTransaction`/authorizes at the protocol level) — this was explained in detail to the user and **explicitly deferred**: it needs a new always-on server (can't run on Vercel's serverless functions — OCPP needs a persistent inbound WebSocket), a nontrivial OCPP 1.6 implementation, and probably loses some native Zaptec app convenience. Don't build this unprompted; it's a deliberate future project, not a bug to fix.
 
-## Neon compute / cron cadence
+## Database load / cron cadence
 
-Neon (free tier) auto-suspends its compute after a few idle minutes, but the 1-minute cron tick was touching Neon on **every single invocation** (heartbeat upsert, schedule read, `manual_charge_sessions` read, a `charger_observed_state` upsert per charger even when nothing changed) — so it never got the chance to suspend, and was burning through the free compute-hour allowance (discovered 2026-10-19 at 85 CU-hrs spent). Measured against real usage first (`activity_events`'s plugged-in/unplugged timeline): this household's charger sits disconnected for days at a stretch between uses, so the fix is a gate, not a slower cron:
+**Database today: Supabase** (free tier), reached through its **session pooler** (Supavisor, port 5432 — not the transaction pooler on 6543, which doesn't support the prepared statements `postgres-js` uses by default; not the direct connection, which is IPv6-only). The app moved off Neon in Nov 2026 in a staged switch (a temporary `SUPABASE_DATABASE_URL` that took precedence, then renamed back to `DATABASE_URL`). Supabase doesn't bill compute hours like Neon, so the tick gate below is no longer about a compute allowance, but it's still worth keeping: it keeps the per-minute cron from holding pooler connections and doing pointless queries. One Supabase-specific thing to know: free projects get **paused after ~7 days with no database activity** — the full tick every 10 minutes (and `/api/health`) keeps it well clear of that, but if the cron is ever turned off for a week, expect to unpause the project in the Supabase dashboard.
+
+History of the gate (written when the database was Neon): Neon (free tier) auto-suspends its compute after a few idle minutes, but the 1-minute cron tick was touching Neon on **every single invocation** (heartbeat upsert, schedule read, `manual_charge_sessions` read, a `charger_observed_state` upsert per charger even when nothing changed) — so it never got the chance to suspend, and was burning through the free compute-hour allowance (discovered 2026-10-19 at 85 CU-hrs spent). Measured against real usage first (`activity_events`'s plugged-in/unplugged timeline): this household's charger sits disconnected for days at a stretch between uses, so the fix is a gate, not a slower cron:
 
 - `src/lib/scheduler/tick-gate.ts`'s `canSkipDbTouch()` (pure, unit-tested) lets `run.ts` skip the database **entirely** on a tick where every charger is disconnected *right now* (checked live against Zaptec — free in Neon terms) and the last tick that actually touched Neon found the same (no pending/active schedules, no open `manual_charge_sessions` row) within the last `FULL_TICK_INTERVAL_MS` (10 minutes).
 - It's self-healing by construction: a cold Vercel instance has no memory of the last check, so it always falls through to a real one; the memory only ever permits *skipping*, never *authorizes* anything. `enforceAuthorizedCharging()` still runs, unskipped, on every tick where a charger could plausibly be drawing power — the free-charging security model above is unaffected.
@@ -133,7 +135,7 @@ Neon (free tier) auto-suspends its compute after a few idle minutes, but the 1-m
 - The scheduler heartbeat (`heartbeat.ts`) is written only on a full tick, so `STALE_AFTER_SECONDS` is sized well above `FULL_TICK_INTERVAL_MS` rather than the raw cron cadence — the dashboard badge and `/api/health` would otherwise flap to "stale" every time nothing's happening, which is the normal case this gate targets.
 - `/api/health`'s own DB read is cached in-memory for 60s per warm instance (`src/app/api/health/route.ts`) — this only helps if the external uptime monitor's ping interval is short enough to land on the same warm instance; check the monitor's actual configured interval if compute still isn't suspending after this change.
 - `postgres-js`'s client (`src/lib/db/index.ts`) sets `idle_timeout: 20` so a warm instance doesn't hold an idle TCP connection open indefinitely, which can itself block Neon's scale-to-zero independent of query frequency.
-- After any further change here, confirm in the Neon console that compute actually shows `Suspended` periods — don't assume from the code alone.
+- (Neon-era: this used to be verified by checking the Neon console for `Suspended` compute periods. On Supabase, check Database → Reports / connection counts instead if load ever looks off.)
 
 ## Charging estimate refinements
 

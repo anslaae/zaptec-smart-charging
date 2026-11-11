@@ -56,7 +56,7 @@ See `.env.example` for the full list and how to generate each secret. You'll nee
 
 ### 1. Database
 
-Add a Postgres database to the Vercel project (Storage tab → Postgres, which is Neon-backed). Vercel injects `POSTGRES_URL` and friends automatically — set `DATABASE_URL` in the project's environment variables to the pooled connection string it gives you.
+Production runs on [Supabase](https://supabase.com) Postgres (free tier). Create a project, then in the Supabase dashboard open **Connect** and copy the **Session pooler** connection string (`postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`). Use the session pooler (port 5432) rather than the transaction pooler (6543, which breaks `postgres-js`'s prepared statements) or the direct connection (IPv6-only, which Vercel functions can't reach). Set it as `DATABASE_URL` in Vercel and in your `.env.local`. The app only talks to Postgres directly, so Supabase's Data API (PostgREST) isn't needed and can be turned off.
 
 ### 2. Import the GitHub repo into Vercel
 
@@ -68,7 +68,7 @@ In the Vercel project's **Settings → Environment Variables**, add everything f
 
 ### 4. Run migrations against the production database
 
-From your machine, with `DATABASE_URL` pointed at the production database:
+From your machine, with `.env.local`'s `DATABASE_URL` pointed at the production (Supabase session pooler) database — `npm run db:migrate` applies any new `drizzle/*.sql` migrations:
 
 ```bash
 npm run db:migrate
