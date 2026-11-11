@@ -92,6 +92,55 @@
       "when": 1792779145235,
       "tag": "0012_little_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794327475635,
+      "tag": "0013_redesign_data_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794332898303,
+      "tag": "0014_grid_tariff",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794344289635,
+      "tag": "0015_automatic_until_guest_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794374812191,
+      "tag": "0016_smart_charging",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794374824549,
+      "tag": "0017_drop_allow_automatic",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794409662117,
+      "tag": "0018_smart_session_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794411349427,
+      "tag": "0019_automatic_target",
+      "breakpoints": true
     }
   ]
 }

@@ -1,39 +1,173 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --slider-track-remaining: rgba(0, 0, 0, 0.1);
+/* Make any remaining `dark:` utilities follow the same rule as the tokens:
+   OS dark unless <html data-theme="light">, or forced with data-theme="dark". */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Lading redesign theme tokens (design/redesign/theme.css, tokens.json).
+   Light is the default; dark follows the OS unless <html data-theme="light|dark">
+   forces one. Components only reference these tokens -- never raw colours. */
+
+:root {
+  --bg: #F3F5EF;
+  --surface: #FFFFFF;
+  --surface-2: #F1F3EE;
+  --border: #D3D9CB;
+  --divider: #E2E8D8;
+  --nav: #FFFFFF;
+  --text: #121412;
+  --text-2: #2C3128;
+  --muted: #586052;
+  --subtle: #C5CDBB;
+  --accent: #3F6E1A;
+  --on-accent: #FFFFFF;
+  --accent-tint: rgba(63, 110, 26, 0.08);
+  --accent-tint-border: rgba(63, 110, 26, 0.35);
+  --accent-tag: rgba(63, 110, 26, 0.12);
+  --track: #E2E8D8;
+  --ring-muted: #8A9283;
+  --bar-muted: #A9CC82;
+  --amber: #B45309;
+  --amber-bg: #FEF3DC;
+  --amber-border: #F0C987;
+  --red: #B91C1C;
+  --danger: #B91C1C;
+  --on-danger: #FFFFFF;
+  --danger-tint: rgba(185, 28, 28, 0.10);
+  --scrim: rgba(0, 0, 0, 0.40);
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --slider-track-remaining: rgba(255, 255, 255, 0.15);
+  :root:not([data-theme="light"]) {
+    --bg: #0E0F0D;
+    --surface: #171916;
+    --surface-2: #1F221E;
+    --border: #2B2F2A;
+    --divider: #22251F;
+    --nav: #121411;
+    --text: #F1F3EE;
+    --text-2: #CDD2C6;
+    --muted: #A2A89C;
+    --subtle: #3A4035;
+    --accent: #8FCB3A;
+    --on-accent: #0E1405;
+    --accent-tint: rgba(143, 203, 58, 0.08);
+    --accent-tint-border: rgba(143, 203, 58, 0.35);
+    --accent-tag: rgba(143, 203, 58, 0.14);
+    --track: #2A3122;
+    --ring-muted: #6C7266;
+    --bar-muted: #4E7A26;
+    --amber: #F5B544;
+    --amber-bg: rgba(245, 181, 68, 0.10);
+    --amber-border: rgba(245, 181, 68, 0.45);
+    --red: #F87171;
+    --danger: #F87171;
+    --on-danger: #1A0505;
+    --danger-tint: rgba(248, 113, 113, 0.14);
+    --scrim: rgba(0, 0, 0, 0.55);
+    color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0E0F0D;
+  --surface: #171916;
+  --surface-2: #1F221E;
+  --border: #2B2F2A;
+  --divider: #22251F;
+  --nav: #121411;
+  --text: #F1F3EE;
+  --text-2: #CDD2C6;
+  --muted: #A2A89C;
+  --subtle: #3A4035;
+  --accent: #8FCB3A;
+  --on-accent: #0E1405;
+  --accent-tint: rgba(143, 203, 58, 0.08);
+  --accent-tint-border: rgba(143, 203, 58, 0.35);
+  --accent-tag: rgba(143, 203, 58, 0.14);
+  --track: #2A3122;
+  --ring-muted: #6C7266;
+  --bar-muted: #4E7A26;
+  --amber: #F5B544;
+  --amber-bg: rgba(245, 181, 68, 0.10);
+  --amber-border: rgba(245, 181, 68, 0.45);
+  --red: #F87171;
+  --danger: #F87171;
+  --on-danger: #1A0505;
+  --danger-tint: rgba(248, 113, 113, 0.14);
+  --scrim: rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+/* Tailwind utilities: bg-bg, bg-surface, text-muted, border-border, bg-accent, text-on-accent, … */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-divider: var(--divider);
+  --color-nav: var(--nav);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-tint-border: var(--accent-tint-border);
+  --color-accent-tag: var(--accent-tag);
+  --color-track: var(--track);
+  --color-ring-muted: var(--ring-muted);
+  --color-bar-muted: var(--bar-muted);
+  --color-amber: var(--amber);
+  --color-amber-bg: var(--amber-bg);
+  --color-amber-border: var(--amber-border);
+  --color-red: var(--red);
+  --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
+  --color-danger-tint: var(--danger-tint);
+  --color-scrim: var(--scrim);
+  /* keep the existing names working while screens are migrated */
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --radius-chip: 12px;
+  --radius-button: 14px;
+  --radius-card: 16px;
+  --radius-hero: 20px;
+  --radius-sheet: 24px;
+  --radius-dialog: 20px;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Chromium's calendar-picker icon on <input type="date"> defaults to a dark
-   glyph, which is nearly invisible against our dark background -- it still
-   works, it just looks like there's nothing to tap there. */
+   glyph, which is nearly invisible against a dark background -- it still
+   works, it just looks like there's nothing to tap there. Follows the same
+   dark-mode rule as the tokens above (OS dark unless forced light, or forced dark). */
 @media (prefers-color-scheme: dark) {
-  input[type="date"]::-webkit-calendar-picker-indicator {
+  :root:not([data-theme="light"]) input[type="date"]::-webkit-calendar-picker-indicator {
     filter: invert(1);
   }
+}
+:root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
 }
 
 /* The "Battery now" slider's track is painted as a 3-stop gradient (set via
@@ -42,6 +176,9 @@ body {
    fill. Both engines paint the native track as an opaque pseudo-element on
    top of the input's own background by default, so it has to be made
    transparent here for that inline gradient to actually show through. */
+:root {
+  --slider-track-remaining: var(--track);
+}
 .battery-slider {
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -66,15 +203,29 @@ body {
   width: 1.125rem;
   height: 1.125rem;
   border-radius: 9999px;
-  background: var(--foreground);
-  border: 2px solid var(--background);
+  background: var(--text);
+  border: 2px solid var(--bg);
   cursor: pointer;
 }
 .battery-slider::-moz-range-thumb {
   width: 1.125rem;
   height: 1.125rem;
   border-radius: 9999px;
-  background: var(--foreground);
-  border: 2px solid var(--background);
+  background: var(--text);
+  border: 2px solid var(--bg);
   cursor: pointer;
+}
+
+/* BatteryRing: highlight sweeping along the filled arc while charging. */
+@keyframes ring-sweep {
+  from { stroke-dashoffset: 0; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  to { stroke-dashoffset: var(--sweep-distance); opacity: 0; }
+}
+.ring-sweep {
+  animation: ring-sweep 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ring-sweep { display: none; }
 }

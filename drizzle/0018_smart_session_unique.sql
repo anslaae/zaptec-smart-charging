@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "charge_schedules_smart_session_unique" ON "charge_schedules" USING btree ("charger_id","zaptec_session_id") WHERE "charge_schedules"."source" = 'smart';

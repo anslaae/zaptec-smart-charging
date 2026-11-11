@@ -1,6 +1,7 @@
 import "server-only";
 import { env } from "@/lib/env";
 import { ZAPTEC_TOKEN_URL } from "./constants";
+import { assertNotMocked } from "@/lib/mock/mode";
 import type { ZaptecTokenResponse } from "./types";
 
 // Module-level cache: persists across invocations on a warm serverless instance,
@@ -11,6 +12,7 @@ let cachedToken: { accessToken: string; expiresAt: number } | null = null;
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
 
 export async function getZaptecAccessToken(): Promise<string> {
+  assertNotMocked("Zaptec token");
   if (cachedToken && cachedToken.expiresAt - EXPIRY_SAFETY_MARGIN_MS > Date.now()) {
     return cachedToken.accessToken;
   }

@@ -9,6 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Mock-mode build output (npm run dev:mock), generated like .next.
+    ".next-mock/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

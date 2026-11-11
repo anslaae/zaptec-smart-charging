@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { subscribeToPush, unsubscribeFromPush } from "@/lib/push/actions";
+import { nb } from "@/lib/i18n/nb";
+import { Switch } from "@/components/Switch";
 
 // Push subscription keys arrive as base64url; the Push API wants a raw
 // Uint8Array for applicationServerKey. Standard boilerplate conversion.
@@ -47,15 +49,13 @@ export function NotificationToggle() {
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
-        toast.error("Notifications blocked", {
-          description: "Allow notifications for this site in your browser settings to enable it.",
-        });
+        toast.error(nb.settings.notifications.blocked, { description: nb.settings.notifications.blockedSub });
         return;
       }
 
       const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!publicKey) {
-        toast.error("Notifications aren't configured on this deployment.");
+        toast.error(nb.settings.notifications.notConfigured);
         return;
       }
 
@@ -71,15 +71,15 @@ export function NotificationToggle() {
 
       const result = await subscribeToPush(subscription.toJSON());
       if (result.error) {
-        toast.error("Couldn't enable notifications", { description: result.error });
+        toast.error(nb.settings.notifications.enableFailed, { description: result.error });
         await subscription.unsubscribe();
         return;
       }
 
       setSubscribed(true);
-      toast.success("Notifications enabled");
+      toast.success(nb.settings.notifications.enabled);
     } catch {
-      toast.error("Couldn't enable notifications on this device.");
+      toast.error(nb.settings.notifications.enableFailed);
     } finally {
       setPending(false);
     }
@@ -95,24 +95,32 @@ export function NotificationToggle() {
         await subscription.unsubscribe();
       }
       setSubscribed(false);
-      toast.success("Notifications disabled");
+      toast.success(nb.settings.notifications.disabled);
     } catch {
-      toast.error("Couldn't disable notifications on this device.");
+      toast.error(nb.settings.notifications.disableFailed);
     } finally {
       setPending(false);
     }
   }
 
-  if (support !== "supported") return null;
+  if (support === "checking") return null;
+  if (support === "unsupported") {
+    return <p className="text-sm text-muted">{nb.settings.notifications.unsupported}</p>;
+  }
 
+  // Per-device switch row for Innstillinger -> Varsler.
   return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={subscribed ? disable : enable}
-      className="cursor-pointer text-sm text-black/60 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-white/60"
-    >
-      {subscribed ? "Notifications on" : "Enable notifications"}
-    </button>
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-[15px] font-semibold">{nb.settings.notifications.thisDevice}</p>
+        <p className="text-xs text-muted">{nb.settings.notifications.thisDeviceSub}</p>
+      </div>
+      <Switch
+        checked={subscribed}
+        disabled={pending}
+        label={nb.settings.notifications.thisDevice}
+        onChange={(next) => (next ? enable() : disable())}
+      />
+    </div>
   );
 }

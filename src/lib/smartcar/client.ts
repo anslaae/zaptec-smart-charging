@@ -1,6 +1,8 @@
 import "server-only";
 import { env } from "@/lib/env";
 import { getSmartcarAccessToken } from "./auth";
+import { MOCK_MODE } from "@/lib/mock/mode";
+import { mockGetStateOfCharge } from "@/lib/mock/smartcar";
 import { SMARTCAR_API_BASE, STATE_OF_CHARGE_SIGNAL } from "./constants";
 import { parseStateOfCharge } from "./state";
 import type { SmartcarSignalApiResponse, StateOfCharge } from "./types";
@@ -11,6 +13,7 @@ import type { SmartcarSignalApiResponse, StateOfCharge } from "./types";
 // response, an ERROR signal status) returns null rather than throwing, so it
 // can never break the dashboard's Promise.all in page.tsx.
 export async function getStateOfCharge(): Promise<StateOfCharge | null> {
+  if (MOCK_MODE) return mockGetStateOfCharge();
   if (
     !env.SMARTCAR_CLIENT_ID ||
     !env.SMARTCAR_CLIENT_SECRET ||

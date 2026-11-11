@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pushSubscriptions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
+import { MOCK_MODE } from "@/lib/mock/mode";
+import { mockLog } from "@/lib/mock/store";
 
 const vapidConfigured = Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY);
 if (vapidConfigured) {
@@ -16,9 +18,22 @@ if (vapidConfigured) {
   );
 }
 
+export interface PushAction {
+  action: string;
+  title: string;
+  url: string;
+}
+
+// Shape public/sw.js reads (design/redesign/notifications.nb.json). icon/badge
+// default in the service worker. `tag` groups a plan's or charger's
+// notifications so a new one replaces the previous; `url` is opened on tap;
+// `actions` only render on Android/Chrome.
 export interface PushPayload {
   title: string;
   body: string;
+  tag?: string;
+  url?: string;
+  actions?: PushAction[];
 }
 
 // Sends to every subscribed device, household-wide -- there's no per-event
@@ -28,10 +43,26 @@ export interface PushPayload {
 // so they don't keep failing forever. Never throws -- a notification
 // failure should never break the scheduler tick or action that triggered it.
 export async function sendPushToAllSubscribers(payload: PushPayload): Promise<void> {
-  if (!vapidConfigured) return;
+  await sendPush(payload, null);
+}
 
-  const subscriptions = await db.select().from(pushSubscriptions);
-  if (subscriptions.length === 0) return;
+/** Only this person's devices -- the Innstillinger test notification (UC12). */
+export async function sendPushToUser(userId: string, payload: PushPayload): Promise<{ devices: number }> {
+  return sendPush(payload, userId);
+}
+
+async function sendPush(payload: PushPayload, userId: string | null): Promise<{ devices: number }> {
+  // Mock mode: nothing leaves the machine; the payload shows up in /dev/mock.
+  if (MOCK_MODE) {
+    mockLog("push", `${userId ? "(én bruker) " : ""}${payload.title} — ${payload.body}${payload.tag ? ` [tag ${payload.tag}]` : ""}${payload.url ? ` → ${payload.url}` : ""}`);
+    return { devices: 1 };
+  }
+  if (!vapidConfigured) return { devices: 0 };
+
+  const subscriptions = userId
+    ? await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId))
+    : await db.select().from(pushSubscriptions);
+  if (subscriptions.length === 0) return { devices: 0 };
 
   await Promise.all(
     subscriptions.map(async (sub) => {
@@ -55,4 +86,5 @@ export async function sendPushToAllSubscribers(payload: PushPayload): Promise<vo
       }
     }),
   );
+  return { devices: subscriptions.length };
 }

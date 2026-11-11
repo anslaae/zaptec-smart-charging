@@ -24,7 +24,17 @@ export type SchedulerDecision =
 const DEFAULT_ASSUMED_POWER_KW = 7.0;
 
 /** Extra time budgeted on top of the raw estimate, to absorb plug-in delays and power dips. */
-const SAFETY_MARGIN_MINUTES = 15;
+export const SAFETY_MARGIN_MINUTES = 15;
+
+/** The latest start that still delivers remainingKwh by readyBy at powerKw, incl. the safety margin. */
+export function latestStartFor(remainingKwh: number, powerKw: number, readyBy: Date): Date {
+  return new Date(readyBy.getTime() - (remainingKwh / powerKw) * 3_600_000 - SAFETY_MARGIN_MINUTES * 60_000);
+}
+
+/** The rate a plan is estimated at when nothing is charging: learned, else the circuit max, else a guess. */
+export function plannedPowerKw(learnedPowerKw: number | null | undefined, maxPowerKw: number | null | undefined): number {
+  return learnedPowerKw ?? maxPowerKw ?? DEFAULT_ASSUMED_POWER_KW;
+}
 
 export interface ChargingPlanEstimate {
   remainingKwh: number;
@@ -57,13 +67,7 @@ export function estimateChargingPlan(
       : null;
   const powerKw =
     observedPowerKw ?? learnedPowerKw ?? state.maxPowerKw ?? DEFAULT_ASSUMED_POWER_KW;
-  const estimatedHoursNeeded = remainingKwh / powerKw;
-
-  const latestStartTime = new Date(
-    schedule.readyBy.getTime() -
-      estimatedHoursNeeded * 60 * 60 * 1000 -
-      SAFETY_MARGIN_MINUTES * 60 * 1000,
-  );
+  const latestStartTime = latestStartFor(remainingKwh, powerKw, schedule.readyBy);
 
   return { remainingKwh, powerKw, latestStartTime };
 }
@@ -99,10 +103,23 @@ export function reconcileSessionEnergy(
   currentSessionId: string | null,
   currentSessionEnergyKwh: number,
 ): SessionEnergyReconciliation {
-  const sessionChanged =
-    tracker.zaptecSessionId != null &&
-    currentSessionId != null &&
-    currentSessionId !== tracker.zaptecSessionId;
+  // No session right now (unplugged, offline, or no reading): nothing new to
+  // count. Keep the tracker as it is -- overwriting lastObserved with 0 here
+  // would lose the energy of the session that just ended (and break a
+  // negative baseline, see createSchedule).
+  if (currentSessionId == null) {
+    return {
+      effectiveSessionEnergyKwh: tracker.priorSessionEnergyKwh + tracker.lastObservedSessionEnergyKwh,
+      nextTracker: tracker,
+    };
+  }
+
+  const sessionChanged = tracker.zaptecSessionId != null && currentSessionId !== tracker.zaptecSessionId;
+  // A session's counter only grows; a lower reading for the same session is a
+  // glitch (e.g. a null reported as 0), not energy flowing back.
+  if (!sessionChanged && tracker.zaptecSessionId != null) {
+    currentSessionEnergyKwh = Math.max(currentSessionEnergyKwh, tracker.lastObservedSessionEnergyKwh);
+  }
 
   const priorSessionEnergyKwh = sessionChanged
     ? tracker.priorSessionEnergyKwh + tracker.lastObservedSessionEnergyKwh
@@ -111,7 +128,7 @@ export function reconcileSessionEnergy(
   return {
     effectiveSessionEnergyKwh: priorSessionEnergyKwh + currentSessionEnergyKwh,
     nextTracker: {
-      zaptecSessionId: currentSessionId ?? tracker.zaptecSessionId,
+      zaptecSessionId: currentSessionId,
       priorSessionEnergyKwh,
       lastObservedSessionEnergyKwh: currentSessionEnergyKwh,
     },
@@ -163,4 +180,21 @@ export function decideNextAction(
   }
 
   return { action: "none", reason: "Waiting for the optimal start time" };
+}
+
+/**
+ * kWh an open plan has delivered right now, for display: the reconciled total
+ * when the plan tracks sessions, else the current session's counter. Never
+ * negative (a baseline from createSchedule can briefly exceed a fresh
+ * session's counter before the tick reconciles a re-plug).
+ */
+export function planDeliveredNow(
+  tracker: { zaptecSessionId: string | null; priorSessionEnergyKwh: number; lastObservedSessionEnergyKwh: number },
+  state: Pick<ChargerState, "sessionId" | "sessionEnergyKwh">,
+): number {
+  const delivered =
+    tracker.zaptecSessionId != null
+      ? reconcileSessionEnergy(tracker, state.sessionId, state.sessionEnergyKwh ?? 0).effectiveSessionEnergyKwh
+      : (state.sessionEnergyKwh ?? 0);
+  return Math.max(0, delivered);
 }

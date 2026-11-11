@@ -10,7 +10,9 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:add-user": "tsx scripts/add-user.mts"
+    "db:add-user": "tsx scripts/add-user.mts",
+    "dev:mock": "node scripts/dev-mock.mjs",
+    "test:ui": "playwright test"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -26,6 +28,8 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",

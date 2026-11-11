@@ -16,13 +16,31 @@ import { evaluateScheduleAccuracy } from "./accuracy";
 import { getLearnedPowerKw } from "./powerHistory.server";
 import { logActivity, ActivityType } from "@/lib/activity/log";
 import { sendPushToAllSubscribers } from "@/lib/push/send";
+import * as push from "@/lib/push/notifications";
+import { getStateOfCharge } from "@/lib/smartcar/client";
+import { afterPluginModeChange, effectivePluginMode, getSettings, pricesOf, saveSettings, type HouseholdSettings } from "@/lib/settings";
+import { automaticTargetKwh, isSmart, manageSmartRows, smartDecision } from "./smartRun";
+import { sessionCost } from "@/lib/pricing";
+import { getDefaultCar } from "@/lib/places";
+import { closeSession, deliveredKwh, endsOnDisconnect, openSession, trackSession, type SessionRow } from "@/lib/sessions";
 import { canSkipDbTouch, type QuietTickMemory } from "./tick-gate";
+
+type Schedule = typeof chargeSchedules.$inferSelect;
+
+// Status writes in the loop only touch rows that are still open: a plan
+// cancelled meanwhile (a person, a mode change, another tick) must not be
+// brought back to "active" by this tick's stale copy.
+const stillOpen = (id: string) =>
+  and(eq(chargeSchedules.id, id), inArray(chargeSchedules.status, ["pending", "active"]));
 
 // Module-level, so it survives across ticks on a warm Vercel instance but
 // resets (safely -- see tick-gate.ts) on a cold start. Not shared across
 // instances, and doesn't need to be: it only ever permits *skipping* a
 // database check, never authorizes anything.
 let lastFullTick: QuietTickMemory | null = null;
+
+const notify = (payload: Parameters<typeof sendPushToAllSubscribers>[0]) =>
+  sendPushToAllSubscribers(payload).catch(() => undefined);
 
 // Records the decision, so there's an internal log of what the scheduler
 // actually sent over time, not just the latest state.
@@ -51,12 +69,20 @@ async function applyCommand(
 // about physical reality, not app intent. Also skips the chargerObservedState
 // write entirely when the mode hasn't changed -- the stored row is already
 // correct, and most ticks find nothing new (see tick-gate.ts).
+//
+// The plug-in push (notifications.nb.json) depends on what's waiting: a
+// pending plan gets "starter ca. HH:MM", no plan gets the Planlegg / Lad nå
+// prompt, and a guest window or allowed automatic charging gets nothing --
+// the household didn't plug that car in.
 async function logStateTransitions(
   chargers: ZaptecCharger[],
   stateCache: Map<string, ChargerState>,
+  schedules: Schedule[],
+  guestChargerIds: Set<string>,
+  settings: HouseholdSettings,
+  learnedPowerKw: number | null,
+  previousByCharger: Map<string, number | null>,
 ): Promise<void> {
-  const previous = await db.select().from(chargerObservedState);
-  const previousByCharger = new Map(previous.map((row) => [row.chargerId, row.operationMode]));
 
   for (const charger of chargers) {
     const state = stateCache.get(charger.id);
@@ -72,10 +98,7 @@ async function logStateTransitions(
         await logActivity(charger.id, charger.name, ActivityType.Unplugged);
       } else if (prevMode === ChargerOperationMode.Disconnected) {
         await logActivity(charger.id, charger.name, ActivityType.PluggedIn);
-        await sendPushToAllSubscribers({
-          title: "Car connected",
-          body: `${charger.name} is plugged in.`,
-        }).catch(() => undefined);
+        await notifyPluggedIn(charger, state, schedules, guestChargerIds, settings, learnedPowerKw);
       } else if (currentMode === ChargerOperationMode.Charging) {
         await logActivity(charger.id, charger.name, ActivityType.ChargingStarted);
       } else if (prevMode === ChargerOperationMode.Charging) {
@@ -93,32 +116,76 @@ async function logStateTransitions(
   }
 }
 
+async function notifyPluggedIn(
+  charger: ZaptecCharger,
+  state: ChargerState,
+  schedules: Schedule[],
+  guestChargerIds: Set<string>,
+  settings: HouseholdSettings,
+  learnedPowerKw: number | null,
+): Promise<void> {
+  if (guestChargerIds.has(charger.id)) return;
+  const schedule = schedules.find((s) => s.chargerId === charger.id && s.status === "pending" && !isSmart(s));
+  if (schedule) {
+    const plan = estimateChargingPlan(
+      { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
+      state,
+      learnedPowerKw,
+    );
+    const startTime = plan.latestStartTime > new Date() ? plan.latestStartTime : new Date();
+    await notify(push.pluggedInPlanWaiting({ scheduleId: schedule.id, startTime }));
+    return;
+  }
+  // An active plan or a Smart lading row (which sends smart_planned) covers it.
+  if (schedules.some((s) => s.chargerId === charger.id)) return;
+  if (effectivePluginMode(settings) === "now") return; // it just charges; nothing to decide
+  const reading = await getStateOfCharge().catch(() => null);
+  await notify(
+    push.pluggedInNoPlan({
+      chargerId: charger.id,
+      battery: reading ? { percent: reading.percent, measuredAt: reading.oemUpdatedAt } : null,
+    }),
+  );
+}
+
 // The Zaptec installation's own "Require authentication" switch can't be
 // controlled from our side (confirmed against the public API schema -- the
 // installation update endpoint only exposes current-limit fields), so with it
 // off (free charging, chosen because requiring a physical RFID tap blocks our
 // own automation too) *anyone* who plugs in auto-starts a session. This is
 // the software-side gate that compensates: any charger drawing power with no
-// pending/active schedule and no open manual authorization gets stopped.
+// pending/active schedule and no open session row gets stopped.
 // StopChargingFinal latches (sets FinalStopActive), so it won't silently
 // resume on its own -- it stays off until someone we recognize starts it
 // again. This only runs at the cron cadence (currently every minute), so an
 // unrecognized session can draw power for up to that long before it's cut.
-// Returns whether any manual-charge-session row is still open once this tick
-// is done, so the caller can fold that into the tick-gate memory -- an open
-// session must never be treated as "quiet" (see tick-gate.ts), since it's
-// exactly the thing that needs a real check on the next tick (closing it
-// once the car disconnects).
+//
+// Session rows (src/lib/sessions.ts) are the authorisations: Lad nå,
+// Forvarm, a guest window (UC15) and -- when "Tillat automatisk lading" is
+// on (UC14) -- an automatic row this function opens itself instead of
+// stopping the car. Each row's energy is tracked while connected and
+// recorded when it closes. A guest window that hasn't seen its car yet
+// survives "disconnected"; it starts the car once (free charging may be
+// latched off by an earlier enforcement stop) when the guest plugs in.
+//
+// Returns whether any session row is still open once this tick is done, so
+// the caller can fold that into the tick-gate memory -- an open session must
+// never be treated as "quiet" (see tick-gate.ts).
 async function enforceAuthorizedCharging(
   chargers: ZaptecCharger[],
   scheduledChargerIds: Set<string>,
   stateCache: Map<string, ChargerState>,
-): Promise<{ anyOpenSessionsRemain: boolean }> {
+  settings: HouseholdSettings,
+  previousModes: Map<string, number | null>,
+  capacityKwh: number,
+): Promise<{ anyOpenSessionsRemain: boolean; guestChargerIds: Set<string> }> {
+  const now0 = new Date();
   const openSessions = await db
     .select()
     .from(manualChargeSessions)
     .where(isNull(manualChargeSessions.endedAt));
-  const openChargerIds = new Set(openSessions.map((s) => s.chargerId));
+  const stillOpen: SessionRow[] = [];
+  let openedAutomatic = false;
 
   for (const charger of chargers) {
     let state = stateCache.get(charger.id);
@@ -126,38 +193,89 @@ async function enforceAuthorizedCharging(
       state = await getChargerState(charger.id, charger.isOnline, charger.circuitId, charger.installationId);
       stateCache.set(charger.id, state);
     }
+    const rows = openSessions.filter((s) => s.chargerId === charger.id);
 
-    // A manual authorization only covers the connection event it was opened
-    // for. Close it once the car disconnects so a *different* car plugging in
-    // later isn't waved through by a stale row.
-    if (state.operationMode === ChargerOperationMode.Disconnected && openChargerIds.has(charger.id)) {
-      await db
-        .update(manualChargeSessions)
-        .set({ endedAt: new Date() })
-        .where(and(eq(manualChargeSessions.chargerId, charger.id), isNull(manualChargeSessions.endedAt)));
-      openChargerIds.delete(charger.id);
+    // An authorization only covers the connection it was opened for. Close
+    // it once the car disconnects so a *different* car plugging in later
+    // isn't waved through by a stale row.
+    if (state.operationMode === ChargerOperationMode.Disconnected) {
+      for (const row of rows) {
+        if (!endsOnDisconnect(row)) {
+          stillOpen.push(row);
+          continue;
+        }
+        await closeSession(row);
+        if (row.kind === "guest") await logActivity(charger.id, charger.name, ActivityType.GuestEnded);
+      }
+      continue;
+    }
+
+    const authorising: SessionRow[] = [];
+    for (const row of rows) {
+      // Bound to a physical session that's no longer the one plugged in: the
+      // unplug fell between two ticks (or that tick failed). It must not
+      // authorise the car that's there now.
+      if (row.zaptecSessionId != null && state.sessionId != null && row.zaptecSessionId !== state.sessionId) {
+        await closeSession(row);
+        if (row.kind === "guest") await logActivity(charger.id, charger.name, ActivityType.GuestEnded);
+        continue;
+      }
+      const tracked = await trackSession(row, state);
+      // "Lad med en gang" stops at its target % (HANDOFF §6b, owner decision D51).
+      const target = tracked.kind === "automatic" && tracked.targetKwh != null ? Number(tracked.targetKwh) : null;
+      if (target != null && (deliveredKwh(tracked) ?? 0) >= target) {
+        await sendChargerCommand(charger.id, ZaptecCommand.StopChargingFinal).catch(() => undefined);
+        await closeSession(tracked);
+        await logActivity(charger.id, charger.name, ActivityType.AutomaticCompleted);
+        continue;
+      }
+      const guestJustArrived = row.kind === "guest" && row.zaptecSessionId == null && tracked.zaptecSessionId != null;
+      if (guestJustArrived && !isCurrentlyCharging(state) && state.finalStopActive) {
+        await sendChargerCommand(charger.id, ZaptecCommand.ResumeCharging).catch(() => undefined);
+      }
+      stillOpen.push(tracked);
+      authorising.push(tracked);
+    }
+    if (authorising.length > 0) continue; // authorized by a session row
+    if (scheduledChargerIds.has(charger.id)) continue; // governed by the per-schedule loop below instead
+
+    // UC14 when the charger is still latched off by an earlier stop: start a
+    // car that was just plugged in (only on the plug-in itself, so it never
+    // restarts a car someone stopped with "Stopp lading").
+    const justPluggedIn = previousModes.get(charger.id) === ChargerOperationMode.Disconnected;
+    if (effectivePluginMode(settings) === "now" && justPluggedIn && !isCurrentlyCharging(state) && state.finalStopActive) {
+      await openSession(charger.id, "automatic", null, state, null, await automaticTargetKwh(state, settings, capacityKwh, now0));
+      await sendChargerCommand(charger.id, ZaptecCommand.ResumeCharging).catch(() => undefined);
+      openedAutomatic = true;
       continue;
     }
 
     if (!isCurrentlyCharging(state)) continue;
-    if (scheduledChargerIds.has(charger.id)) continue; // governed by the per-schedule loop below instead
-    if (openChargerIds.has(charger.id)) continue; // authorized by a manual start
+
+    if (effectivePluginMode(settings) === "now") {
+      await openSession(charger.id, "automatic", null, state, null, await automaticTargetKwh(state, settings, capacityKwh, now0));
+      openedAutomatic = true;
+      continue;
+    }
 
     console.error(
-      `[scheduler] charger ${charger.id} (${charger.name}) is charging with no schedule or manual authorization -- stopping it`,
+      `[scheduler] charger ${charger.id} (${charger.name}) is charging with no schedule or session -- stopping it`,
     );
     await sendChargerCommand(charger.id, ZaptecCommand.StopChargingFinal).catch(() => undefined);
     await logActivity(charger.id, charger.name, ActivityType.StoppedUnplanned);
   }
 
-  return { anyOpenSessionsRemain: openChargerIds.size > 0 };
+  return {
+    anyOpenSessionsRemain: stillOpen.length > 0 || openedAutomatic,
+    guestChargerIds: new Set(stillOpen.filter((s) => s.kind === "guest").map((s) => s.chargerId)),
+  };
 }
 
 export async function runSchedulerTick(): Promise<{ processed: number; skipped?: boolean }> {
   const now0 = new Date();
   const tickStartedAt = now0.toISOString();
 
-  // Zaptec calls cost nothing in Neon terms, so they happen before any
+  // Zaptec calls cost nothing in database terms, so they happen before any
   // database access -- that's what lets the gate below decide whether this
   // tick needs the database at all without touching it first.
   const chargers = await listChargers();
@@ -175,20 +293,33 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
     return { processed: 0, skipped: true };
   }
 
-  // Recorded unconditionally whenever a full tick runs, even with zero
-  // schedules, so the dashboard can tell whether the external cron
-  // (cron-job.org) is actually still calling this at all -- not just whether
-  // a given schedule has been evaluated. While nothing's happening this only
-  // runs once per FULL_TICK_INTERVAL_MS (see tick-gate.ts), not every tick.
-  await db
-    .insert(schedulerHeartbeat)
-    .values({ id: "singleton", lastTickAt: now0 })
-    .onConflictDoUpdate({ target: schedulerHeartbeat.id, set: { lastTickAt: now0 } });
+  // "Når bilen kobles til" with an end time (HANDOFF §3b/§6b): once it has
+  // passed, it's back to "wait" -- saved, logged, open automatic sessions
+  // closed and smart rows cancelled, so enforcement stops them below. Done
+  // before loading the open rows, so a row cancelled here can't be revived.
+  let settings = await getSettings();
+  if (settings.onPluginMode !== "wait" && effectivePluginMode(settings, now0) === "wait") {
+    const previous = settings.onPluginMode;
+    settings = await saveSettings({ onPluginMode: "wait", onPluginModeUntil: null }, null);
+    await afterPluginModeChange(previous, "wait", null, true);
+  }
+  const [openRows, learnedPowerKw] = await Promise.all([
+    db.select().from(chargeSchedules).where(inArray(chargeSchedules.status, ["pending", "active"])),
+    // One query per tick, shared by every schedule below -- see
+    // powerHistory.server.ts for why this is preferred over the circuit's
+    // theoretical max power.
+    getLearnedPowerKw(),
+  ]);
 
-  const schedules = await db
-    .select()
-    .from(chargeSchedules)
-    .where(inArray(chargeSchedules.status, ["pending", "active"]));
+  // Smart lading (UC16): plan new plug-ins, drop rows whose car left,
+  // re-plan when reality drifts. New rows join this tick's schedules.
+  const car = await getDefaultCar(null);
+  const capacityKwh = car?.batteryCapacityKwh ?? 46;
+  const smart = await manageSmartRows({ chargers, stateCache, schedules: openRows, settings, learnedPowerKw, capacityKwh, now: now0 });
+  const schedules = [...openRows.filter((s) => !smart.cancelledIds.has(s.id)), ...smart.created];
+  const previousModes = new Map(
+    (await db.select().from(chargerObservedState)).map((row) => [row.chargerId, row.operationMode]),
+  );
 
   console.log(
     `[scheduler] tick at ${tickStartedAt}: ${schedules.length} pending/active schedule(s)`,
@@ -198,12 +329,28 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
   // an unauthorized session can happen on a charger with no schedule at all.
   // stateCache is already populated for every charger from the Zaptec calls
   // above, so neither this nor the transition log below needs to re-fetch.
-  const { anyOpenSessionsRemain } = await enforceAuthorizedCharging(
+  const { anyOpenSessionsRemain, guestChargerIds } = await enforceAuthorizedCharging(
     chargers,
     new Set(schedules.map((s) => s.chargerId)),
     stateCache,
+    settings,
+    previousModes,
+    capacityKwh,
   );
-  await logStateTransitions(chargers, stateCache);
+  await logStateTransitions(chargers, stateCache, schedules, guestChargerIds, settings, learnedPowerKw, previousModes);
+
+  // Written only after enforcement succeeded: a tick that throws before
+  // here (e.g. code deployed before its migration) leaves the heartbeat
+  // stale, so the dashboard shows the problem instead of a green badge.
+  // Recorded whenever a full tick runs, even with zero
+  // schedules, so the dashboard can tell whether the external cron
+  // (cron-job.org) is actually still calling this at all -- not just whether
+  // a given schedule has been evaluated. While nothing's happening this only
+  // runs once per FULL_TICK_INTERVAL_MS (see tick-gate.ts), not every tick.
+  await db
+    .insert(schedulerHeartbeat)
+    .values({ id: "singleton", lastTickAt: now0 })
+    .onConflictDoUpdate({ target: schedulerHeartbeat.id, set: { lastTickAt: now0 } });
 
   const allDisconnected = modes.every((mode) => mode === ChargerOperationMode.Disconnected);
   lastFullTick = {
@@ -215,12 +362,11 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
     return { processed: 0 };
   }
 
-  // One query per tick, shared by every schedule below -- see
-  // powerHistory.server.ts for why this is preferred over the circuit's
-  // theoretical max power.
-  const learnedPowerKw = await getLearnedPowerKw();
-
   for (const schedule of schedules) {
+    // UC15: while the charger is lent out, plans wait (the guest's car is
+    // plugged in, not ours). They pick up again after the guest unplugs.
+    if (guestChargerIds.has(schedule.chargerId)) continue;
+
     const now = new Date();
     try {
       let state = stateCache.get(schedule.chargerId);
@@ -265,12 +411,10 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         };
       }
 
-      const decision = decideNextAction(
-        { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
-        effectiveState,
-        now,
-        learnedPowerKw,
-      );
+      const targetKwh = Number(schedule.targetEnergyKwh);
+      const decision = isSmart(schedule)
+        ? smartDecision(schedule, effectiveState, now)
+        : decideNextAction({ targetEnergyKwh: targetKwh, readyBy: schedule.readyBy }, effectiveState, now, learnedPowerKw);
 
       const decisionDetail = decision.action === "none" ? ` — ${decision.reason}` : "";
       console.log(
@@ -281,6 +425,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         await applyCommand(schedule, "complete", ZaptecCommand.StopChargingFinal).catch(
           () => undefined,
         );
+        const delivered = effectiveState.sessionEnergyKwh ?? 0;
         // A quick "did we estimate this well" check, attached to the
         // activity log entry below -- only possible when startedAt is known
         // (a schedule can in principle reach "complete" without ever having
@@ -299,18 +444,27 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
             startedAt: schedule.startedAt,
             finishedAt: now,
             estimatedDurationMinutes: schedule.estimatedDurationMinutes,
-            targetEnergyKwh: Number(schedule.targetEnergyKwh),
-            deliveredEnergyKwh: effectiveState.sessionEnergyKwh ?? 0,
+            targetEnergyKwh: targetKwh,
+            deliveredEnergyKwh: delivered,
             wasPaused: resumeActions.length > 1,
           }).summary;
         }
         await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanCompleted, {
           detail: accuracyDetail,
         });
-        await sendPushToAllSubscribers({
-          title: "Charging stopped",
-          body: `Reached ${Number(schedule.targetEnergyKwh).toFixed(1)} kWh on ${schedule.chargerName}.`,
-        }).catch(() => undefined);
+        await notify(
+          push.planCompleted({
+            scheduleId: schedule.id,
+            targetPercent: push.reachedPercent({
+              startPercent: schedule.startPercent,
+              targetPercent: schedule.targetPercent,
+              deliveredKwh: delivered,
+              capacityKwh,
+            }),
+            deliveredKwh: delivered,
+            costNok: sessionCost(delivered, schedule.startedAt ?? now, now, pricesOf(settings)).totalNok,
+          }),
+        );
         await db
           .update(chargeSchedules)
           .set({
@@ -323,7 +477,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
             updatedAt: now,
             ...sessionEnergyUpdate,
           })
-          .where(eq(chargeSchedules.id, schedule.id));
+          .where(stillOpen(schedule.id));
         continue;
       }
 
@@ -337,13 +491,6 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         // means that; a "pause" means the car started too early and we told
         // it to wait, which is the opposite of started.
         const isFirstResume = decision.action === "resume" && schedule.startedAt == null;
-        if (isFirstResume) {
-          await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanChargingStarted);
-          await sendPushToAllSubscribers({
-            title: "Charging started",
-            body: `Your planned charge started on ${schedule.chargerName}.`,
-          }).catch(() => undefined);
-        }
         // Predicted duration (and the remainingKwh it was based on -- stored
         // so it can later be compared against the real duration to refine
         // learnedPowerKw, see powerHistory.ts), captured once at the moment
@@ -351,12 +498,24 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         // decideNextAction's internal estimate, since that one doesn't
         // surface remainingKwh/powerKw.
         const firstResumeEstimate = isFirstResume
-          ? estimateChargingPlan(
-              { targetEnergyKwh: Number(schedule.targetEnergyKwh), readyBy: schedule.readyBy },
-              state,
-              learnedPowerKw,
-            )
+          ? estimateChargingPlan({ targetEnergyKwh: targetKwh, readyBy: schedule.readyBy }, effectiveState, learnedPowerKw)
           : null;
+        if (isFirstResume) {
+          await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanChargingStarted);
+          // Smart lading already told everyone its window (smart_planned).
+          if (firstResumeEstimate && !isSmart(schedule)) {
+            await notify(
+              push.planStarted({
+                scheduleId: schedule.id,
+                targetPercent: schedule.targetPercent,
+                targetKwh,
+                finishTime: new Date(
+                  now.getTime() + (firstResumeEstimate.remainingKwh / firstResumeEstimate.powerKw) * 3_600_000,
+                ),
+              }),
+            );
+          }
+        }
         await db
           .update(chargeSchedules)
           .set({
@@ -369,21 +528,79 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
             ...(isFirstResume &&
               firstResumeEstimate && {
                 startedAt: now,
-                zaptecSessionId: state.sessionId,
                 estimatedDurationMinutes: Math.round(
                   (firstResumeEstimate.remainingKwh / firstResumeEstimate.powerKw) * 60,
                 ),
                 remainingKwhAtStart: firstResumeEstimate.remainingKwh.toString(),
-                // Baseline for reconcileSessionEnergy -- nothing from a prior
-                // session yet, and this is the first reading of the one
-                // we're now tracking.
-                priorSessionEnergyKwh: "0",
-                lastObservedSessionEnergyKwh: (state.sessionEnergyKwh ?? 0).toString(),
+                // Baseline for reconcileSessionEnergy -- unless the plan
+                // was made mid-session and already carries one (see
+                // createSchedule), nothing from a prior session yet, and
+                // this is the first reading of the one we're now tracking.
+                ...(sessionEnergyUpdate ?? {
+                  zaptecSessionId: state.sessionId,
+                  priorSessionEnergyKwh: "0",
+                  lastObservedSessionEnergyKwh: (state.sessionEnergyKwh ?? 0).toString(),
+                }),
               }),
             ...(!isFirstResume && sessionEnergyUpdate),
           })
-          .where(eq(chargeSchedules.id, schedule.id));
+          .where(stillOpen(schedule.id));
         continue;
+      }
+
+      // Once-per-plan warnings (notifications.nb.json, "proposed" events):
+      // the car isn't plugged in 30 min before the latest start, or the
+      // plan is charging but won't make readyBy at the current rate.
+      // Sent only after the flag is saved below, so a failing update can't
+      // turn a once-per-plan push into one per tick.
+      const flags: Partial<Pick<Schedule, "waitingNotifiedAt" | "lateNotifiedAt">> = {};
+      const warnings: Parameters<typeof notify>[0][] = [];
+      const estimate = estimateChargingPlan(
+        { targetEnergyKwh: targetKwh, readyBy: schedule.readyBy },
+        effectiveState,
+        learnedPowerKw,
+      );
+      if (
+        schedule.status === "pending" &&
+        push.shouldRemindWaitingForCar({
+          now,
+          latestStart: estimate.latestStartTime,
+          connected: state.operationMode !== ChargerOperationMode.Disconnected,
+          alreadyNotified: schedule.waitingNotifiedAt != null,
+        })
+      ) {
+        warnings.push(
+          push.planWaitingForCar({
+            scheduleId: schedule.id,
+            latestStart: estimate.latestStartTime > now ? estimate.latestStartTime : now,
+            readyBy: schedule.readyBy,
+            now,
+          }),
+        );
+        flags.waitingNotifiedAt = now;
+      }
+      if (schedule.lateNotifiedAt == null && isCurrentlyCharging(state) && now < schedule.readyBy) {
+        const late = push.lateEstimate({
+          now,
+          readyBy: schedule.readyBy,
+          remainingKwh: estimate.remainingKwh,
+          powerKw: estimate.powerKw,
+          deliveredKwh: effectiveState.sessionEnergyKwh ?? 0,
+          startPercent: schedule.startPercent,
+          capacityKwh,
+        });
+        if (late.late) {
+          warnings.push(
+            push.planLate({
+              scheduleId: schedule.id,
+              readyBy: schedule.readyBy,
+              now,
+              expectedPercent: late.expectedPercent,
+              targetPercent: schedule.targetPercent,
+            }),
+          );
+          flags.lateNotifiedAt = now;
+        }
       }
 
       // A "none" decision can mean "waiting for the optimal start time" --
@@ -405,15 +622,17 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
           lastEvaluatedAt: now,
           updatedAt: now,
           ...sessionEnergyUpdate,
+          ...flags,
         })
-        .where(eq(chargeSchedules.id, schedule.id));
+        .where(stillOpen(schedule.id));
+      for (const warning of warnings) await notify(warning);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error(`[scheduler] schedule ${schedule.id} (charger ${schedule.chargerId}) failed: ${message}`);
       await db
         .update(chargeSchedules)
         .set({ lastError: message, lastEvaluatedAt: now, updatedAt: now })
-        .where(eq(chargeSchedules.id, schedule.id));
+        .where(stillOpen(schedule.id));
     }
   }
 

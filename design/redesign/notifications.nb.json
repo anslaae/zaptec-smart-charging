@@ -1,0 +1,112 @@
+{
+  "$description": "Web Push payloads for the Lading redesign (Norwegian). Sent as JSON by src/lib/push/send.ts and read by public/sw.js. Keep body under ~60 characters. 'tag' groups notifications per plan/session so a new one replaces the previous. 'actions' only render on Android/Chrome; iOS opens 'url' on tap.",
+  "defaults": {
+    "icon": "/icons/icon-192.png",
+    "badge": "/icons/badge-96.png",
+    "lang": "nb"
+  },
+  "events": [
+    {
+      "id": "plugged_in_no_plan",
+      "status": "exists – new copy",
+      "trigger": "Plug-in observed (Disconnected → connected) and no pending plan for the charger",
+      "payload": {
+        "title": "Bilen er koblet til",
+        "body": "Batteri {percent} % (målt {time}). Trykk for å planlegge lading.",
+        "tag": "charger-{chargerId}",
+        "url": "/?sheet=plan",
+        "actions": [
+          {
+            "action": "plan",
+            "title": "Planlegg",
+            "url": "/?sheet=plan"
+          },
+          {
+            "action": "charge-now",
+            "title": "Lad nå",
+            "url": "/?action=charge-now"
+          }
+        ]
+      },
+      "fallbackBodyWithoutBattery": "Trykk for å planlegge lading."
+    },
+    {
+      "id": "plugged_in_plan_waiting",
+      "status": "exists – new copy",
+      "trigger": "Plug-in observed and a pending plan exists",
+      "payload": {
+        "title": "Bilen er koblet til",
+        "body": "Planen er klar – lading starter ca. {startTime}.",
+        "tag": "plan-{scheduleId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "smart_planned",
+      "status": "new (UC16)",
+      "trigger": "Plug-in observed, on_plugin_mode = smart, no user plan; sent once the planner has made blocks",
+      "payload": {
+        "title": "Smart lading i natt",
+        "body": "Lader til {targetPercent} % {start}–{end} · ca. {cost} kr.",
+        "tag": "smart-{scheduleId}",
+        "url": "/",
+        "actions": [
+          {
+            "action": "charge-now",
+            "title": "Lad nå i stedet",
+            "url": "/?action=charge-now"
+          }
+        ]
+      }
+    },
+    {
+      "id": "plan_started",
+      "status": "exists – new copy",
+      "trigger": "First ResumeCharging for a schedule (PlanChargingStarted)",
+      "payload": {
+        "title": "Lading startet",
+        "body": "Lader til {targetPercent} %, ferdig ca. {finishTime}.",
+        "tag": "plan-{scheduleId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "plan_completed",
+      "status": "exists – new copy",
+      "trigger": "Target energy reached (PlanCompleted)",
+      "payload": {
+        "title": "Bilen er klar",
+        "body": "Ladet til ca. {targetPercent} % · {kwh} kWh · ca. {cost} kr.",
+        "tag": "plan-{scheduleId}",
+        "url": "/history"
+      }
+    },
+    {
+      "id": "plan_late",
+      "status": "proposed",
+      "trigger": "While charging for a plan, estimated finish passes readyBy (send once per plan)",
+      "payload": {
+        "title": "Rekker ikke helt",
+        "body": "Bilen blir ca. {expectedPercent} % klar {readyBy}. Vi lader videre til {targetPercent} %.",
+        "tag": "plan-{scheduleId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "plan_waiting_for_car",
+      "status": "proposed",
+      "trigger": "Pending plan, car not connected, now >= latestStartTime − 30 min (send once per plan)",
+      "payload": {
+        "title": "Planen venter på bilen",
+        "body": "Koble til innen {latestStart} for å være klar {readyBy}.",
+        "tag": "plan-{scheduleId}",
+        "url": "/"
+      }
+    }
+  ],
+  "neverNotify": [
+    "manual start/stop (the person doing it already knows)",
+    "automatic sessions stopped by enforcement",
+    "guest sessions"
+  ]
+}

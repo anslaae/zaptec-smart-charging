@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { activityEvents } from "@/lib/db/schema";
+import { nb } from "@/lib/i18n/nb";
 
 // Free-text keys (not a DB enum) for activityEvents.type -- see the schema
 // comment for why. ACTIVITY_LABEL below is the single place that turns one
@@ -18,6 +19,8 @@ export const ActivityType = {
   PreheatStarted: "preheat_started",
   PlanCreated: "plan_created",
   PlanCancelled: "plan_cancelled",
+  // "Angre" on the Plan avbrutt toast (within 10 s).
+  PlanRestored: "plan_restored",
   PlanChargingStarted: "plan_charging_started",
   PlanCompleted: "plan_completed",
   // The scheduler tick stopped a session with no active plan or manual
@@ -25,24 +28,26 @@ export const ActivityType = {
   // plan ready, now that the installation uses free charging. Deliberately
   // worded as a plain log line rather than a security alert.
   StoppedUnplanned: "stopped_unplanned",
+  // UC15: "Lån ut laderen" opened / the guest unplugged (or it was ended).
+  GuestStarted: "guest_started",
+  GuestEnded: "guest_ended",
+  // UC14: the household switch in Innstillinger.
+  AutomaticAllowed: "automatic_allowed",
+  AutomaticDisallowed: "automatic_disallowed",
+  // "Lad med en gang" reached its target % and stopped.
+  AutomaticCompleted: "automatic_completed",
+  // UC16 Smart lading: a smart row was planned on plug-in / cancelled for that session.
+  SmartPlanned: "smart_planned",
+  SmartCancelled: "smart_cancelled",
+  // Innstillinger → "Når bilen kobles til" changed (or expired back to "wait").
+  OnPluginModeChanged: "on_plugin_mode_changed",
 } as const;
 
 export type ActivityType = (typeof ActivityType)[keyof typeof ActivityType];
 
-export const ACTIVITY_LABEL: Record<ActivityType, string> = {
-  plugged_in: "Car plugged in",
-  unplugged: "Car unplugged",
-  charging_started: "Charging started",
-  charging_stopped: "Charging stopped",
-  manual_start: "Started manually",
-  manual_stop: "Stopped manually",
-  preheat_started: "Preheat started",
-  plan_created: "Charging plan created",
-  plan_cancelled: "Charging plan cancelled",
-  plan_charging_started: "Planned charging started",
-  plan_completed: "Charging plan completed",
-  stopped_unplanned: "Stopped automatically (no plan or manual start running)",
-};
+// The Norwegian copy lives in src/lib/i18n/nb.ts (activity.*), which also
+// holds labels for event types later steps add (guest, automatic charging).
+export const ACTIVITY_LABEL: Record<ActivityType, string> = nb.activity;
 
 export async function logActivity(
   chargerId: string,

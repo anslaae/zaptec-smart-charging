@@ -28,7 +28,30 @@ const envSchema = z.object({
   SMARTCAR_APPLICATION_MANAGEMENT_TOKEN: z.string().min(1).optional(),
 });
 
-export const env = envSchema.parse({
+// Mock mode (local only, see src/lib/mock/mode.ts): every credential is
+// replaced with an obviously fake value, so even a code path the mock missed
+// can't reach the real database, charger or Smartcar with real credentials.
+const MOCK_ENV =
+  process.env.MOCK_MODE === "1"
+    ? {
+        DATABASE_URL: "postgres://mock:mock@127.0.0.1:1/mock",
+        SESSION_SECRET: "mock-session-secret-not-for-real-use-0000",
+        ZAPTEC_USERNAME: "mock",
+        ZAPTEC_PASSWORD: "mock",
+        CRON_SECRET: "mock-cron-secret-0000",
+        ZAPTEC_WEBHOOK_USERNAME: "mock",
+        ZAPTEC_WEBHOOK_PASSWORD: "mock-webhook-password",
+        VAPID_PUBLIC_KEY: undefined,
+        VAPID_PRIVATE_KEY: undefined,
+        SMARTCAR_CLIENT_ID: "mock",
+        SMARTCAR_CLIENT_SECRET: "mock",
+        SMARTCAR_VEHICLE_ID: "mock",
+        SMARTCAR_USER_ID: "mock",
+        SMARTCAR_APPLICATION_MANAGEMENT_TOKEN: "mock-smartcar-amt",
+      }
+    : null;
+
+export const env = MOCK_ENV ? envSchema.parse(MOCK_ENV) : envSchema.parse({
   // Neon -> Supabase migration, staged: SUPABASE_DATABASE_URL wins when set,
   // so adding it in Vercel (next to Neon's integration-managed DATABASE_URL)
   // and redeploying switches databases, and removing it switches back. Once

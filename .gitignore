@@ -46,3 +46,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# mock mode build output (npm run dev:mock)
+/.next-mock/
+
+# Playwright UI tests
+/test-results/
+/playwright-report/

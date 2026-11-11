@@ -24,7 +24,7 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
   });
 
   if (!parsed.success) {
-    return { error: "Enter a valid email and password." };
+    return { error: "Skriv inn gyldig e-post og passord." };
   }
 
   const [user] = await db
@@ -39,7 +39,7 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
   const passwordMatches = await verifyPassword(parsed.data.password, passwordHash);
 
   if (!user || !passwordMatches) {
-    return { error: "Invalid email or password." };
+    return { error: "Feil e-post eller passord." };
   }
 
   await createSession(user.id);

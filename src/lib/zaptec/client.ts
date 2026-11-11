@@ -1,5 +1,14 @@
 import "server-only";
 import { getZaptecAccessToken } from "./auth";
+import { MOCK_MODE, assertNotMocked } from "@/lib/mock/mode";
+import {
+  mockListChargers,
+  mockGetChargerState,
+  mockGetInstallationRequiresAuth,
+  mockGetCircuitMaxCurrentAmps,
+  mockGetChargeHistory,
+  mockSendChargerCommand,
+} from "@/lib/mock/zaptec";
 import { ZAPTEC_API_BASE, ObservationId, NOMINAL_VOLTAGE, ZaptecCommand } from "./constants";
 import type {
   ZaptecChargerListApiResponse,
@@ -20,6 +29,7 @@ async function zaptecFetch(
   path: string,
   init?: RequestInit & { next?: { revalidate?: number } },
 ): Promise<Response> {
+  assertNotMocked("Zaptec API");
   const token = await getZaptecAccessToken();
   const response = await fetch(`${ZAPTEC_API_BASE}${path}`, {
     // Zaptec's fair-use policy asks integrators not to poll aggressively;
@@ -36,6 +46,7 @@ async function zaptecFetch(
 }
 
 export async function listChargers(): Promise<ZaptecCharger[]> {
+  if (MOCK_MODE) return mockListChargers();
   // The charger list rarely changes; Zaptec's fair-use policy explicitly
   // asks for this to be fetched at most once an hour rather than on every
   // poll.
@@ -63,6 +74,7 @@ export async function listChargers(): Promise<ZaptecCharger[]> {
 // every poll would be exactly the "aggressive polling" Zaptec's fair-use
 // policy asks integrators to avoid.
 export async function getCircuitMaxCurrentAmps(circuitId: string): Promise<number | null> {
+  if (MOCK_MODE) return mockGetCircuitMaxCurrentAmps();
   const response = await zaptecFetch(`/api/circuits/${circuitId}`, {
     next: { revalidate: 86_400 },
   });
@@ -77,6 +89,7 @@ export async function getCircuitMaxCurrentAmps(circuitId: string): Promise<numbe
 // min) rather than hard like the circuit lookup, so a change shows up fairly
 // promptly without polling it on every tick.
 export async function getInstallationRequiresAuth(installationId: string): Promise<boolean | null> {
+  if (MOCK_MODE) return mockGetInstallationRequiresAuth();
   const response = await zaptecFetch(`/api/installation/${installationId}`, {
     next: { revalidate: 300 },
   });
@@ -88,6 +101,7 @@ export async function getInstallationRequiresAuth(installationId: string): Promi
 // Only the most recent 100 sessions per charger; fine for a household charger,
 // but would need real pagination to show a multi-year history.
 export async function getChargeHistory(chargerId: string): Promise<ChargeHistoryEntry[]> {
+  if (MOCK_MODE) return mockGetChargeHistory(chargerId);
   const response = await zaptecFetch(`/api/chargehistory?ChargerId=${chargerId}&PageSize=100`);
   if (!response.ok) {
     throw new Error(`Failed to read charge history: ${response.status}`);
@@ -149,6 +163,7 @@ export async function getChargerState(
   circuitId: string,
   installationId: string,
 ): Promise<ChargerState> {
+  if (MOCK_MODE) return mockGetChargerState(chargerId);
   // Independent requests -- fetched together rather than one after the
   // other. The circuit and installation lookups are both cached, so this
   // only matters on a cache miss, but it's free to do regardless.
@@ -236,6 +251,7 @@ export async function sendChargerCommand(
   chargerId: string,
   commandId: number,
 ): Promise<void> {
+  if (MOCK_MODE) return mockSendChargerCommand(chargerId, commandId);
   const response = await zaptecFetch(
     `/api/chargers/${chargerId}/sendCommand/${commandId}`,
     { method: "POST" },

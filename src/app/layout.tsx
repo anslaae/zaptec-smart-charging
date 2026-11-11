@@ -1,6 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Toaster } from "sonner";
+import { AppToaster } from "@/components/AppToaster";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
+import { TabBar } from "@/components/TabBar";
+import { MockBanner } from "@/components/MockBanner";
+import { nb } from "@/lib/i18n/nb";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,30 +18,39 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Smart Charging",
-  description: "Schedule smart charging for your Zaptec EV charger",
+  title: nb.app.name,
+  description: "Planlegg lading av bilen på Zaptec-laderen",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Smart Charging",
+    title: nb.app.name,
   },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#171717",
+  // Lets the tab bar's env(safe-area-inset-bottom) see the home-indicator area.
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F3F5EF" },
+    { media: "(prefers-color-scheme: dark)", color: "#0E0F0D" },
+  ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="en"
+      lang="nb"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        {children}
-        <Toaster theme="system" richColors position="top-center" />
+        <ConfirmProvider>
+          <MockBanner />
+          {children}
+          <TabBar />
+        </ConfirmProvider>
+        <AppToaster />
       </body>
     </html>
   );

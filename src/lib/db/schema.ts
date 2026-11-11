@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -7,6 +8,7 @@ import {
   integer,
   jsonb,
   pgEnum,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -28,9 +30,12 @@ export const scheduleStatus = pgEnum("schedule_status", [
 
 export const chargeSchedules = pgTable("charge_schedules", {
   id: uuid("id").primaryKey().defaultRandom(),
-  createdByUserId: uuid("created_by_user_id")
-    .notNull()
-    .references(() => users.id),
+  // Null for Smart lading rows (source = 'smart'): the tick made them, not a person.
+  createdByUserId: uuid("created_by_user_id").references(() => users.id),
+  // 'user' = a plan someone made; 'smart' = Smart lading (UC16), one per plug-in session.
+  source: text("source").notNull().default("user"),
+  // Smart lading: the planned charging blocks + the kW they assume (see scheduler/smart.ts).
+  blocks: jsonb("blocks"),
   chargerId: text("charger_id").notNull(),
   chargerName: text("charger_name").notNull(),
   targetEnergyKwh: numeric("target_energy_kwh", {
@@ -83,13 +88,28 @@ export const chargeSchedules = pgTable("charge_schedules", {
     precision: 6,
     scale: 2,
   }),
+  // What the plan sheet was set to, in battery % (the redesign plans in %,
+  // the scheduler still works in kWh: targetEnergyKwh = (target - start) x
+  // capacity). Null for plans made before the redesign.
+  startPercent: integer("start_percent"),
+  targetPercent: integer("target_percent"),
+  // Which car the plan is for (null = the location's default car; one car today).
+  carId: uuid("car_id").references(() => cars.id),
+  // Once-per-plan push notifications (notifications.nb.json "proposed" events).
+  lateNotifiedAt: timestamp("late_notified_at", { withTimezone: true }),
+  waitingNotifiedAt: timestamp("waiting_notified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (t) => [
+  // Smart lading: one row per plug-in session, even if two ticks overlap (smartRun.ts).
+  uniqueIndex("charge_schedules_smart_session_unique")
+    .on(t.chargerId, t.zaptecSessionId)
+    .where(sql`${t.source} = 'smart'`),
+]);
 
 // One row per command the scheduler decides to send (resume/pause/complete)
 // -- an internal log of what the scheduler actually did over time, not just
@@ -163,16 +183,32 @@ export const activityEvents = pgTable("activity_events", {
 // the scheduler tick treats a charger as legitimately charging while one of
 // these is open for it, same as an active schedule. Closed when the car
 // disconnects or someone presses "Stop charging".
+//
+// `kind` says what opened it: "manual" (Lad nå), "preheat" (Forvarm),
+// "guest" (Lån ut laderen, UC15 -- lasts until the car is unplugged) or
+// "automatic" (opened by the tick for an unplanned plug-in while "Tillat
+// automatisk lading" is on, UC14 -- no person behind it). The energy columns
+// let Historikk show what each session delivered without the deprecated
+// Zaptec charge-history API: the session counter at open, the latest reading
+// while open (updated by the tick), and the delivered total once closed.
 export const manualChargeSessions = pgTable("manual_charge_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
   chargerId: text("charger_id").notNull(),
-  startedByUserId: uuid("started_by_user_id")
-    .notNull()
-    .references(() => users.id),
+  kind: text("kind").notNull().default("manual"),
+  // Guest windows: "Hvem låner?" (optional, free text).
+  guestName: text("guest_name"),
+  // Automatic sessions ("Lad med en gang"): stop once this much energy is in (target % − battery);
+  // null = charge until the car stops by itself (no battery reading at all).
+  targetKwh: numeric("target_kwh", { precision: 6, scale: 2 }),
+  startedByUserId: uuid("started_by_user_id").references(() => users.id),
   startedAt: timestamp("started_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
+  zaptecSessionId: text("zaptec_session_id"),
+  startEnergyKwh: numeric("start_energy_kwh", { precision: 6, scale: 2 }),
+  lastObservedEnergyKwh: numeric("last_observed_energy_kwh", { precision: 6, scale: 2 }),
+  energyKwh: numeric("energy_kwh", { precision: 6, scale: 2 }),
 });
 
 // One row per subscribed browser/device. Existence of a row *is* "this user
@@ -214,4 +250,59 @@ export const webhookEvents = pgTable("webhook_events", {
   receivedAt: timestamp("received_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+});
+
+// --- Redesign data model (design/redesign/HANDOFF.md §7) -------------------
+// Prepared for several locations, chargers and cars; the UI shows none of it
+// while there is one of each (the address is just the title on Hjem).
+
+export const locations = pgTable("locations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Editable display name ("Konvallveien 1"); defaults to the Zaptec installation name.
+  name: text("name").notNull(),
+  zaptecInstallationId: text("zaptec_installation_id").unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Zaptec charger id -> location, plus an optional friendly name.
+export const chargers = pgTable("chargers", {
+  id: text("id").primaryKey(),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id),
+  displayName: text("display_name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const cars = pgTable("cars", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  batteryCapacityKwh: numeric("battery_capacity_kwh", { precision: 5, scale: 1 }).notNull(),
+  smartcarVehicleId: text("smartcar_vehicle_id"),
+  defaultLocationId: uuid("default_location_id").references(() => locations.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Household-wide settings, one row ("singleton"). Read through
+// src/lib/settings.ts, which falls back to the defaults below when the row
+// doesn't exist yet.
+export const settings = pgTable("settings", {
+  id: text("id").primaryKey(),
+  // UC14: off = the tick stops unplanned sessions (today's behaviour).
+  // What happens on plug-in with no plan/session (UC14 + UC16): 'wait' | 'now' | 'smart'.
+  onPluginMode: text("on_plugin_mode").notNull().default("wait"),
+  // When 'now'/'smart' falls back to 'wait'; null = until someone changes it.
+  onPluginModeUntil: timestamp("on_plugin_mode_until", { withTimezone: true }),
+  smartTargetPercent: integer("smart_target_percent").notNull().default(80),
+  smartReadyByWeekday: text("smart_ready_by_weekday").notNull().default("07:30"),
+  smartReadyByWeekend: text("smart_ready_by_weekend").notNull().default("10:00"),
+  energyPriceModel: text("energy_price_model").notNull().default("norgespris"),
+  // kr/kWh incl. VAT used for cost figures (Norgespris 2026: 0,50).
+  energyPriceNokPerKwh: numeric("energy_price_nok_per_kwh", { precision: 6, scale: 3 }).notNull().default("0.500"),
+  // Nettleie energiledd (kr/kWh incl. VAT and fees) from the grid company price list:
+  // weekdays 06-22, and nights 22-06 + weekends. Null = not included in costs.
+  gridDayNokPerKwh: numeric("grid_day_nok_per_kwh", { precision: 6, scale: 3 }),
+  gridNightNokPerKwh: numeric("grid_night_nok_per_kwh", { precision: 6, scale: 3 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedByUserId: uuid("updated_by_user_id").references(() => users.id),
 });

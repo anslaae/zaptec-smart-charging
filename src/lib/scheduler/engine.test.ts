@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideNextAction, reconcileSessionEnergy, type ScheduleInput } from "./engine";
+import { decideNextAction, planDeliveredNow, reconcileSessionEnergy, type ScheduleInput } from "./engine";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState } from "@/lib/zaptec/types";
 
@@ -148,5 +148,39 @@ describe("reconcileSessionEnergy", () => {
     );
     expect(result.effectiveSessionEnergyKwh).toBe(1.5);
     expect(result.nextTracker.zaptecSessionId).toBe("session-a");
+  });
+
+  it("keeps the tracker while no session is reported (unplugged or offline)", () => {
+    const tracker = { zaptecSessionId: "session-a", priorSessionEnergyKwh: -4, lastObservedSessionEnergyKwh: 4 };
+    const result = reconcileSessionEnergy(tracker, null, 0);
+    expect(result.effectiveSessionEnergyKwh).toBe(0);
+    expect(result.nextTracker).toEqual(tracker);
+    // ...so a re-plug after that still counts from the baseline
+    expect(reconcileSessionEnergy(result.nextTracker, "session-b", 1).effectiveSessionEnergyKwh).toBe(1);
+  });
+
+  it("ignores a lower reading for the same session", () => {
+    const result = reconcileSessionEnergy(
+      { zaptecSessionId: "session-a", priorSessionEnergyKwh: -4, lastObservedSessionEnergyKwh: 6 },
+      "session-a",
+      0,
+    );
+    expect(result.effectiveSessionEnergyKwh).toBe(2);
+    expect(result.nextTracker.lastObservedSessionEnergyKwh).toBe(6);
+  });
+});
+
+describe("planDeliveredNow", () => {
+  it("is never negative right after a re-plug, before the tick reconciles", () => {
+    const tracker = { zaptecSessionId: "session-a", priorSessionEnergyKwh: -4, lastObservedSessionEnergyKwh: 5 };
+    expect(planDeliveredNow(tracker, { sessionId: "session-a", sessionEnergyKwh: 5 })).toBe(1);
+    expect(planDeliveredNow(tracker, { sessionId: "session-b", sessionEnergyKwh: 0.5 })).toBe(1.5);
+    expect(planDeliveredNow({ ...tracker, lastObservedSessionEnergyKwh: 4 }, { sessionId: "session-a", sessionEnergyKwh: 0 })).toBe(0);
+  });
+
+  it("uses the session counter for a plan that hasn't tracked anything yet", () => {
+    expect(
+      planDeliveredNow({ zaptecSessionId: null, priorSessionEnergyKwh: 0, lastObservedSessionEnergyKwh: 0 }, { sessionId: "x", sessionEnergyKwh: 2 }),
+    ).toBe(2);
   });
 });

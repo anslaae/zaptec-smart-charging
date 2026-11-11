@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
+const MOCK_MODE = process.env.MOCK_MODE === "1";
+
 const nextConfig: NextConfig = {
+  // Mock mode builds into its own folder, so `npm run dev:mock` can run next
+  // to a normal `npm run dev` (Next refuses two dev servers sharing .next).
+  distDir: MOCK_MODE ? ".next-mock" : ".next",
   env: {
     // Baked in at build time from Vercel's system env vars (always present
     // during the build step, regardless of the project's "expose system env
@@ -9,9 +14,12 @@ const nextConfig: NextConfig = {
     // version?" questions without guessing.
     // `||` rather than `??` -- `vercel env pull` can leave these set to an
     // empty string locally, which `??` wouldn't treat as "missing".
-    BUILD_SHA: (process.env.VERCEL_GIT_COMMIT_SHA || "local").slice(0, 7),
-    BUILD_ENV: process.env.VERCEL_ENV || "local",
+    BUILD_SHA: MOCK_MODE ? "mock" : (process.env.VERCEL_GIT_COMMIT_SHA || "local").slice(0, 7),
+    BUILD_ENV: MOCK_MODE ? "mock" : process.env.VERCEL_ENV || "local",
   },
+  // PGlite (the mock database) ships WASM and is only ever loaded at runtime
+  // in mock mode -- keep it out of the server bundle.
+  serverExternalPackages: ["@electric-sql/pglite"],
 };
 
 export default nextConfig;

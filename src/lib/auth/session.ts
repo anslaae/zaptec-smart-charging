@@ -3,7 +3,10 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
 
-const SESSION_COOKIE = "session";
+// Mock mode (localhost:3100) uses its own cookie name: cookies are per host,
+// not per port, so sharing "session" with the real dev server on :3000 would
+// log one out whenever you log into the other.
+export const SESSION_COOKIE = process.env.MOCK_MODE === "1" ? "mock_session" : "session";
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days, this is a household app
 const encodedKey = new TextEncoder().encode(env.SESSION_SECRET);
 

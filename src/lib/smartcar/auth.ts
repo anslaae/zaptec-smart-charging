@@ -1,6 +1,7 @@
 import "server-only";
 import { env } from "@/lib/env";
 import { SMARTCAR_TOKEN_URL } from "./constants";
+import { assertNotMocked } from "@/lib/mock/mode";
 import type { SmartcarTokenResponse } from "./types";
 
 // Module-level cache: persists across invocations on a warm serverless
@@ -14,6 +15,7 @@ let cachedToken: { accessToken: string; expiresAt: number } | null = null;
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
 
 export async function getSmartcarAccessToken(): Promise<string> {
+  assertNotMocked("Smartcar token");
   if (cachedToken && cachedToken.expiresAt - EXPIRY_SAFETY_MARGIN_MS > Date.now()) {
     return cachedToken.accessToken;
   }

@@ -1,7 +1,12 @@
 // Pure, unit-testable (no "server-only", no DB) -- mirrors engine.ts. Run
 // once when a planned charge completes, to answer "did we estimate the
 // charging time well," logged as the detail on the PlanCompleted activity
-// event (see run.ts).
+// event (see run.ts). The note is shown in Aktivitet, so it's Norwegian.
+
+import { formatDuration } from "@/lib/datetime";
+import { fill, nb } from "@/lib/i18n/nb";
+
+const t = nb.accuracy;
 
 export interface ScheduleAccuracyInput {
   readyBy: Date;
@@ -26,9 +31,7 @@ export interface ScheduleAccuracyResult {
 }
 
 function formatMinutes(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  return formatDuration(minutes * 60);
 }
 
 export function evaluateScheduleAccuracy(input: ScheduleAccuracyInput): ScheduleAccuracyResult {
@@ -47,19 +50,19 @@ export function evaluateScheduleAccuracy(input: ScheduleAccuracyInput): Schedule
 
   const timing =
     finishedMinutesBeforeReadyBy >= 0
-      ? `Finished ${formatMinutes(finishedMinutesBeforeReadyBy)} before the ready-by deadline`
-      : `Finished ${formatMinutes(-finishedMinutesBeforeReadyBy)} after the ready-by deadline`;
+      ? fill(t.before, { duration: formatMinutes(finishedMinutesBeforeReadyBy) })
+      : fill(t.after, { duration: formatMinutes(-finishedMinutesBeforeReadyBy) });
 
   const durationNote =
     durationDeltaMinutes == null
       ? ""
       : durationDeltaMinutes === 0
-        ? " (matched the estimated duration)"
+        ? t.asEstimated
         : durationDeltaMinutes > 0
-          ? ` (took ${formatMinutes(durationDeltaMinutes)} longer than estimated)`
-          : ` (finished ${formatMinutes(-durationDeltaMinutes)} faster than estimated)`;
+          ? fill(t.slower, { duration: formatMinutes(durationDeltaMinutes) })
+          : fill(t.faster, { duration: formatMinutes(-durationDeltaMinutes) });
 
-  const pausedNote = input.wasPaused ? " -- includes paused time" : "";
+  const pausedNote = input.wasPaused ? t.paused : "";
 
   return {
     finishedMinutesBeforeReadyBy,

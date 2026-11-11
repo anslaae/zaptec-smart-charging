@@ -19,8 +19,8 @@ describe("evaluateScheduleAccuracy", () => {
     expect(result.finishedMinutesBeforeReadyBy).toBe(12);
     expect(result.actualDurationMinutes).toBe(108);
     expect(result.durationDeltaMinutes).toBe(0);
-    expect(result.summary).toContain("12m before the ready-by deadline");
-    expect(result.summary).toContain("matched the estimated duration");
+    expect(result.summary).toContain("12 min før klar-tid");
+    expect(result.summary).toContain("som beregnet");
   });
 
   it("reports a late finish and a longer-than-estimated duration", () => {
@@ -31,8 +31,8 @@ describe("evaluateScheduleAccuracy", () => {
     });
     expect(result.finishedMinutesBeforeReadyBy).toBe(-15);
     expect(result.durationDeltaMinutes).toBe(27);
-    expect(result.summary).toContain("15m after the ready-by deadline");
-    expect(result.summary).toContain("27m longer than estimated");
+    expect(result.summary).toContain("15 min etter klar-tid");
+    expect(result.summary).toContain("27 min lenger enn beregnet");
   });
 
   it("reports a faster-than-estimated duration", () => {
@@ -42,7 +42,7 @@ describe("evaluateScheduleAccuracy", () => {
       estimatedDurationMinutes: 108,
     });
     expect(result.durationDeltaMinutes).toBe(-18);
-    expect(result.summary).toContain("18m faster than estimated");
+    expect(result.summary).toContain("18 min raskere enn beregnet");
   });
 
   it("omits the duration comparison when there's no estimate", () => {
@@ -52,8 +52,8 @@ describe("evaluateScheduleAccuracy", () => {
       estimatedDurationMinutes: null,
     });
     expect(result.durationDeltaMinutes).toBeNull();
-    expect(result.summary).not.toContain("estimated duration");
-    expect(result.summary).not.toContain("than estimated");
+    expect(result.summary).not.toContain("som beregnet");
+    expect(result.summary).not.toContain("enn beregnet");
   });
 
   it("notes when the session was paused and resumed", () => {
@@ -63,7 +63,7 @@ describe("evaluateScheduleAccuracy", () => {
       estimatedDurationMinutes: 108,
       wasPaused: true,
     });
-    expect(result.summary).toContain("includes paused time");
+    expect(result.summary).toContain("inkl. pause");
   });
 
   it("computes delivered vs. target energy delta", () => {

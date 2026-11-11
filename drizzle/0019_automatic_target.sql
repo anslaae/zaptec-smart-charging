@@ -1,0 +1,1 @@
+ALTER TABLE "manual_charge_sessions" ADD COLUMN "target_kwh" numeric(6, 2);

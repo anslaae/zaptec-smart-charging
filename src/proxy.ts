@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { decryptSession } from "@/lib/auth/session";
+import { decryptSession, SESSION_COOKIE } from "@/lib/auth/session";
 
 const PUBLIC_ROUTES = ["/login"];
 
@@ -8,7 +8,7 @@ export default async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublicRoute = PUBLIC_ROUTES.includes(path);
 
-  const token = request.cookies.get("session")?.value;
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await decryptSession(token);
   const isAuthenticated = Boolean(session?.userId);
 
@@ -37,8 +37,11 @@ export default async function proxy(request: NextRequest) {
 //
 // sw.js (the push-notification service worker) is also excluded -- the
 // browser/OS can fetch and run it outside of an open, authenticated tab.
+// The same goes for /icons/* (PWA manifest icons, notification icon and
+// badge): the OS fetches them without the session cookie, and a redirect to
+// /login would leave a broken icon.
 export const config = {
   matcher: [
-    "/((?!api/cron|api/webhooks|api/health|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest|sw.js).*)",
+    "/((?!api/cron|api/webhooks|api/health|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest|sw.js|icons/).*)",
   ],
 };

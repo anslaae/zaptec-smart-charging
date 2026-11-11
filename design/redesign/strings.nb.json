@@ -1,0 +1,374 @@
+{
+  "$description": "Norwegian (nb) UI copy for the Lading redesign. {placeholders} are filled at runtime. Formats: 24h time (07:30), decimal comma (7,2 kW), '123,40 kr', dates like 'tir. 10. nov.', relative words i dag / i morgen / i går.",
+  "app": {
+    "name": "Lading",
+    "greeting": {
+      "morning": "God morgen, {name}",
+      "day": "God dag, {name}",
+      "afternoon": "God ettermiddag, {name}",
+      "evening": "God kveld, {name}"
+    }
+  },
+  "nav": {
+    "home": "Hjem",
+    "history": "Historikk",
+    "insights": "Innsikt",
+    "settings": "Innstillinger",
+    "menuLabel": "Hovedmeny"
+  },
+  "heartbeat": {
+    "ok": "Sist sjekket {time}",
+    "stale": "Planlegging er satt på pause – sist sjekket {time}"
+  },
+  "battery": {
+    "measured": "målt {time}",
+    "approx": "ca.",
+    "target": "mål {percent} %",
+    "last": "sist",
+    "derived": "Batteri beregnet fra {percent} % målt {time}"
+  },
+  "home": {
+    "noCar": {
+      "status": "Ikke tilkoblet",
+      "statusNoBattery": "Ingen bil tilkoblet",
+      "sub": "ca. {kwh} kWh igjen",
+      "subNoBattery": "Sist tilkoblet {when}",
+      "todayTitle": "Batteri i dag",
+      "todayChange": "{change} % siden {time}",
+      "unplugged": "koblet fra {time}",
+      "hint": "Du kan planlegge allerede nå. Ladingen starter når bilen kobles til.",
+      "primary": "Planlegg lading"
+    },
+    "connected": {
+      "status": "Tilkoblet – ingen plan",
+      "sub": "Bilen lader ikke før du planlegger eller trykker Lad nå",
+      "suggestion": "Forslag fra sist",
+      "useSuggestion": "Bruk",
+      "primary": "Planlegg lading",
+      "chargeNow": "Lad nå",
+      "preheat": "Forvarm bilen"
+    },
+    "planWaiting": {
+      "status": "Plan klar – venter på bilen",
+      "sub": "Koble til innen {time} for å være klar {readyBy}",
+      "reminder": "Du får et varsel {time} hvis bilen fortsatt ikke er koblet til.",
+      "primary": "Endre plan",
+      "cancel": "Avbryt plan"
+    },
+    "planned": {
+      "status": "Planlagt – starter ca. {time}",
+      "sub": "Klar til {readyBy} · +{kwh} kWh",
+      "timelineNote": "Vi venter med å lade til det trengs, og regner med {kw} kW fra tidligere ladinger.",
+      "tooTight": "Rekker ikke helt – starter med en gang",
+      "primary": "Endre plan"
+    },
+    "chargingPlan": {
+      "status": "Lader – ferdig ca. {time}",
+      "sub": "Klar til {readyBy} · {kw} kW",
+      "planRow": "Plan: {percent} % klar {readyBy}",
+      "edit": "Endre ›",
+      "primary": "Avbryt plan"
+    },
+    "chargingManual": {
+      "status": "Lader nå · {kw} kW",
+      "primary": "Stopp lading"
+    },
+    "preheating": {
+      "status": "Forvarmer – strøm fra laderen",
+      "sub": "Startet {time} · {kw} kW · {duration}",
+      "climatePrompt": "Har du startet klima?",
+      "climateSub": "Det gjøres i myOpel-appen.",
+      "openMyOpel": "Åpne myOpel ↗",
+      "primary": "Stopp forvarming",
+      "autoStopNote": "Stopper av seg selv når bilen kobles fra."
+    },
+    "ready": {
+      "status": "Bilen er klar",
+      "sub": "Ferdig {time} · {minutes} min før fristen {readyBy}",
+      "subLate": "Ferdig {time} · {minutes} min etter fristen {readyBy}",
+      "targetReached": "mål nådd",
+      "lastSession": "Siste lading",
+      "details": "Detaljer ›",
+      "from": "Fra",
+      "delivered": "Levert",
+      "duration": "Tid",
+      "cost": "Kostnad",
+      "byUser": "Plan av {name}",
+      "persistNote": "Vises til bilen kobles fra eller du starter noe nytt",
+      "primary": "Planlegg lading"
+    },
+    "noControl": {
+      "title": "Appen styrer ikke laderen akkurat nå",
+      "body": "Laderen krever innlogging igjen, så planer og «Lad nå» virker ikke. Start lading med brikke eller i Zaptec-appen, eller slå av krav om autentisering i Zaptec Portal.",
+      "link": "Les mer i Innstillinger ›",
+      "status": "Tilkoblet – venter på innlogging",
+      "sub": "Ingen handlinger tilgjengelig her"
+    },
+    "stats": {
+      "delivered": "Levert",
+      "time": "Tid",
+      "cost": "Kostnad"
+    },
+    "recent": {
+      "title": "Siste hendelser",
+      "seeAll": "Se alle"
+    },
+    "smart": {
+      "pill": "Smart lading",
+      "status": "Lader i natt {start}–{end}",
+      "statusDay": "Lader {start}–{end}",
+      "sub": "Klar til {readyBy} {day} · +{kwh} kWh",
+      "legendPeak": "Kveldstopp",
+      "legendCheap": "Billig nettleie",
+      "legendCharge": "Lading",
+      "legendMarkers": "Nå · klar {readyBy}",
+      "cost": "ca. {cost} kr",
+      "saving": "sparer ca. {saving} kr og kveldstoppen",
+      "costEstimate": "anslag",
+      "primary": "Endre for i natt",
+      "primaryCharging": "Avbryt for i natt",
+      "charging": "Lader – ferdig ca. {time}"
+    }
+  },
+  "planSheet": {
+    "titleNew": "Planlegg lading",
+    "titleEdit": "Endre plan",
+    "close": "Lukk",
+    "batteryNow": "Batteri nå",
+    "batteryHint": "Målt av bilen {time} · dra hvis du vet bedre",
+    "chargeTo": "Lad til",
+    "targets": [
+      70,
+      80,
+      90,
+      100
+    ],
+    "readyBy": "Klar til",
+    "day": {
+      "today": "I dag",
+      "tomorrow": "I morgen",
+      "pick": "Velg dato"
+    },
+    "times": [
+      "06:30",
+      "07:00",
+      "07:30",
+      "08:00"
+    ],
+    "otherTime": "Annet",
+    "summary": "Starter ca. {start} · klar {readyBy} {day}",
+    "basis": "Regner med {kw} kW fra tidligere ladinger og et batteri på {capacity} kWh.",
+    "noCar": "Starter når bilen kobles til",
+    "targetTooLow": "Målet må være høyere enn batteriet nå.",
+    "save": "Lagre plan",
+    "cancel": "Avbryt plan",
+    "cancelConfirm": "Avbryte planen?"
+  },
+  "preheatSheet": {
+    "title": "Forvarm bilen",
+    "intro": "Bilen henter strøm fra laderen i stedet for batteriet mens kupeen varmes opp.",
+    "step1": "Strøm til bilen er på",
+    "step1Sub": "Startet {time} · {kw} kW",
+    "step2": "Start klima i myOpel",
+    "step2Sub": "Appen kan ikke styre klimaanlegget selv.",
+    "openMyOpel": "Åpne myOpel",
+    "stop": "Stopp strøm"
+  },
+  "history": {
+    "title": "Historikk",
+    "tabs": {
+      "sessions": "Økter",
+      "plans": "Planer",
+      "activity": "Aktivitet"
+    },
+    "groups": {
+      "thisWeek": "Denne uken",
+      "lastWeek": "Forrige uke"
+    },
+    "tags": {
+      "plan": "Plan",
+      "manual": "Lad nå",
+      "preheat": "Forvarming",
+      "guest": "Gjest",
+      "automatic": "Automatisk",
+      "smart": "Smart"
+    },
+    "automaticSummary": "Automatisk: {count} tilkobling stoppet {period}. Vises i Aktivitet."
+  },
+  "insights": {
+    "title": "Innsikt",
+    "energySoFar": "Energi hittil",
+    "costSoFar": "Kostnad hittil",
+    "vsLastMonth": "{change} mot samme tid i {month}",
+    "avgPrice": "snitt {price} kr/kWh",
+    "perDay": "kWh per dag",
+    "perPerson": "Per person",
+    "guest": "Gjest",
+    "priceNote": "Pris: Norgespris. Sammenligning med spotpris kommer senere."
+  },
+  "settings": {
+    "title": "Innstillinger",
+    "notifications": {
+      "section": "Varsler",
+      "thisDevice": "På denne enheten",
+      "thisDeviceSub": "Bil koblet til, lading starter, lading ferdig",
+      "iosHint": "På iPhone må appen være lagt til på Hjem-skjermen for å få varsler."
+    },
+    "price": {
+      "section": "Strømpris",
+      "model": "Prismodell",
+      "norgespris": "Norgespris"
+    },
+    "charging": {
+      "section": "Lading",
+      "allowAutomatic": "Tillat automatisk lading",
+      "allowAutomaticSub": "Alle som kobler til får lade uten plan",
+      "lend": "Lån ut laderen",
+      "lendSub": "Gjest lader til bilen kobles fra"
+    },
+    "system": {
+      "section": "System",
+      "scheduler": "Planlegging",
+      "schedulerActive": "Aktiv · sjekket {time}",
+      "learnedRate": "Lært ladeeffekt",
+      "version": "Versjon",
+      "debug": "Feilsøkingsmodus"
+    },
+    "account": {
+      "section": "Konto",
+      "logout": "Logg ut"
+    }
+  },
+  "dialogs": {
+    "cancelPlan": {
+      "title": "Avbryte planen?",
+      "body": "{percent} % klar {readyBy} {day} slettes. Bilen lader ikke før du lager en ny plan eller trykker Lad nå.",
+      "safe": "Behold",
+      "action": "Avbryt plan"
+    },
+    "stopCharging": {
+      "title": "Stoppe ladingen?",
+      "body": "Bilen har fått {kwh} kWh og er på ca. {percent} %. Den lader ikke mer før du starter igjen.",
+      "safe": "Fortsett",
+      "action": "Stopp lading"
+    },
+    "stopPreheat": {
+      "title": "Stoppe forvarmingen?",
+      "body": "Bilen bruker batteriet hvis klimaanlegget fortsatt står på.",
+      "safe": "Fortsett",
+      "action": "Stopp forvarming"
+    },
+    "allowAutomatic": {
+      "title": "Tillate automatisk lading?",
+      "body": "Alle som kobler til laderen på {location} får lade uten plan. Strømmen telles som «Automatisk».",
+      "durationLabel": "Hvor lenge?",
+      "untilTomorrow": "Til i morgen kl. 08:00",
+      "untilOff": "Til jeg slår det av",
+      "safe": "Avbryt",
+      "action": "Tillat"
+    },
+    "lendCharger": {
+      "title": "Låne ut laderen?",
+      "body": "En gjest kan lade til bilen kobles fra. Strømmen telles som «Gjest», og {car}-planer venter så lenge.",
+      "nameLabel": "Hvem låner?",
+      "nameOptional": "(valgfritt)",
+      "namePlaceholder": "F.eks. nabo i nr. 3",
+      "safe": "Avbryt",
+      "action": "Lån ut"
+    },
+    "chargerError": {
+      "title": "Fikk ikke kontakt med laderen",
+      "body": "Zaptec svarte ikke på «{command}». Planene dine er ikke endret.",
+      "safe": "Lukk",
+      "action": "Prøv igjen"
+    },
+    "logout": {
+      "title": "Logge ut?",
+      "body": "Varsler på denne enheten slås av til du logger inn igjen.",
+      "safe": "Avbryt",
+      "action": "Logg ut"
+    }
+  },
+  "toasts": {
+    "planSaved": {
+      "title": "Plan lagret",
+      "body": "Starter ca. {start} · klar {readyBy}"
+    },
+    "planCancelled": {
+      "title": "Plan avbrutt",
+      "body": "{percent} % klar {readyBy}",
+      "undo": "Angre"
+    },
+    "planSaveFailed": {
+      "title": "Kunne ikke lagre planen",
+      "overlap": "Det finnes allerede en plan for denne laderen."
+    },
+    "chargingStarted": {
+      "title": "Lading startet"
+    },
+    "chargingStopped": {
+      "title": "Lading stoppet"
+    },
+    "automaticOn": {
+      "title": "Automatisk lading på",
+      "body": "Til {until}"
+    },
+    "guestOn": {
+      "title": "Laderen er lånt ut",
+      "body": "Til bilen kobles fra"
+    }
+  },
+  "picker": {
+    "title": "Ladere og biler",
+    "chargers": "Ladere",
+    "cars": "Biler",
+    "addCar": "+ Legg til bil",
+    "defaultCar": "Standard på {location}",
+    "hiddenNote": "Med én lader og én bil vises ikke denne velgeren – adressen står bare som tittel på Hjem."
+  },
+  "activity": {
+    "plugged_in": "Bil koblet til",
+    "unplugged": "Bil koblet fra",
+    "charging_started": "Lading startet",
+    "charging_stopped": "Lading stoppet",
+    "manual_start": "Startet manuelt",
+    "manual_stop": "Stoppet manuelt",
+    "preheat_started": "Forvarming startet",
+    "plan_created": "Plan laget",
+    "plan_cancelled": "Plan avbrutt",
+    "plan_charging_started": "Lading startet etter plan",
+    "plan_completed": "Bilen er klar",
+    "stopped_unplanned": "Automatisk lading stoppet (ingen plan)",
+    "guest_started": "Laderen lånt ut til gjest",
+    "guest_ended": "Gjestelading avsluttet",
+    "automatic_allowed": "Automatisk lading slått på",
+    "automatic_disallowed": "Automatisk lading slått av",
+    "smart_planned": "Smart lading planlagt",
+    "smart_cancelled": "Smart lading avbrutt for denne ladingen"
+  },
+  "onPlugin": {
+    "title": "Når bilen kobles til",
+    "intro": "Gjelder når det ikke finnes en plan. En plan, Lad nå eller forvarming overstyrer for den ladingen.",
+    "settingsRow": "Når bilen kobles til",
+    "settingsRowSmart": "Smart lading · {percent} % innen {time}",
+    "wait": {
+      "title": "Vent på plan",
+      "sub": "Lader ikke før noen planlegger eller trykker Lad nå"
+    },
+    "now": {
+      "title": "Lad med en gang",
+      "sub": "Lader til fullt med en gang («Automatisk»)"
+    },
+    "smart": {
+      "title": "Smart lading",
+      "sub": "Billigst mulig til {percent} % innen klar-tid"
+    },
+    "target": "Lad til",
+    "readyWeekday": "Klar til, hverdager",
+    "readyWeekend": "Klar til, helg",
+    "cheapest": "Billigst: natt 22–06 og helg · {price} øre/kWh",
+    "dearest": "Dyrest: hverdager 06–22 · {price} øre/kWh",
+    "priceNote": "Norgespris + nettleie Elvia. Unngår alltid kveldstoppen 16–21.",
+    "save": "Lagre"
+  }
+}

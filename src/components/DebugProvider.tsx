@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { DEBUG_SCENARIOS, type DebugScenarioKey } from "@/lib/debug/scenarios";
+import { nb, fill } from "@/lib/i18n/nb";
 
 interface DebugContextValue {
   enabled: boolean;
@@ -11,7 +12,7 @@ interface DebugContextValue {
 
 const DebugContext = createContext<DebugContextValue>({ enabled: false, scenario: "real" });
 
-// Lets ChargerCard (and anything else) ask "is a debug scenario active, and
+// Lets HomeCard (and anything else) ask "is a debug scenario active, and
 // which one" without threading props through the whole tree.
 export function useDebugScenario(): DebugContextValue {
   return useContext(DebugContext);
@@ -106,24 +107,22 @@ export function DebugProvider({
         <DebugQueryParamSync onEnabledChange={setEnabled} />
       </Suspense>
       {enabled && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-          <span className="font-mono">
-            build {buildSha} · {buildEnv}
-          </span>
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-chip)] border border-dashed border-amber-border bg-amber-bg px-3 py-2 text-xs text-amber">
+          <span className="font-mono">{fill(nb.debug.build, { sha: buildSha, env: buildEnv })}</span>
           <select
             value={scenario}
             onChange={(event) => changeScenario(event.target.value as DebugScenarioKey)}
-            className="cursor-pointer rounded border border-amber-500/50 bg-transparent px-1.5 py-0.5"
+            className="min-h-8 cursor-pointer rounded border border-amber-border bg-surface px-1.5 py-0.5 text-text"
           >
-            <option value="real">Real data</option>
+            <option value="real">{nb.debug.real}</option>
             {Object.entries(DEBUG_SCENARIOS).map(([key, s]) => (
               <option key={key} value={key}>
                 {s.label}
               </option>
             ))}
           </select>
-          <button type="button" onClick={exitDebug} className="cursor-pointer underline">
-            Exit debug
+          <button type="button" onClick={exitDebug} className="min-h-8 cursor-pointer underline">
+            {nb.debug.exit}
           </button>
         </div>
       )}

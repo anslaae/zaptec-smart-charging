@@ -5,7 +5,7 @@
 // writes instead of being kept awake by them. This has to tolerate at least
 // one full such gap plus a missed tick on top, or the badge would flip to
 // "stale" every time nothing's happening -- exactly the normal case this
-// gate is designed for. Shared between SchedulerStatusBadge (dashboard pill)
+// gate is designed for. Shared between AppHeader ("Sist sjekket", Hjem), Innstillinger
 // and /api/health (uptime monitoring) so the two never drift apart on what
 // "stale" means.
 export const STALE_AFTER_SECONDS = 20 * 60;
