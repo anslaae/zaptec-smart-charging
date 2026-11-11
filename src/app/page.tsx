@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { activityEvents, chargeSchedules, manualChargeSessions, schedulerHeartbeat, users } from "@/lib/db/schema";
 import { ActivityType } from "@/lib/activity/log";
 import { sinceUnplug } from "@/lib/ui/sinceUnplug";
+import { newerReading } from "@/lib/smartcar/state";
 import { loadDriveReadings, planDeliveredKwh } from "@/lib/records";
 import { reachedPercent } from "@/lib/push/notifications";
 import { sessionCost } from "@/lib/pricing";
@@ -53,7 +54,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   const sheet = params.sheet === "plan" || params.sheet === "preheat" ? params.sheet : null;
   const chargeNowAction = params.action === "charge-now";
 
-  const [user, chargers, openSchedules, heartbeat, stateOfCharge, learnedPowerKw, openSessions, completed, recent, settings, telemetry, lastUnplug, people] =
+  const [user, chargers, openSchedules, heartbeat, apiStateOfCharge, learnedPowerKw, openSessions, completed, recent, settings, telemetry, lastUnplug, people] =
     await Promise.all([
       getCurrentUser(),
       listChargers(),
@@ -98,6 +99,14 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         .then((rows) => rows[0] ?? null),
       db.select({ id: users.id, name: users.name }).from(users),
     ]);
+
+  // The live API reading, or the latest webhook reading when that's newer or the
+  // API call failed -- otherwise a failed call empties the ring for one render.
+  const lastStored = telemetry.findLast((r) => r.batteryPercent != null && r.batteryAt != null);
+  const stateOfCharge = newerReading(
+    apiStateOfCharge,
+    lastStored ? { percent: lastStored.batteryPercent!, oemUpdatedAt: lastStored.batteryAt! } : null,
+  );
 
   const [chargerStates, home] = await Promise.all([
     Promise.all(chargers.map((c) => getChargerState(c.id, c.isOnline, c.circuitId, c.installationId))),

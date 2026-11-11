@@ -13,6 +13,8 @@ import type { ChargerState, ChargeHistoryEntry, LastCompletedSession } from "@/l
 export interface SimSettings {
   online: boolean;
   requiresAuth: boolean;
+  /** The Smartcar signals API fails (as it now and then does in production); the webhook rows still exist. */
+  smartcarDown: boolean;
   /** What the car draws while charging. */
   powerKw: number;
   /** Simulation speed for energy: 60 = one real second delivers a minute's worth. */
@@ -66,6 +68,7 @@ export class ChargerSim {
     this.settings = {
       online: true,
       requiresAuth: false,
+      smartcarDown: false,
       powerKw: 7.1,
       speed: 1,
       capacityKwh: 46,

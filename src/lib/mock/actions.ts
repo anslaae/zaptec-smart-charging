@@ -43,7 +43,8 @@ export type SimAction =
   | { type: "setPower"; kw: number }
   | { type: "setSpeed"; speed: number }
   | { type: "setRequiresAuth"; value: boolean }
-  | { type: "setOnline"; value: boolean };
+  | { type: "setOnline"; value: boolean }
+  | { type: "setSmartcarDown"; value: boolean };
 
 export async function mockSim(action: SimAction): Promise<void> {
   await guard();
@@ -86,6 +87,9 @@ export async function mockSim(action: SimAction): Promise<void> {
       break;
     case "setOnline":
       sim.settings.online = action.value;
+      break;
+    case "setSmartcarDown":
+      sim.settings.smartcarDown = action.value;
       break;
   }
   revalidatePath("/", "layout");

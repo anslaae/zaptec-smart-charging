@@ -39,11 +39,19 @@ export async function getStateOfCharge(): Promise<StateOfCharge | null> {
         next: { revalidate: 1800 },
       },
     );
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // Logged so an intermittent failure shows up in the runtime logs; callers
+      // fall back to the latest webhook reading (newerReading in state.ts).
+      console.warn(`[smartcar] state of charge: HTTP ${response.status}`);
+      return null;
+    }
 
     const data = (await response.json()) as SmartcarSignalApiResponse;
-    return parseStateOfCharge(data);
-  } catch {
+    const reading = parseStateOfCharge(data);
+    if (!reading) console.warn("[smartcar] state of charge: no usable reading in the response");
+    return reading;
+  } catch (error) {
+    console.warn("[smartcar] state of charge failed:", error instanceof Error ? error.message : error);
     return null;
   }
 }

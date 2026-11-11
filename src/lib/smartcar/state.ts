@@ -18,3 +18,15 @@ export function parseStateOfCharge(raw: SmartcarSignalApiResponse): StateOfCharg
 
   return { percent: body.value, oemUpdatedAt };
 }
+
+/**
+ * The newer of two battery readings: the live signals API and the latest
+ * webhook row in vehicle_telemetry carry the same OEM value, but either can
+ * be missing (the API call fails now and then) or behind (the API response is
+ * cached for 30 minutes). Ties go to the first.
+ */
+export function newerReading(a: StateOfCharge | null, b: StateOfCharge | null): StateOfCharge | null {
+  if (!a) return b;
+  if (!b) return a;
+  return b.oemUpdatedAt.getTime() > a.oemUpdatedAt.getTime() ? b : a;
+}

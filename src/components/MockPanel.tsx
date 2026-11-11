@@ -217,6 +217,10 @@ export function MockPanel({
           <input type="checkbox" checked={sim.online} onChange={(e) => simDo({ type: "setOnline", value: e.target.checked })} className="h-5 w-5" />
           Laderen er online
         </label>
+        <label className="flex min-h-11 items-center gap-3 text-sm">
+          <input type="checkbox" checked={sim.smartcarDown} onChange={(e) => simDo({ type: "setSmartcarDown", value: e.target.checked })} className="h-5 w-5" />
+          Smartcar svarer ikke
+        </label>
       </Card>
 
       <Card title="Logg (kommandoer, varsler, kall)">

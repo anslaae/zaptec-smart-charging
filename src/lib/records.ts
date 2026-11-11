@@ -134,6 +134,7 @@ export async function loadDriveReadings(carId: string | null, since: Date): Prom
       at: times.length > 0 ? new Date(Math.max(...times.map((d) => d.getTime()))) : row.createdAt,
       odometerKm: row.odometerKm != null ? Number(row.odometerKm) : null,
       batteryPercent: row.batteryPercent,
+      batteryAt: row.batteryReportedAt,
     };
   });
 }

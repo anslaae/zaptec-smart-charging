@@ -6,6 +6,7 @@ import type { ChargerState, ZaptecCharger } from "@/lib/zaptec/types";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import { isCurrentlyCharging } from "@/lib/zaptec/state";
 import { getStateOfCharge } from "@/lib/smartcar/client";
+import { newerReading } from "@/lib/smartcar/state";
 import { estimateBattery } from "@/lib/ui/battery";
 import { effectivePluginMode, pricesOf, type HouseholdSettings } from "@/lib/settings";
 import { priceAt } from "@/lib/pricing";
@@ -90,16 +91,17 @@ export async function resolveSocPercent(
   capacityKwh: number,
   now: Date,
 ): Promise<{ percent: number; measuredAt: Date } | null> {
-  let reading = await getStateOfCharge().catch(() => null);
-  if (!reading) {
-    const [row] = await db
+  const [api, [row]] = await Promise.all([
+    getStateOfCharge().catch(() => null),
+    db
       .select({ percent: vehicleTelemetry.batteryPercent, at: vehicleTelemetry.batteryReportedAt })
       .from(vehicleTelemetry)
       .where(isNotNull(vehicleTelemetry.batteryPercent))
       .orderBy(desc(vehicleTelemetry.batteryReportedAt))
-      .limit(1);
-    if (row?.percent != null && row.at) reading = { percent: row.percent, oemUpdatedAt: row.at };
-  }
+      .limit(1),
+  ]);
+  // Same rule as Hjem: the newer of the live reading and the latest webhook row.
+  const reading = newerReading(api, row?.percent != null && row.at ? { percent: row.percent, oemUpdatedAt: row.at } : null);
   if (!reading) return null;
   const battery = estimateBattery({
     reading,

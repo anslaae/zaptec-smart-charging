@@ -467,6 +467,22 @@ test("unplugged Hjem: last reading in the ring, kWh left and Koblet fra", async 
   await expect(card.getByText(/^i dag \d\d:\d\d · 62 %$/)).toBeVisible();
 });
 
+test("unplugged Hjem keeps the % when the Smartcar API fails (latest webhook reading)", async ({ page }) => {
+  await preset(page, "Ingen bil tilkoblet");
+  await page.getByText("Smartcar svarer ikke").click();
+  await expect(page.getByRole("checkbox", { name: "Smartcar svarer ikke" })).toBeChecked();
+  await page.goto("/");
+  await expect(page.getByText("Ikke tilkoblet", { exact: true })).toBeVisible();
+  await expect(page.getByRole("img", { name: /^Batteri 62 %, sist målt \d\d:\d\d$/ })).toBeVisible();
+  // Tab away and back: still there
+  await page.getByRole("link", { name: "Historikk" }).click();
+  await expect(page.getByRole("heading", { name: "Historikk" })).toBeVisible();
+  // Keyboard: the Next dev badge covers the Hjem tab at phone width in dev mode.
+  await page.getByRole("link", { name: "Hjem" }).press("Enter");
+  await expect(page.getByRole("img", { name: /^Batteri 62 %/ })).toBeVisible();
+  await expect(page.getByText("Ingen bil tilkoblet")).toHaveCount(0);
+});
+
 test("Logg ut asks first; Avbryt keeps you logged in", async ({ page }) => {
   await page.goto("/settings");
   await page.getByRole("button", { name: "Logg ut" }).click();

@@ -10,6 +10,8 @@ export interface DriveReading {
   at: Date;
   odometerKm: number | null;
   batteryPercent: number | null;
+  /** When the battery value itself was reported (it is carried forward on odometer-only rows). */
+  batteryAt?: Date | null;
 }
 
 /** A charging session at home for this car (guest sessions excluded by the caller). */
