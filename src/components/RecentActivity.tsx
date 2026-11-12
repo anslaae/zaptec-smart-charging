@@ -15,7 +15,8 @@ export function RecentActivity({
     <section className="rounded-[var(--radius-card)] border border-border bg-surface p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-[13px] font-semibold uppercase tracking-[0.04em] text-muted">{nb.home.recent.title}</h2>
-        <Link href="/history" className="flex min-h-11 items-center text-sm font-semibold text-accent">
+        {/* "Se alle" opens Aktivitet: this card lists events, not sessions. */}
+        <Link href="/history?tab=activity" className="flex min-h-11 items-center text-sm font-semibold text-accent">
           {nb.home.recent.seeAll}
         </Link>
       </div>

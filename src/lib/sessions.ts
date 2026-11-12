@@ -1,8 +1,10 @@
 import "server-only";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { manualChargeSessions } from "@/lib/db/schema";
 import type { ChargerState } from "@/lib/zaptec/types";
+import { ChargerOperationMode } from "@/lib/zaptec/constants";
+import { getChargerState, listChargers } from "@/lib/zaptec/client";
 import { defaultCarId } from "@/lib/cars";
 
 // Every non-plan authorisation lives in manual_charge_sessions with a `kind`
@@ -39,6 +41,17 @@ export async function openSession(
   guestName: string | null = null,
   targetKwh: number | null = null,
 ): Promise<void> {
+  // One session at a time (guest windows aside): starting what's already
+  // running keeps the open row; starting something else (Lad nå while
+  // Forvarm is on) ends the first. Two taps used to leave two rows.
+  const open = await db
+    .select()
+    .from(manualChargeSessions)
+    .where(and(eq(manualChargeSessions.chargerId, chargerId), isNull(manualChargeSessions.endedAt)));
+  if (open.some((row) => row.kind === kind)) return;
+  if (kind !== "guest") {
+    for (const row of open) if (row.kind !== "guest") await closeSession(row);
+  }
   const bound = state?.sessionId != null;
   await db.insert(manualChargeSessions).values({
     chargerId,
@@ -75,6 +88,50 @@ export async function closeSessions(
   ).filter((row) => !(options.keepGuest && row.kind === "guest"));
   for (const row of open) await closeSession(row, at);
   return open;
+}
+
+/** The charger's state right now (one Zaptec call), or undefined when it can't be read. */
+async function readChargerState(chargerId: string): Promise<ChargerState | undefined> {
+  const charger = (await listChargers().catch(() => [])).find((c) => c.id === chargerId);
+  if (!charger) return undefined;
+  return getChargerState(charger.id, charger.isOnline, charger.circuitId, charger.installationId).catch(() => undefined);
+}
+
+/**
+ * Right after Lad nå / Forvarm (run with after(), so the button isn't kept
+ * waiting): binds the new row to the physical session now instead of at the
+ * next tick, so even a session stopped within a minute knows its start.
+ */
+export async function bindOpenSessions(chargerId: string): Promise<void> {
+  const state = await readChargerState(chargerId);
+  if (!state || state.operationMode === ChargerOperationMode.Disconnected) return;
+  const open = await db
+    .select()
+    .from(manualChargeSessions)
+    .where(and(eq(manualChargeSessions.chargerId, chargerId), isNull(manualChargeSessions.endedAt)));
+  // Not guest windows: an unbound one waits for the guest's car, not this one.
+  for (const row of open) if (row.kind !== "guest") await trackSession(row, state);
+}
+
+/**
+ * Right after Stopp lading (with after()): the energy recorded at close is
+ * the tick's last reading, up to a minute old; this replaces it with the
+ * charger's counter now, for the rows that belong to the current session.
+ */
+export async function finalizeSessionEnergy(chargerId: string, rowIds: string[]): Promise<void> {
+  if (rowIds.length === 0) return;
+  const state = await readChargerState(chargerId);
+  if (!state || state.sessionId == null || state.sessionEnergyKwh == null) return;
+  const rows = await db.select().from(manualChargeSessions).where(inArray(manualChargeSessions.id, rowIds));
+  for (const row of rows) {
+    if (row.zaptecSessionId !== state.sessionId) continue;
+    const reading = kwh(state.sessionEnergyKwh);
+    const energy = deliveredKwh({ startEnergyKwh: row.startEnergyKwh, lastObservedEnergyKwh: reading });
+    await db
+      .update(manualChargeSessions)
+      .set({ lastObservedEnergyKwh: reading, energyKwh: kwh(energy) })
+      .where(eq(manualChargeSessions.id, row.id));
+  }
 }
 
 /**

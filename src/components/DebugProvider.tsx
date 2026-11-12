@@ -1,5 +1,6 @@
 "use client";
 
+import { DEBUG_KEY } from "@/lib/ui/debugMode";
 import { createContext, useContext, useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { DEBUG_SCENARIOS, type DebugScenarioKey } from "@/lib/debug/scenarios";
@@ -18,7 +19,7 @@ export function useDebugScenario(): DebugContextValue {
   return useContext(DebugContext);
 }
 
-const STORAGE_KEY_ENABLED = "zaptec-debug-enabled";
+const STORAGE_KEY_ENABLED = DEBUG_KEY;
 const STORAGE_KEY_SCENARIO = "zaptec-debug-scenario";
 
 // Reads ?debug=1 / ?debug=0 once, persists it, then strips the param from

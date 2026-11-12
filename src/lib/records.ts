@@ -1,9 +1,8 @@
 import "server-only";
 import { and, asc, eq, gte, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { activityEvents, chargeSchedules, manualChargeSessions, vehicleTelemetry } from "@/lib/db/schema";
+import { chargeSchedules, manualChargeSessions, vehicleTelemetry } from "@/lib/db/schema";
 import type { DriveReading } from "@/lib/ui/driving";
-import { ActivityType } from "@/lib/activity/log";
 import { reachedPercent } from "@/lib/push/notifications";
 import type { SessionRecord, SessionTag } from "@/lib/ui/history";
 import { sessionCost, type Prices } from "@/lib/pricing";
@@ -22,6 +21,19 @@ type Schedule = typeof chargeSchedules.$inferSelect;
  * without a recorded amount are kept. (Owner decision, DECISIONS.md D28.)
  */
 export const MIN_SESSION_KWH = 0.1;
+
+/**
+ * A session without a recorded amount that lasted less than this isn't
+ * listed either: a double tap, or started and stopped again right away
+ * (owner decision, DECISIONS.md D62). Longer ones show "ikke målt".
+ */
+export const MIN_UNMEASURED_MS = 5 * 60_000;
+
+function worthListing(record: SessionRecord): boolean {
+  if (record.kwh != null) return record.kwh >= MIN_SESSION_KWH;
+  if (record.endedAt == null) return true;
+  return record.endedAt.getTime() - record.startedAt.getTime() >= MIN_UNMEASURED_MS;
+}
 
 function costOf(kwh: number | null, start: Date, end: Date | null, prices: Prices) {
   if (kwh == null) return { costNok: null, gridNok: null };
@@ -45,8 +57,8 @@ export async function loadSessionRecords(
   prices: Prices,
   /** Rows from before car attribution count for this car (design 6c); guest sessions never do. */
   defaultCarId: string | null = null,
-): Promise<{ records: SessionRecord[]; automaticStops: Date[] }> {
-  const [plans, sessions, stops] = await Promise.all([
+): Promise<{ records: SessionRecord[] }> {
+  const [plans, sessions] = await Promise.all([
     db
       .select()
       .from(chargeSchedules)
@@ -61,10 +73,6 @@ export async function loadSessionRecords(
       .select()
       .from(manualChargeSessions)
       .where(and(isNotNull(manualChargeSessions.endedAt), gte(manualChargeSessions.startedAt, since))),
-    db
-      .select({ createdAt: activityEvents.createdAt })
-      .from(activityEvents)
-      .where(and(eq(activityEvents.type, ActivityType.StoppedUnplanned), gte(activityEvents.createdAt, since))),
   ]);
 
   const records: SessionRecord[] = [];
@@ -106,10 +114,7 @@ export async function loadSessionRecords(
       ...costOf(session.energyKwh != null ? Number(session.energyKwh) : null, session.startedAt, session.endedAt, prices),
     });
   }
-  return {
-    records: records.filter((r) => r.kwh == null || r.kwh >= MIN_SESSION_KWH),
-    automaticStops: stops.map((s) => s.createdAt),
-  };
+  return { records: records.filter(worthListing) };
 }
 
 /**

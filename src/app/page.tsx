@@ -6,6 +6,7 @@ import { activityEvents, chargeSchedules, manualChargeSessions, schedulerHeartbe
 import { ActivityType } from "@/lib/activity/log";
 import { sinceUnplug } from "@/lib/ui/sinceUnplug";
 import { newerReading } from "@/lib/smartcar/state";
+import { visibleActivity } from "@/lib/ui/activity";
 import { loadDriveReadings, planDeliveredKwh } from "@/lib/records";
 import { reachedPercent } from "@/lib/push/notifications";
 import { sessionCost } from "@/lib/pricing";
@@ -81,12 +82,14 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         .select({
           id: activityEvents.id,
           type: activityEvents.type,
+          userId: activityEvents.userId,
           detail: activityEvents.detail,
           createdAt: activityEvents.createdAt,
         })
         .from(activityEvents)
         .orderBy(desc(activityEvents.createdAt))
-        .limit(2),
+        // Enough to find two after leaving out technical events and repeats.
+        .limit(40),
       getSettings(),
       // "Koblet fra" (noCar): readings from the last 30 days; sinceUnplug() picks the window.
       loadDriveReadings(null, new Date(now.getTime() - 30 * 86_400_000)),
@@ -344,7 +347,13 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
           <HomeCard key={card.chargerId} data={card} />
         ))}
 
-        <RecentActivity events={recent} now={now} />
+        <RecentActivity
+          events={visibleActivity(recent)
+            .filter((r) => !r.technical)
+            .slice(0, 2)
+            .map((r) => r.event)}
+          now={now}
+        />
       </DebugProvider>
       {sheetNode}
     </main>

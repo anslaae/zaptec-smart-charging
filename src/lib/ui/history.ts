@@ -28,14 +28,22 @@ export interface SessionRecord {
   gridNok: number | null;
 }
 
+export type WeekKey = "thisWeek" | "lastWeek";
+
+/** Any list grouped the way Historikk shows it (all three tabs). */
+export interface PeriodGroups<T> {
+  /** This week and last week, always both (possibly empty). */
+  weeks: { key: WeekKey; items: T[] }[];
+  /** One group per older calendar month ("2026-10"), newest first. */
+  months: { key: string; items: T[] }[];
+}
+
 export interface WeekGroup {
   kind: "week";
-  key: "thisWeek" | "lastWeek";
+  key: WeekKey;
   records: SessionRecord[];
   kwh: number;
   costNok: number;
-  /** enforcement stops (stopped_unplanned) in the same week, for the quiet summary line */
-  automaticStops: number;
 }
 
 export interface MonthGroup {
@@ -45,7 +53,6 @@ export interface MonthGroup {
   records: SessionRecord[];
   kwh: number;
   costNok: number;
-  automaticStops: number;
 }
 
 /** Monday 00:00 (Oslo calendar) of the week containing `date`, as a "YYYY-MM-DD" key. */
@@ -68,49 +75,37 @@ const sumCost = (records: SessionRecord[]) => records.reduce((sum, r) => sum + (
 
 /**
  * This week and last week as their own groups (always present, possibly
- * empty, so the totals line has a home), then one collapsed group per
- * calendar month for everything older, newest first.
+ * empty), then one group per calendar month for everything older, newest
+ * first; items newest first within each group.
  */
-export function groupSessions(
-  records: SessionRecord[],
-  stops: Date[],
-  now: Date,
-): { weeks: WeekGroup[]; months: MonthGroup[] } {
+export function groupByPeriod<T>(items: T[], dateOf: (item: T) => Date, now: Date): PeriodGroups<T> {
   const thisWeek = weekStartKey(now);
   const lastWeek = shiftDays(thisWeek, -7);
-  const sorted = [...records].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
-
-  const bucketOf = (date: Date): string => {
+  const sorted = [...items].sort((x, y) => dateOf(y).getTime() - dateOf(x).getTime());
+  const byBucket = new Map<string, T[]>();
+  for (const item of sorted) {
+    const date = dateOf(item);
     const week = weekStartKey(date);
-    if (week === thisWeek) return "thisWeek";
-    if (week === lastWeek) return "lastWeek";
-    return zonedDateKey(date, HOUSEHOLD_TIME_ZONE).slice(0, 7);
-  };
-
-  const byBucket = new Map<string, SessionRecord[]>();
-  for (const record of sorted) {
-    const bucket = bucketOf(record.startedAt);
-    byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), record]);
+    const bucket =
+      week === thisWeek ? "thisWeek" : week === lastWeek ? "lastWeek" : zonedDateKey(date, HOUSEHOLD_TIME_ZONE).slice(0, 7);
+    byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), item]);
   }
-  const stopsByBucket = new Map<string, number>();
-  for (const stop of stops) {
-    const bucket = bucketOf(stop);
-    stopsByBucket.set(bucket, (stopsByBucket.get(bucket) ?? 0) + 1);
-  }
-
-  const weeks: WeekGroup[] = (["thisWeek", "lastWeek"] as const).map((key) => {
-    const list = byBucket.get(key) ?? [];
-    return { kind: "week", key, records: list, kwh: sumKwh(list), costNok: sumCost(list), automaticStops: stopsByBucket.get(key) ?? 0 };
-  });
-  const monthKeys = [...new Set([...byBucket.keys(), ...stopsByBucket.keys()])]
+  const weeks = (["thisWeek", "lastWeek"] as const).map((key) => ({ key, items: byBucket.get(key) ?? [] }));
+  const months = [...byBucket.keys()]
     .filter((key) => key !== "thisWeek" && key !== "lastWeek")
     .sort()
-    .reverse();
-  const months: MonthGroup[] = monthKeys.map((key) => {
-    const list = byBucket.get(key) ?? [];
-    return { kind: "month", key, records: list, kwh: sumKwh(list), costNok: sumCost(list), automaticStops: stopsByBucket.get(key) ?? 0 };
-  });
+    .reverse()
+    .map((key) => ({ key, items: byBucket.get(key)! }));
   return { weeks, months };
+}
+
+/** Økter: groupByPeriod plus each group's kWh and cost. */
+export function groupSessions(records: SessionRecord[], now: Date): { weeks: WeekGroup[]; months: MonthGroup[] } {
+  const { weeks, months } = groupByPeriod(records, (r) => r.startedAt, now);
+  return {
+    weeks: weeks.map(({ key, items }) => ({ kind: "week", key, records: items, kwh: sumKwh(items), costNok: sumCost(items) })),
+    months: months.map(({ key, items }) => ({ kind: "month", key, records: items, kwh: sumKwh(items), costNok: sumCost(items) })),
+  };
 }
 
 /** "oktober" for "2026-10" (Norwegian month name, lower case as in running text). */

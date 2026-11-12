@@ -483,6 +483,72 @@ test("unplugged Hjem keeps the % when the Smartcar API fails (latest webhook rea
   await expect(page.getByText("Ingen bil tilkoblet")).toHaveCount(0);
 });
 
+test("Aktivitet leaves out the automatic stop after a plug-in; debug mode shows it (D63)", async ({ page }) => {
+  await preset(page, "Ingen bil tilkoblet");
+  await mockButton(page, "Koble til bil");
+  await tick(page);
+  await page.goto("/history?tab=activity");
+  await expect(page.getByText("Bil koblet til").first()).toBeVisible();
+  await expect(page.getByText("Automatisk lading stoppet (ingen plan)")).toHaveCount(0);
+  await expect(page.getByText("Lading startet", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Lading stoppet", { exact: true })).toHaveCount(0);
+  // Debug mode (Innstillinger → System) shows the charger's own events again
+  await page.evaluate(() => localStorage.setItem("zaptec-debug-enabled", "1"));
+  await page.reload();
+  await expect(page.getByText("Automatisk lading stoppet (ingen plan)").first()).toBeVisible();
+  await page.evaluate(() => localStorage.removeItem("zaptec-debug-enabled"));
+});
+
+test("Lad nå started twice is one session, and Stopp records its energy (D62)", async ({ page }) => {
+  await preset(page, "Tilkoblet – ingen plan");
+  // Earlier tests leave their own sessions and starts today: count from here.
+  const sessionRows = page.locator("li").filter({ hasText: /I dag ·/ }).filter({ hasText: "Lad nå" }).filter({ hasText: /1,\d kWh/ });
+  const startRows = page.locator("li").filter({ hasText: "Startet manuelt" }).filter({ hasText: /i dag/ });
+  await page.goto("/history");
+  await expect(page.getByRole("heading", { name: "Historikk" })).toBeVisible();
+  const sessionsBefore = await sessionRows.count();
+  await page.goto("/history?tab=activity");
+  await expect(page.getByRole("heading", { name: "Historikk" })).toBeVisible();
+  const startsBefore = await startRows.count();
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Lad nå" }).click();
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+  // A second start (the push action) while it's already charging
+  await page.goto("/?action=charge-now");
+  await page.getByRole("dialog", { name: "Lad nå?" }).getByRole("button", { name: "Lad nå" }).click();
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+  // One kWh in, then stop from the app -- no tick in between
+  await mockButton(page, "+1 kWh");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Stopp lading" }).click();
+  await page.getByRole("alertdialog", { name: "Stoppe ladingen?" }).getByRole("button", { name: "Stopp lading" }).click();
+  await expect(page.getByText("Lading stoppet")).toBeVisible();
+  await page.goto("/history");
+  await expect(sessionRows).toHaveCount(sessionsBefore + 1);
+  // The double start shows once in Aktivitet too
+  await page.goto("/history?tab=activity");
+  await expect(startRows).toHaveCount(startsBefore + 1);
+});
+
+test("Planer and Aktivitet are grouped like Økter; Se alle opens Aktivitet", async ({ page }) => {
+  await page.goto("/history?tab=plans");
+  await expect(page.getByText("Denne uken", { exact: true })).toBeVisible();
+  await expect(page.getByText("Forrige uke", { exact: true })).toBeVisible();
+  // Older plans sit in month rows that open
+  const october = page.locator("details").filter({ hasText: /^Oktober/ });
+  await expect(october.getByText(/^(\d+ planer|1 plan)/)).toBeVisible();
+  await october.locator("summary").click();
+  await expect(october.getByText("Fullført").first()).toBeVisible();
+
+  await page.goto("/history?tab=activity");
+  await expect(page.getByText("Denne uken", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^(\d+ hendelser|1 hendelse)/).first()).toBeVisible();
+
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Se alle" })).toHaveAttribute("href", "/history?tab=activity");
+});
+
 test("Logg ut asks first; Avbryt keeps you logged in", async ({ page }) => {
   await page.goto("/settings");
   await page.getByRole("button", { name: "Logg ut" }).click();

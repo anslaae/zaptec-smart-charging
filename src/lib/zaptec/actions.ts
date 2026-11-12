@@ -1,12 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { verifySession } from "@/lib/auth/dal";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chargeSchedules, manualChargeSessions } from "@/lib/db/schema";
 import { nb } from "@/lib/i18n/nb";
-import { closeSession, closeSessions, openSession } from "@/lib/sessions";
+import { bindOpenSessions, closeSession, closeSessions, finalizeSessionEnergy, openSession } from "@/lib/sessions";
 import { cancelSmartRows } from "@/lib/scheduler/smartRun";
 import { logActivity, ActivityType } from "@/lib/activity/log";
 import { getChargerState, isCurrentlyCharging, listChargers, sendChargerCommand } from "./client";
@@ -80,6 +81,7 @@ export async function startChargingNow(
   // Opens a manual authorization so the scheduler tick's enforcement doesn't
   // treat this as an unrecognized session and stop it again.
   await openSession(chargerId, "manual", session.userId);
+  after(() => bindOpenSessions(chargerId));
   await logActivity(chargerId, chargerName, ActivityType.ManualStart, { userId: session.userId });
   revalidatePath("/");
   return { success: true };
@@ -110,6 +112,7 @@ export async function startPreheat(
     return { error: error instanceof Error ? error.message : "Failed to start charging.", commandFailed: true };
   }
   await openSession(chargerId, "preheat", session.userId);
+  after(() => bindOpenSessions(chargerId));
   await logActivity(chargerId, chargerName, ActivityType.PreheatStarted, { userId: session.userId });
   revalidatePath("/");
   return { success: true };
@@ -129,7 +132,8 @@ export async function stopChargingNow(
   }
   // A guest window stays open (it ends on unplug or "Avslutt utlån"); only
   // the Lad nå / Forvarm / automatic authorisations end here.
-  await closeSessions(chargerId, { keepGuest: true });
+  const closed = await closeSessions(chargerId, { keepGuest: true });
+  after(() => finalizeSessionEnergy(chargerId, closed.map((row) => row.id)));
   // …and Smart lading for this plug-in, or the next tick would resume it.
   await cancelSmartRows(chargerId, chargerName, session.userId);
   await logActivity(chargerId, chargerName, ActivityType.ManualStop, { userId: session.userId });

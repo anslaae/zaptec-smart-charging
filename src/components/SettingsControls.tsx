@@ -224,7 +224,7 @@ export function TestNotificationButton() {
   );
 }
 
-const DEBUG_KEY = "zaptec-debug-enabled";
+import { DEBUG_KEY } from "@/lib/ui/debugMode";
 
 /**
  * Feilsøkingsmodus: the same localStorage flag ?debug=1 sets (which keeps

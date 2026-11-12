@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { desc, inArray } from "drizzle-orm";
+import { and, desc, gte, inArray } from "drizzle-orm";
 import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { activityEvents, chargeSchedules, users } from "@/lib/db/schema";
@@ -9,15 +9,18 @@ import { getDefaultCar } from "@/lib/places";
 import { loadSessionRecords, planDeliveredKwh } from "@/lib/records";
 import {
   capitalize,
+  groupByPeriod,
   groupSessions,
   monthName,
-  type MonthGroup,
+  type PeriodGroups,
   type SessionRecord,
-  type WeekGroup,
+  type WeekKey,
 } from "@/lib/ui/history";
 import { formatDayAndTime, formatDayLabel, formatDuration, formatNumber, formatTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
 import { carShortName } from "@/lib/ui/cars";
+import { visibleActivity } from "@/lib/ui/activity";
+import { DebugOnly } from "@/components/DebugOnly";
 
 const t = nb.history;
 type Tab = "sessions" | "plans" | "activity";
@@ -95,82 +98,77 @@ function SessionRow({ record, now, carName }: { record: SessionRecord; now: Date
   );
 }
 
-function automaticLine(count: number, period: string): string | null {
-  if (count === 0) return null;
-  return fill(count === 1 ? t.automaticSummary : t.automaticSummaryPlural, { count, period });
-}
-
-function WeekSection({ group, now, carName }: { group: WeekGroup; now: Date; carName: string | null }) {
-  const line = automaticLine(group.automaticStops, t.period[group.key]);
+// The Økter layout for all three tabs: this week and last week as cards with
+// a summary on the right, older months as rows that open.
+function WeekSection({
+  title,
+  summary,
+  empty,
+  children,
+}: {
+  title: string;
+  summary: string | null;
+  /** Shown instead of the list when the week has nothing. */
+  empty: string | null;
+  children: React.ReactNode;
+}) {
   return (
     <section>
       <div className="flex items-baseline justify-between px-1">
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.04em] text-muted">{t.groups[group.key]}</h2>
-        {group.records.length > 0 && (
-          <span className="text-xs text-muted">
-            {fill(t.groupTotal, { kwh: formatNumber(group.kwh, 1), kr: kr(group.costNok) })}
-          </span>
-        )}
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.04em] text-muted">{title}</h2>
+        {summary && <span className="text-xs text-muted">{summary}</span>}
       </div>
       <div className="mt-2 rounded-[var(--radius-card)] border border-border bg-surface px-4">
-        {group.records.length === 0 ? (
-          <p className="py-3 text-sm text-muted">{group.key === "thisWeek" ? t.noSessions : t.noSessionsLastWeek}</p>
-        ) : (
-          <ul className="divide-y divide-divider">
-            {group.records.map((record) => (
-              <SessionRow key={record.id} record={record} now={now} carName={carName} />
-            ))}
-          </ul>
-        )}
-        {line && <p className="border-t border-divider py-2.5 text-xs text-muted">{line}</p>}
+        {empty && <p className="py-3 text-sm text-muted">{empty}</p>}
+        <ul className="divide-y divide-divider">{children}</ul>
       </div>
     </section>
   );
 }
 
-function MonthSection({ group, now, carName }: { group: MonthGroup; now: Date; carName: string | null }) {
-  const name = monthName(group.key);
-  const line = automaticLine(group.automaticStops, fill(t.period.month, { month: name }));
-  const count = group.records.length;
+function MonthSection({ monthKey, summary, children }: { monthKey: string; summary: string; children: React.ReactNode }) {
   return (
     <details className="group rounded-[var(--radius-card)] border border-border bg-surface px-4">
       <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3">
-        <span className="text-[15px] font-semibold">{capitalize(name)}</span>
+        <span className="text-[15px] font-semibold">{capitalize(monthName(monthKey))}</span>
         <span className="flex items-center gap-2 text-sm text-muted">
-          {fill(count === 1 ? t.monthRowOne : t.monthRow, { count, kwh: formatNumber(group.kwh, 0) })}
+          {summary}
           <span aria-hidden className="transition-transform group-open:rotate-90">
             ›
           </span>
         </span>
       </summary>
-      <ul className="divide-y divide-divider border-t border-divider">
-        {group.records.map((record) => (
-          <SessionRow key={record.id} record={record} now={now} carName={carName} />
-        ))}
-      </ul>
-      {line && <p className="border-t border-divider py-2.5 text-xs text-muted">{line}</p>}
+      <ul className="divide-y divide-divider border-t border-divider">{children}</ul>
     </details>
   );
 }
 
-async function SessionsTab({ now }: { now: Date }) {
-  const since = new Date(now.getTime() - HISTORY_MONTHS * 31 * 86_400_000);
-  const [settings, car] = await Promise.all([getSettings(), getDefaultCar(null)]);
-  const { records, automaticStops } = await loadSessionRecords(since, car?.batteryCapacityKwh ?? 46, pricesOf(settings), car?.id ?? null);
-  if (records.length === 0 && automaticStops.length === 0) {
-    return <p className="text-sm text-muted">{t.emptySessions}</p>;
-  }
-  const { weeks, months } = groupSessions(records, automaticStops, now);
-  const carName = car ? carShortName(car.name) : null;
+function PeriodList<T>({
+  groups,
+  render,
+  weekSummary,
+  monthSummary,
+  emptyWeek,
+}: {
+  groups: PeriodGroups<T>;
+  render: (item: T) => React.ReactNode;
+  weekSummary: (items: T[], key: WeekKey) => string | null;
+  monthSummary: (items: T[], key: string) => string;
+  emptyWeek: (key: WeekKey, items: T[]) => string | null;
+}) {
   return (
     <div className="flex flex-col gap-5">
-      {weeks.map((group) => (
-        <WeekSection key={group.key} group={group} now={now} carName={carName} />
+      {groups.weeks.map(({ key, items }) => (
+        <WeekSection key={key} title={t.groups[key]} summary={weekSummary(items, key)} empty={emptyWeek(key, items)}>
+          {items.map(render)}
+        </WeekSection>
       ))}
-      {months.length > 0 && (
+      {groups.months.length > 0 && (
         <div className="flex flex-col gap-2">
-          {months.map((group) => (
-            <MonthSection key={group.key} group={group} now={now} carName={carName} />
+          {groups.months.map(({ key, items }) => (
+            <MonthSection key={key} monthKey={key} summary={monthSummary(items, key)}>
+              {items.map(render)}
+            </MonthSection>
           ))}
         </div>
       )}
@@ -178,78 +176,135 @@ async function SessionsTab({ now }: { now: Date }) {
   );
 }
 
+const count = (n: number, one: string, many: string) => fill(n === 1 ? one : many, { count: n });
+
+async function SessionsTab({ now }: { now: Date }) {
+  const since = new Date(now.getTime() - HISTORY_MONTHS * 31 * 86_400_000);
+  const [settings, car] = await Promise.all([getSettings(), getDefaultCar(null)]);
+  const { records } = await loadSessionRecords(since, car?.batteryCapacityKwh ?? 46, pricesOf(settings), car?.id ?? null);
+  if (records.length === 0) {
+    return <p className="text-sm text-muted">{t.emptySessions}</p>;
+  }
+  // Automatic stops after a plug-in aren't summarised here any more: "Bil
+  // koblet til" in Aktivitet says enough (owner decision, DECISIONS.md D63).
+  const { weeks, months } = groupSessions(records, now);
+  const carName = car ? carShortName(car.name) : null;
+  const totals = new Map<string, { kwh: number; costNok: number }>([...weeks, ...months].map((g) => [g.key, g]));
+  return (
+    <PeriodList
+      groups={{
+        weeks: weeks.map((g) => ({ key: g.key, items: g.records })),
+        months: months.map((g) => ({ key: g.key, items: g.records })),
+      }}
+      render={(record) => <SessionRow key={record.id} record={record} now={now} carName={carName} />}
+      weekSummary={(items, key) =>
+        items.length === 0
+          ? null
+          : fill(t.groupTotal, { kwh: formatNumber(totals.get(key)!.kwh, 1), kr: kr(totals.get(key)!.costNok) })
+      }
+      monthSummary={(items, key) =>
+        fill(items.length === 1 ? t.monthRowOne : t.monthRow, { count: items.length, kwh: formatNumber(totals.get(key)!.kwh, 0) })
+      }
+      emptyWeek={(key, items) => (items.length > 0 ? null : key === "thisWeek" ? t.noSessions : t.noSessionsLastWeek)}
+    />
+  );
+}
+
 async function PlansTab({ now }: { now: Date }) {
+  const since = new Date(now.getTime() - HISTORY_MONTHS * 31 * 86_400_000);
   const [plans, people] = await Promise.all([
     db
       .select()
       .from(chargeSchedules)
-      .where(inArray(chargeSchedules.status, ["completed", "cancelled"]))
+      .where(and(inArray(chargeSchedules.status, ["completed", "cancelled"]), gte(chargeSchedules.readyBy, since)))
       .orderBy(desc(chargeSchedules.readyBy))
-      .limit(50),
+      .limit(300),
     db.select({ id: users.id, name: users.name }).from(users),
   ]);
   const nameById = new Map(people.map((p) => [p.id, p.name]));
   if (plans.length === 0) return <p className="text-sm text-muted">{t.emptyPlans}</p>;
+  const render = (plan: (typeof plans)[number]) => {
+    const delivered = planDeliveredKwh(plan);
+    const target =
+      plan.targetPercent != null ? `${plan.targetPercent} %` : `${formatNumber(Number(plan.targetEnergyKwh), 1)} kWh`;
+    return (
+      <li key={plan.id} className="flex items-start justify-between gap-3 py-3">
+        <div className="min-w-0">
+          <p className="text-[15px] font-semibold">{fill(t.planReady, { readyBy: formatDayAndTime(plan.readyBy, now) })}</p>
+          <p className="mt-0.5 text-sm text-muted">
+            {fill(t.planBy, {
+              name: (plan.createdByUserId ? nameById.get(plan.createdByUserId) : nb.history.tags.smart) ?? "–",
+              target,
+            })}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+              plan.status === "completed" ? "bg-accent-tag text-accent" : "bg-track text-text-2"
+            }`}
+          >
+            {t.planStatus[plan.status as "completed" | "cancelled"]}
+          </span>
+          {delivered != null && delivered > 0 && (
+            <p className="mt-1 text-xs text-muted tabular-nums">{formatNumber(delivered, 1)} kWh</p>
+          )}
+        </div>
+      </li>
+    );
+  };
   return (
-    <ul className="divide-y divide-divider rounded-[var(--radius-card)] border border-border bg-surface px-4">
-      {plans.map((plan) => {
-        const delivered = planDeliveredKwh(plan);
-        const target =
-          plan.targetPercent != null
-            ? `${plan.targetPercent} %`
-            : `${formatNumber(Number(plan.targetEnergyKwh), 1)} kWh`;
-        return (
-          <li key={plan.id} className="flex items-start justify-between gap-3 py-3">
-            <div className="min-w-0">
-              <p className="text-[15px] font-semibold">
-                {fill(t.planReady, { readyBy: formatDayAndTime(plan.readyBy, now) })}
-              </p>
-              <p className="mt-0.5 text-sm text-muted">
-                {fill(t.planBy, { name: (plan.createdByUserId ? nameById.get(plan.createdByUserId) : nb.history.tags.smart) ?? "–", target })}
-              </p>
-            </div>
-            <div className="shrink-0 text-right">
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  plan.status === "completed" ? "bg-accent-tag text-accent" : "bg-track text-text-2"
-                }`}
-              >
-                {t.planStatus[plan.status as "completed" | "cancelled"]}
-              </span>
-              {delivered != null && delivered > 0 && (
-                <p className="mt-1 text-xs text-muted tabular-nums">{formatNumber(delivered, 1)} kWh</p>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+    <PeriodList
+      groups={groupByPeriod(plans, (plan) => plan.readyBy, now)}
+      render={render}
+      weekSummary={(items) => (items.length > 0 ? count(items.length, t.plansCountOne, t.plansCount) : null)}
+      monthSummary={(items) => count(items.length, t.plansCountOne, t.plansCount)}
+      emptyWeek={(key, items) => (items.length > 0 ? null : key === "thisWeek" ? t.noPlans : t.noPlansLastWeek)}
+    />
   );
 }
 
 async function ActivityTab({ now }: { now: Date }) {
+  const since = new Date(now.getTime() - HISTORY_MONTHS * 31 * 86_400_000);
   const [events, people] = await Promise.all([
-    db.select().from(activityEvents).orderBy(desc(activityEvents.createdAt)).limit(200),
+    db
+      .select()
+      .from(activityEvents)
+      .where(gte(activityEvents.createdAt, since))
+      .orderBy(desc(activityEvents.createdAt))
+      .limit(1000),
     db.select({ id: users.id, name: users.name }).from(users),
   ]);
   const nameById = new Map(people.map((p) => [p.id, p.name]));
-  if (events.length === 0) return <p className="text-sm text-muted">{t.emptyActivity}</p>;
+  // What people and the app did; the charger's own start/stop only in debug mode (D63).
+  const rows = visibleActivity(events);
+  if (!rows.some((r) => !r.technical)) return <p className="text-sm text-muted">{t.emptyActivity}</p>;
+  const shown = (items: typeof rows) => items.filter((r) => !r.technical).length;
+  const groups = groupByPeriod(rows, (r) => r.event.createdAt, now);
+  // A month with only debug-mode events would read "0 hendelser": left out.
+  groups.months = groups.months.filter((m) => shown(m.items) > 0);
+  const render = ({ event, technical }: (typeof rows)[number]) => {
+    const who = event.userId ? nameById.get(event.userId) : null;
+    const sub = [who, event.detail].filter(Boolean).join(" · ");
+    const item = (
+      <li key={event.id} className="flex items-baseline justify-between gap-3 py-2.5">
+        <div className="min-w-0">
+          <p className={`text-[15px] ${technical ? "text-muted" : ""}`}>{ACTIVITY_LABEL[event.type as ActivityType] ?? event.type}</p>
+          {sub && <p className="truncate text-xs text-muted">{sub}</p>}
+        </div>
+        <span className="shrink-0 text-xs text-muted">{formatDayAndTime(event.createdAt, now)}</span>
+      </li>
+    );
+    return technical ? <DebugOnly key={event.id}>{item}</DebugOnly> : item;
+  };
   return (
-    <ul className="divide-y divide-divider rounded-[var(--radius-card)] border border-border bg-surface px-4">
-      {events.map((event) => {
-        const who = event.userId ? nameById.get(event.userId) : null;
-        const sub = [who, event.detail].filter(Boolean).join(" · ");
-        return (
-          <li key={event.id} className="flex items-baseline justify-between gap-3 py-2.5">
-            <div className="min-w-0">
-              <p className="text-[15px]">{ACTIVITY_LABEL[event.type as ActivityType] ?? event.type}</p>
-              {sub && <p className="truncate text-xs text-muted">{sub}</p>}
-            </div>
-            <span className="shrink-0 text-xs text-muted">{formatDayAndTime(event.createdAt, now)}</span>
-          </li>
-        );
-      })}
-    </ul>
+    <PeriodList
+      groups={groups}
+      render={render}
+      weekSummary={(items) => (shown(items) > 0 ? count(shown(items), t.eventsCountOne, t.eventsCount) : null)}
+      monthSummary={(items) => count(shown(items), t.eventsCountOne, t.eventsCount)}
+      emptyWeek={(key, items) => (shown(items) > 0 ? null : key === "thisWeek" ? t.noEvents : t.noEventsLastWeek)}
+    />
   );
 }
 
