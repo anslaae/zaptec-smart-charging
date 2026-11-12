@@ -44,7 +44,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="nb"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      {/* The translucent status bar + viewport-fit=cover draw the page from the very top
+          of the screen on iOS: keep content below the clock/notch (0 elsewhere). */}
+      <body className="min-h-full flex flex-col pt-[env(safe-area-inset-top)]">
         <ConfirmProvider>
           <MockBanner />
           {children}
