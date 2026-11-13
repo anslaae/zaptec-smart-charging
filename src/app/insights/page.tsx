@@ -169,7 +169,7 @@ export default async function InsightsPage({ searchParams }: PageProps<"/insight
   const odometer = latestOdometer(readings, month);
   const grid = hasGridTariff(pricesOf(settings));
   const nameById = new Map(people.map((p) => [p.id, p.name]));
-  const personMax = Math.max(...m.perPerson.map((p) => p.kwh), m.guestKwh, m.automaticKwh, m.smartKwh, 0);
+  const personMax = Math.max(...m.perPerson.map((p) => p.kwh), m.guestKwh, m.automaticKwh, m.smartKwh, m.importedKwh, 0);
   const shortPrev = new Intl.DateTimeFormat("nb-NO", { month: "short", timeZone: "UTC" }).format(
     new Date(Date.UTC(py, pm - 1, 15)),
   );
@@ -259,6 +259,9 @@ export default async function InsightsPage({ searchParams }: PageProps<"/insight
             )}
             {m.automaticKwh > 0 && (
               <PersonBar name={t.automatic} kwh={m.automaticKwh} costNok={m.automaticCostNok} max={personMax} muted />
+            )}
+            {m.importedKwh > 0 && (
+              <PersonBar name={t.imported} kwh={m.importedKwh} costNok={m.importedCostNok} max={personMax} muted />
             )}
           </ul>
         </section>

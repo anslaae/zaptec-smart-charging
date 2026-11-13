@@ -22,6 +22,9 @@ export interface MonthInsights {
   guestCostNok: number;
   automaticKwh: number;
   automaticCostNok: number;
+  /** D70: sessions imported from Zaptec -- counted in the totals, for no person. */
+  importedKwh: number;
+  importedCostNok: number;
   /** Smart lading (UC16): household energy, nobody's share -- its own row. */
   smartKwh: number;
   smartCostNok: number;
@@ -55,6 +58,8 @@ export function monthInsights(records: SessionRecord[], month: string, now: Date
   let guestCostNok = 0;
   let automaticKwh = 0;
   let automaticCostNok = 0;
+  let importedKwh = 0;
+  let importedCostNok = 0;
   let smartKwh = 0;
   let smartCostNok = 0;
   let totalCostNok = 0;
@@ -81,6 +86,9 @@ export function monthInsights(records: SessionRecord[], month: string, now: Date
     } else if (record.tag === "automatic") {
       automaticKwh += kwh;
       automaticCostNok += cost;
+    } else if (record.tag === "imported") {
+      importedKwh += kwh;
+      importedCostNok += cost;
     } else if (record.userId) {
       const p = people.get(record.userId) ?? { kwh: 0, costNok: 0 };
       people.set(record.userId, { kwh: p.kwh + kwh, costNok: p.costNok + cost });
@@ -103,6 +111,8 @@ export function monthInsights(records: SessionRecord[], month: string, now: Date
     guestCostNok,
     automaticKwh,
     automaticCostNok,
+    importedKwh,
+    importedCostNok,
     smartKwh,
     smartCostNok,
   };

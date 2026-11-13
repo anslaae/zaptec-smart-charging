@@ -5,7 +5,8 @@ import { HOUSEHOLD_TIME_ZONE, zonedDateKey } from "@/lib/datetime";
 // manual/preheat/guest/automatic session -- grouped by week, older months
 // collapsed. Pure, so grouping and totals are unit tested.
 
-export type SessionTag = "plan" | "smart" | "manual" | "preheat" | "guest" | "automatic";
+// "imported": a Zaptec session from before the app recorded its own (D70).
+export type SessionTag = "plan" | "smart" | "manual" | "preheat" | "guest" | "automatic" | "imported";
 
 export interface SessionRecord {
   id: string;

@@ -238,7 +238,17 @@ export const nb = {
     title: "Historikk",
     tabs: { sessions: "Økter", plans: "Planer", activity: "Aktivitet" },
     groups: { thisWeek: "Denne uken", lastWeek: "Forrige uke" },
-    tags: { plan: "Plan", manual: "Lad nå", preheat: "Forvarming", guest: "Gjest", automatic: "Automatisk", smart: "Smart" },
+    tags: {
+      plan: "Plan",
+      manual: "Lad nå",
+      preheat: "Forvarming",
+      guest: "Gjest",
+      automatic: "Automatisk",
+      smart: "Smart",
+      imported: "Zaptec",
+    },
+    // D70: sessions from before the app recorded its own
+    importedDetail: "Importert fra Zaptec",
     carPrefix: "{car} · {detail}",
     groupTotal: "{kwh} kWh · {kr} kr",
     monthRow: "{count} økter · {kwh} kWh",
@@ -287,6 +297,8 @@ export const nb = {
     personRow: "{kwh} kWh · {kr} kr",
     automatic: "Automatisk",
     smart: "Smart lading",
+    // D70: Zaptec sessions from before the app -- no person to count them for
+    imported: "Importert fra Zaptec (ingen person)",
     empty: "Ingen lading registrert denne måneden.",
     changePriceLink: "Om prisene ›",
     chartLabel: "Energi per dag i {month}",

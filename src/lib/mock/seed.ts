@@ -148,6 +148,12 @@ function historySql(now: Date): string {
       stops.push(`(${q(c.id)}, ${q(c.name)}, 'stopped_unplanned', ${ts(at(base, 17, 5))})`);
     }
   }
+  // D70: sessions from before the app recorded its own, imported from Zaptec (no person).
+  for (const [d, hour, kwh, hours] of [[66, 18, 21.4, 3.2], [79, 20, 14.8, 2.3]] as const) {
+    const started = at(new Date(now.getTime() - d * day), hour, 5);
+    const ended = new Date(started.getTime() + hours * 3_600_000);
+    sessions.push(`(${q(c.id)}, NULL, 'imported', ${ts(started)}, ${ts(ended)}, ${kwh})`);
+  }
   return `
 INSERT INTO charge_schedules (id, created_by_user_id, charger_id, charger_name, target_energy_kwh, ready_by, status,
   started_at, ended_at, created_at, updated_at, zaptec_session_id, prior_session_energy_kwh, last_observed_session_energy_kwh,

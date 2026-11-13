@@ -66,6 +66,7 @@ function sessionDetail(record: SessionRecord, carName: string | null): string | 
   const percent =
     record.startPercent != null && record.endPercent != null ? `${record.startPercent} → ${record.endPercent} %` : null;
   const car = record.carId != null ? carName : null;
+  if (record.tag === "imported") return car ? fill(t.carPrefix, { car, detail: t.importedDetail }) : t.importedDetail;
   if (car && percent) return fill(t.carPrefix, { car, detail: percent });
   return car ?? percent;
 }
@@ -89,7 +90,11 @@ function SessionRow({ record, now, carName }: { record: SessionRecord; now: Date
           {record.kwh != null ? `${formatNumber(record.kwh, 1)} kWh` : t.unknownKwh}
         </p>
         <p className="text-xs text-muted">
-          {[duration != null ? formatDuration(duration) : null, record.costNok != null ? `${kr(record.costNok)} kr` : null]
+          {[
+            duration != null ? formatDuration(duration) : null,
+            // No price to work it out from: "–", not a made-up 0 kr (D70).
+            record.costNok != null ? `${kr(record.costNok)} kr` : record.kwh != null ? "– kr" : null,
+          ]
             .filter(Boolean)
             .join(" · ")}
         </p>

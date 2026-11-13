@@ -37,7 +37,8 @@ function worthListing(record: SessionRecord): boolean {
 }
 
 function costOf(kwh: number | null, start: Date, end: Date | null, prices: Prices) {
-  if (kwh == null) return { costNok: null, gridNok: null };
+  // No energy price set: no cost (shown as "–"), rather than 0 kr (D70).
+  if (kwh == null || !(prices.energyNokPerKwh > 0)) return { costNok: null, gridNok: null };
   const cost = sessionCost(kwh, start, end, prices);
   return { costNok: cost.totalNok, gridNok: cost.gridNok };
 }

@@ -736,3 +736,14 @@ test("D68: the car stops drawing during Forvarm: amber line, one push, cleared w
   await page.goto("/");
   await expect(page.getByText(/sluttet å trekke strøm/)).toHaveCount(0);
 });
+
+test("D70: sessions imported from Zaptec show in Historikk with the car's short name", async ({ page }) => {
+  await page.goto("/history");
+  await expect(page.getByRole("heading", { name: "Historikk" })).toBeVisible();
+  await page.locator("details").evaluateAll((els) => els.forEach((el) => ((el as HTMLDetailsElement).open = true)));
+  const rows = page.locator("li").filter({ hasText: "Mokka-e · Importert fra Zaptec" });
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first().getByText("Zaptec", { exact: true })).toBeVisible();
+  await expect(rows.first().getByText(/kWh$/)).toBeVisible();
+  await expect(rows.first().getByText(/\d+ kr$/)).toBeVisible();
+});
