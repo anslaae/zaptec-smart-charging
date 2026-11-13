@@ -125,25 +125,34 @@ export interface SessionEnergyReconciliation {
  * and replugged (a new session starts) -- confirmed by the session ID
  * changing. Without this, a disconnect partway through a schedule would make
  * the completion check think almost nothing had been delivered and
- * re-deliver the full target on top of what the car already got. We don't
- * have the ended session's exact final reading (it may have kept climbing
- * for up to one tick after our last observation of it), so the last value we
- * saw is carried forward -- undercounting by at most one tick's worth of
- * energy, which is a far smaller error than ignoring it entirely.
+ * re-deliver the full target on top of what the car already got.
+ *
+ * The ended session's final reading: Zaptec's CompletedSession (723) gives
+ * it exactly once the session has ended (D72) -- passed as `completed`, it
+ * replaces the last value we saw when it's for the tracked session. Without
+ * it the last value seen is carried forward (it may have kept climbing for
+ * up to one tick after that), a small undercount. Never lower than seen.
  */
 export function reconcileSessionEnergy(
   tracker: SessionEnergyTracker,
   currentSessionId: string | null,
   currentSessionEnergyKwh: number,
+  completed?: { sessionId?: string | null; energyKwh: number } | null,
 ): SessionEnergyReconciliation {
+  const endedFinal =
+    tracker.zaptecSessionId != null && completed?.sessionId === tracker.zaptecSessionId
+      ? Math.max(tracker.lastObservedSessionEnergyKwh, completed.energyKwh)
+      : tracker.lastObservedSessionEnergyKwh;
+
   // No session right now (unplugged, offline, or no reading): nothing new to
-  // count. Keep the tracker as it is -- overwriting lastObserved with 0 here
-  // would lose the energy of the session that just ended (and break a
-  // negative baseline, see createSchedule).
+  // count. Keep the tracker -- overwriting lastObserved with 0 here would
+  // lose the energy of the session that just ended (and break a negative
+  // baseline, see createSchedule) -- apart from the exact final reading.
   if (currentSessionId == null) {
+    const nextTracker = { ...tracker, lastObservedSessionEnergyKwh: endedFinal };
     return {
-      effectiveSessionEnergyKwh: tracker.priorSessionEnergyKwh + tracker.lastObservedSessionEnergyKwh,
-      nextTracker: tracker,
+      effectiveSessionEnergyKwh: tracker.priorSessionEnergyKwh + endedFinal,
+      nextTracker,
     };
   }
 
@@ -155,7 +164,7 @@ export function reconcileSessionEnergy(
   }
 
   const priorSessionEnergyKwh = sessionChanged
-    ? tracker.priorSessionEnergyKwh + tracker.lastObservedSessionEnergyKwh
+    ? tracker.priorSessionEnergyKwh + endedFinal
     : tracker.priorSessionEnergyKwh;
 
   return {
@@ -223,11 +232,12 @@ export function decideNextAction(
  */
 export function planDeliveredNow(
   tracker: { zaptecSessionId: string | null; priorSessionEnergyKwh: number; lastObservedSessionEnergyKwh: number },
-  state: Pick<ChargerState, "sessionId" | "sessionEnergyKwh">,
+  state: Pick<ChargerState, "sessionId" | "sessionEnergyKwh"> & Partial<Pick<ChargerState, "lastCompletedSession">>,
 ): number {
   const delivered =
     tracker.zaptecSessionId != null
-      ? reconcileSessionEnergy(tracker, state.sessionId, state.sessionEnergyKwh ?? 0).effectiveSessionEnergyKwh
+      ? reconcileSessionEnergy(tracker, state.sessionId, state.sessionEnergyKwh ?? 0, state.lastCompletedSession)
+          .effectiveSessionEnergyKwh
       : (state.sessionEnergyKwh ?? 0);
   return Math.max(0, delivered);
 }

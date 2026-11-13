@@ -8,7 +8,8 @@ import { STALE_AFTER_SECONDS } from "@/lib/scheduler/heartbeat";
 import { effectivePluginMode, getSettings } from "@/lib/settings";
 import { OnPluginSetting } from "@/components/OnPluginSetting";
 import { getHomeContext } from "@/lib/places";
-import { listChargers } from "@/lib/zaptec/client";
+import { getChargerState, listChargers } from "@/lib/zaptec/client";
+import { chargerHealth } from "@/lib/zaptec/health";
 import { MOCK_MODE } from "@/lib/mock/mode";
 import { NotificationToggle } from "@/components/NotificationToggle";
 import { LogoutButton } from "@/components/LogoutButton";
@@ -64,8 +65,22 @@ export default async function SettingsPage() {
       .from(chargeSchedules)
       .where(inArray(chargeSchedules.status, ["pending", "active"])),
   ]);
-  const home = await getHomeContext(chargers);
   const charger = chargers[0];
+  // D73: one /state read for the charger health row (Settings is opened rarely).
+  const [home, chargerState] = await Promise.all([
+    getHomeContext(chargers),
+    charger
+      ? getChargerState(charger.id, charger.isOnline, charger.circuitId, charger.installationId).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  const health = chargerState
+    ? chargerHealth({
+        isOnline: chargerState.isOnline,
+        warnings: chargerState.health?.warnings ?? null,
+        notifications: chargerState.health?.notifications ?? null,
+        signalDbm: chargerState.health?.signalDbm ?? null,
+      })
+    : null;
   const openPlan = charger ? openPlans.find((p) => p.chargerId === charger.id) : undefined;
   const openGuest = charger ? openGuests.find((g) => g.chargerId === charger.id) : undefined;
 
@@ -153,6 +168,7 @@ export default async function SettingsPage() {
 
       <Section title={nb.settings.system.section}>
         <Row label={nb.settings.system.scheduler} value={schedulerValue} amber={stale} />
+        {health && <Row label={nb.health.label} value={health.detail} amber={health.level !== "ok"} />}
         <Row label={nb.settings.system.learnedRate} value={learnedPowerKw != null ? formatKw(learnedPowerKw) : "–"} />
         <Row
           label={nb.settings.system.version}

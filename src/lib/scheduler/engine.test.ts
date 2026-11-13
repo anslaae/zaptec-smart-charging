@@ -254,3 +254,34 @@ describe("planDeliveredNow", () => {
     ).toBe(2);
   });
 });
+
+describe("reconcileSessionEnergy with CompletedSession (D72)", () => {
+  const tracker = { zaptecSessionId: "session-a", priorSessionEnergyKwh: 1, lastObservedSessionEnergyKwh: 4.2 };
+
+  it("uses the ended session's exact energy when the car is re-plugged", () => {
+    const result = reconcileSessionEnergy(tracker, "session-b", 0.3, { sessionId: "session-a", energyKwh: 4.9 });
+    expect(result.effectiveSessionEnergyKwh).toBeCloseTo(1 + 4.9 + 0.3);
+    expect(result.nextTracker.priorSessionEnergyKwh).toBeCloseTo(5.9);
+  });
+
+  it("uses it while unplugged too", () => {
+    const result = reconcileSessionEnergy(tracker, null, 0, { sessionId: "session-a", energyKwh: 4.9 });
+    expect(result.effectiveSessionEnergyKwh).toBeCloseTo(5.9);
+    expect(result.nextTracker.lastObservedSessionEnergyKwh).toBe(4.9);
+  });
+
+  it("ignores a CompletedSession for another session (the previous plug-in)", () => {
+    const result = reconcileSessionEnergy(tracker, "session-b", 0.3, { sessionId: "older", energyKwh: 30 });
+    expect(result.effectiveSessionEnergyKwh).toBeCloseTo(1 + 4.2 + 0.3);
+  });
+
+  it("never lowers what was already seen", () => {
+    const result = reconcileSessionEnergy(tracker, null, 0, { sessionId: "session-a", energyKwh: 3 });
+    expect(result.effectiveSessionEnergyKwh).toBeCloseTo(5.2);
+  });
+
+  it("works without a session id in the observation (falls back to carry-forward)", () => {
+    const result = reconcileSessionEnergy(tracker, "session-b", 0, { energyKwh: 9 });
+    expect(result.effectiveSessionEnergyKwh).toBeCloseTo(5.2);
+  });
+});

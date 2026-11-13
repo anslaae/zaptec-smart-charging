@@ -43,6 +43,7 @@
   --danger: #B91C1C;
   --on-danger: #FFFFFF;
   --danger-tint: rgba(185, 28, 28, 0.10);
+  --danger-border: rgba(185, 28, 28, 0.35);
   --scrim: rgba(0, 0, 0, 0.40);
   color-scheme: light;
 }
@@ -74,6 +75,7 @@
     --danger: #F87171;
     --on-danger: #1A0505;
     --danger-tint: rgba(248, 113, 113, 0.14);
+    --danger-border: rgba(248, 113, 113, 0.45);
     --scrim: rgba(0, 0, 0, 0.55);
     color-scheme: dark;
   }
@@ -105,6 +107,7 @@
   --danger: #F87171;
   --on-danger: #1A0505;
   --danger-tint: rgba(248, 113, 113, 0.14);
+  --danger-border: rgba(248, 113, 113, 0.45);
   --scrim: rgba(0, 0, 0, 0.55);
   color-scheme: dark;
 }
@@ -136,6 +139,7 @@
   --color-danger: var(--danger);
   --color-on-danger: var(--on-danger);
   --color-danger-tint: var(--danger-tint);
+  --color-danger-border: var(--danger-border);
   --color-scrim: var(--scrim);
   /* keep the existing names working while screens are migrated */
   --color-background: var(--bg);

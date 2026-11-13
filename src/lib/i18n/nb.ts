@@ -128,10 +128,80 @@ export const nb = {
     },
     chargingAutomatic: "Lader automatisk · {kw} kW",
     chargingAutomaticNoKw: "Lader automatisk",
-    // (app) D65: the loop guard holds the app's automated commands back
-    automationPaused: {
-      title: "Appen har tatt pause",
-      body: "Ladingen ble slått av og på for ofte, så appen styrer ikke laderen nå. Planer venter. Start med «Lad nå», eller koble bilen fra og til igjen.",
+    // D75 warning family (design/redesign/strings.nb.json home.incident, HANDOFF §6e).
+    incident: {
+      check: {
+        charger: "Laderen:",
+        chargerText: "har den strøm og nett?",
+        cable: "Kabelen:",
+        cableText: "sitter den godt i bilen og laderen?",
+        zaptecApp: "Zaptec-appen:",
+        zaptecAppText: "melder den en feil?"
+      },
+      retry: "Prøv igjen",
+      retryStillOffline: "Laderen svarer fortsatt ikke",
+      openMyOpel: "Åpne myOpel ↗",
+      startFailed: {
+        status: "Ladingen har stoppet",
+        sub: "Stoppet {time} · trenger ca. {duration} til",
+        title: "Laderen startet ikke ladingen igjen",
+        body: "Jeg prøvde {count} ganger {from}–{to} og venter nå, så laderen ikke blir sperret."
+      },
+      offline: {
+        status: "Laderen svarer ikke",
+        sub: "Sist kontakt {time} · planen lader ikke",
+        subManual: "Sist kontakt {time} · bilen lader ikke",
+        title: "Ingen kontakt med laderen",
+        body: "Laderen har ikke svart på {duration}. Jeg kan ikke starte eller stoppe den nå."
+      },
+      locked: {
+        status: "Ladingen er stoppet",
+        sub: "Laderen ble sperret {time}",
+        title: "Laderen stoppet for mange ganger",
+        body: "Koble bilen fra og til igjen, så kan den lade. Jeg prøver ikke på nytt av meg selv. Skjer det igjen: sjekk Zaptec-appen."
+      },
+      chargerWarning: {
+        status: "Ladingen har stoppet",
+        title: "Laderen melder en feil",
+        body: "{warning}. Ladingen er stoppet."
+      },
+      declinedPlan: {
+        status: "Bilen sluttet å lade",
+        sub: "Kl. {time}, etter {duration} lading",
+        title: "Trolig bilens ladegrense eller timer",
+        body: "Planen blir ikke ferdig hvis bilen ikke tar strøm. Sjekk i myOpel."
+      },
+      chargeNow: {
+        full: {
+          status: "Bilen er trolig full",
+          sub: "Sluttet å lade {time} · etter {duration}",
+          hint: "Ladingen avsluttes av seg selv kl. {time} hvis bilen ikke tar mer strøm."
+        },
+        stopped: {
+          status: "Bilen sluttet å lade",
+          sub: "Kl. {time}, etter {duration} lading",
+          title: "Trolig bilens ladegrense eller timer",
+          body: "Sjekk i myOpel."
+        },
+        idle: {
+          status: "Bilen tar en pause",
+          sub: "Har ikke ladet siden {time} · {minutes} min",
+          body: "Laderen er fortsatt klar. Bilen starter ofte igjen av seg selv, for eksempel etter batterivarming.",
+          hint: "Etter 30 min uten lading viser jeg hva det kan skyldes."
+        },
+        never: {
+          status: "Bilen har ikke begynt å lade",
+          sub: "Startet {time} · 0 kWh på {minutes} min",
+          title: "Sjekk kabelen og bilens timer",
+          body: "Sitter kabelen godt? Har bilen en ladetimer på?"
+        },
+        primary: "Avslutt ladingen",
+        hintOpen: "Bilen kan starte igjen selv. Laderen står klar til du avslutter eller kobler fra."
+      },
+      preheatBattery: {
+        title: "Bilen har sluttet å trekke strøm",
+        body: "Forvarmingen går nå på batteriet."
+      }
     },
     lastErrorAutomationPaused: "Appen har tatt pause – koble bilen fra og til igjen",
     noControl: {
@@ -150,7 +220,6 @@ export const nb = {
     chargingPlanNoTime: "Lader etter plan",
     chargingManualNoKw: "Lader nå",
     // Lad nå is on, but the car isn't drawing power (full, or it declined).
-    chargingManualIdle: "Lad nå er på – bilen lader ikke",
     // noControl while unplugged: the banner explains; the status mustn't claim "Tilkoblet".
     noControlNoCar: "Ingen bil tilkoblet – laderen krever innlogging",
     planRowKwh: "Plan: {kwh} klar {readyBy}",
@@ -445,8 +514,18 @@ export const nb = {
     smart_cancelled: "Smart lading avbrutt for denne ladingen",
     // (app) Innstillinger → "Når bilen kobles til"; detail = the new choice
     on_plugin_mode_changed: "Når bilen kobles til: endret",
-    // (app) D65
-    automation_paused: "Appen tok pause – ladingen ble slått av og på for ofte",
+    // D65 / D75 "locked": the loop guard tripped
+    automation_paused: "Laderen stoppet for mange ganger",
+    // D75 incidents; {placeholders} are filled from the event's detail (src/lib/ui/activity.ts)
+    car_stopped_full: "Bilen sluttet å lade – trolig full",
+    car_stopped: "Bilen sluttet å lade – {percent} %",
+    car_never_started: "Bilen begynte ikke å lade",
+    start_failed: "Laderen startet ikke – {count} forsøk",
+    charger_offline: "Laderen mistet kontakt",
+    charger_back: "Laderen er tilbake",
+    retry: "Prøvde igjen ({name})",
+    unplugged_before_target: "Koblet fra ved {percent} % – planen ble ikke ferdig",
+    charger_warning: "Laderen meldte feil: {warning}",
   },
   // Web Push copy, from design/redesign/notifications.nb.json.
   notifications: {
@@ -461,20 +540,19 @@ export const nb = {
     planStarted: { title: "Lading startet", body: "Lader til {targetPercent} %, ferdig ca. {finishTime}." },
     // (app) variants for plans made without a battery reading (no %)
     planStartedKwh: "Lader {kwh} kWh, ferdig ca. {finishTime}.",
-    // (app) D65: the loop guard tripped
-    automationPaused: {
-      title: "Lading slått av og på for ofte",
-      body: "Appen har tatt pause og styrer ikke laderen nå. Start med Lad nå, eller koble bilen fra og til igjen.",
-    },
+    // D75 incidents (notifications.nb.json charge_now_*, car_declined_plan, fault_*): one push per incident
+    carFull: { title: "Bilen er trolig full", body: "Sluttet å lade ved {percent} % · {kwh} kWh." },
+    carStopped: { title: "Bilen sluttet å lade", body: "Stoppet ved {percent} %. Sjekk ladegrensen eller timeren i bilen." },
+    carNeverStarted: { title: "Bilen lader ikke", body: "Ingen strøm etter {minutes} min. Sjekk kabelen og bilens timer." },
+    carDeclinedPlan: { title: "Bilen sluttet å lade", body: "Stoppet ved {percent} %, før målet. Sjekk bilens ladegrense eller timer." },
+    faultStartFailed: { title: "Ladingen stoppet", body: "Laderen startet ikke kl. {time}. Sjekk laderen, eller prøv igjen i appen." },
+    faultOffline: { title: "Laderen svarer ikke", body: "Ingen kontakt siden {time}. Bilen lader ikke." },
+    faultLoopGuard: { title: "Laderen stoppet for mange ganger", body: "Koble bilen fra og til igjen for å lade." },
+    faultWarning: { title: "Laderen melder en feil", body: "{warning}. Ladingen er stoppet." },
     // (app) D68: the car stopped drawing power during Forvarm
     preheatOnBattery: {
       title: "Forvarming bruker batteriet",
       body: "Bilen sluttet å trekke strøm fra laderen kl. {time}.",
-    },
-    // (app) D64: start commands went unanswered
-    planStartFailed: {
-      title: "Ladingen starter ikke",
-      body: "Laderen svarer ikke på start. Koble bilen fra og til igjen, så prøver planen på nytt.",
     },
     planCompleted: { title: "Bilen er klar", body: "Ladet til ca. {targetPercent} % · {kwh} kWh · ca. {cost} kr." },
     planCompletedKwh: "Ladet {kwh} kWh · ca. {cost} kr.",
@@ -627,6 +705,28 @@ export const nb = {
   // (app) the app's confirm dialog (src/components/ConfirmDialog.tsx)
   confirm: { cancel: "Ikke nå" },
   // (app) toasts and pending labels for the Hjem actions
+  // D73: charger health from Zaptec's Warnings (804) / IsOnline / signal (809).
+  health: {
+    ok: "Tilkoblet · ingen feil",
+    offline: "Laderen er frakoblet fra Zaptec",
+    signal: "signal {dbm} dBm",
+    code: "kode {code}",
+    warningHome: "Laderen melder en feil: {what}",
+    warningDetail: "Feil: {what} ({codes})",
+    label: "Laderen",
+  },
+  // D71: a command from a screen that may be out of date.
+  freshness: {
+    alreadyCharging: "Lader allerede ({by})",
+    alreadyPreheating: "Forvarmer allerede ({by})",
+    alreadyStopped: "Allerede stoppet",
+    startedBy: "startet av {name} {time}",
+    startedAt: "startet {time}",
+    changed: "Statusen har endret seg – sjekk igjen",
+    updating: "Oppdaterer…",
+    waitingStart: "Venter på at laderen starter…",
+    waitingStop: "Venter på at laderen stopper…",
+  },
   actions: {
     working: "Jobber…",
     chargeStarted: "Lading startet",

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  automationPaused,
-  planStartFailed,
+  incidentPush,
   lateEstimate,
   planCompleted,
   planStarted,
@@ -41,15 +40,36 @@ describe("push payloads", () => {
   });
 });
 
-describe("D64/D65 problem pushes", () => {
-  it("loop guard: says what happened and what to do, one tag per charger", () => {
-    const p = automationPaused({ chargerId: "c1" });
-    expect(p.title).toBe("Lading slått av og på for ofte");
-    expect(p.body).toMatch(/Lad nå.*koble bilen fra og til igjen/);
-    expect(p.tag).toBe("charger-c1");
+describe("D75 incident pushes (notifications.nb.json)", () => {
+  const nnbsp = " ";
+  it("one tag per incident", () => {
+    expect(incidentPush({ incidentId: "i1", kind: "locked" })).toMatchObject({
+      title: "Laderen stoppet for mange ganger",
+      body: "Koble bilen fra og til igjen for å lade.",
+      tag: "incident-i1",
+      url: "/",
+    });
   });
-  it("start cap: tagged to the plan", () => {
-    expect(planStartFailed({ scheduleId: "s1" })).toMatchObject({ title: "Ladingen starter ikke", tag: "plan-s1" });
+  it("car cases, with a narrow no-break space before %", () => {
+    expect(incidentPush({ incidentId: "i", kind: "car", carCase: "full", percent: 96.4, kwh: 12.34 }).body).toBe(
+      `Sluttet å lade ved 96${nnbsp}% · 12,3 kWh.`,
+    );
+    expect(incidentPush({ incidentId: "i", kind: "car", carCase: "stopped", percent: 64, kwh: 5 })).toMatchObject({
+      title: "Bilen sluttet å lade",
+      body: `Stoppet ved 64${nnbsp}%. Sjekk ladegrensen eller timeren i bilen.`,
+    });
+    expect(incidentPush({ incidentId: "i", kind: "car", carCase: "never", minutes: 5 })).toMatchObject({
+      title: "Bilen lader ikke",
+      body: "Ingen strøm etter 5 min. Sjekk kabelen og bilens timer.",
+    });
+    expect(incidentPush({ incidentId: "i", kind: "car", carCase: "declinedPlan", percent: null }).body).toMatch(/^Stoppet ved –/);
+  });
+  it("faults", () => {
+    expect(incidentPush({ incidentId: "i", kind: "start_failed", time: new Date("2026-11-13T01:40:00Z") }).body).toBe(
+      "Laderen startet ikke kl. 02:40. Sjekk laderen, eller prøv igjen i appen.",
+    );
+    expect(incidentPush({ incidentId: "i", kind: "offline", since: new Date("2026-11-13T01:40:00Z") }).title).toBe("Laderen svarer ikke");
+    expect(incidentPush({ incidentId: "i", kind: "charger_warning", warning: "jordfeil" }).body).toBe("Jordfeil. Ladingen er stoppet.");
   });
 });
 

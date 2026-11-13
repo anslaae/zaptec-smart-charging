@@ -37,7 +37,10 @@ import { AUTOMATION_PAUSED_REASON } from "./loopGuard";
 import { applyPreheatHold, preheatHoldActive } from "./preheatHold";
 import { checkHoldPower, checkPreheatSessionPower } from "./preheatPower.server";
 import { logChargerStates } from "./stateLog.server";
+import { recordCompletedSessions } from "./completedSessions.server";
 import { loadLoopGuard, NEW_SESSION_ACTION } from "./loopGuard.server";
+import { syncIncidents } from "@/lib/incidents/sync.server";
+import { planDeliveredNow } from "./engine";
 
 type Schedule = typeof chargeSchedules.$inferSelect;
 
@@ -132,6 +135,7 @@ async function logStateTransitions(
   settings: HouseholdSettings,
   learnedPowerKw: number | null,
   previousByCharger: Map<string, number | null>,
+  capacityKwh: number,
 ): Promise<void> {
 
   for (const charger of chargers) {
@@ -146,6 +150,7 @@ async function logStateTransitions(
     if (prevMode !== undefined) {
       if (currentMode === ChargerOperationMode.Disconnected) {
         await logActivity(charger.id, charger.name, ActivityType.Unplugged);
+        await logUnpluggedBeforeTarget(charger, state, schedules, capacityKwh);
       } else if (prevMode === ChargerOperationMode.Disconnected) {
         await logActivity(charger.id, charger.name, ActivityType.PluggedIn);
         await notifyPluggedIn(charger, state, schedules, guestChargerIds, settings, learnedPowerKw);
@@ -164,6 +169,29 @@ async function logStateTransitions(
         set: { operationMode: currentMode, updatedAt: new Date() },
       });
   }
+}
+
+// D75: unplugging before a plan reached its target is a choice, not an
+// incident -- no warning, no push, but a line in Aktivitet.
+async function logUnpluggedBeforeTarget(
+  charger: ZaptecCharger,
+  state: ChargerState,
+  schedules: Schedule[],
+  capacityKwh: number,
+): Promise<void> {
+  const plan = schedules.find((s) => s.chargerId === charger.id && s.startedAt != null && s.startPercent != null);
+  if (!plan) return;
+  const delivered = planDeliveredNow(
+    {
+      zaptecSessionId: plan.zaptecSessionId,
+      priorSessionEnergyKwh: Number(plan.priorSessionEnergyKwh ?? 0),
+      lastObservedSessionEnergyKwh: Number(plan.lastObservedSessionEnergyKwh ?? 0),
+    },
+    state,
+  );
+  if (delivered >= Number(plan.targetEnergyKwh)) return;
+  const percent = push.reachedPercent({ startPercent: plan.startPercent, targetPercent: plan.targetPercent, deliveredKwh: delivered, capacityKwh });
+  await logActivity(charger.id, charger.name, ActivityType.UnpluggedBeforeTarget, { detail: JSON.stringify({ percent }) });
 }
 
 async function notifyPluggedIn(
@@ -409,7 +437,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
       console.error(`[scheduler] charger ${charger.id} (${charger.name}): on/off too often -- automation paused`);
       // The session id goes in detail: a different one later clears the guard.
       await logActivity(charger.id, charger.name, ActivityType.AutomationPaused, { detail: sessionId ?? undefined });
-      await notify(push.automationPaused({ chargerId: charger.id }));
+      // The push goes out with the D75 "locked" incident (syncIncidents, end of tick).
     }
   }
 
@@ -422,7 +450,15 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
     capacityKwh,
     pausedChargerIds,
   );
-  await logStateTransitions(chargers, stateCache, schedules, guestChargerIds, settings, learnedPowerKw, previousModes);
+  await logStateTransitions(chargers, stateCache, schedules, guestChargerIds, settings, learnedPowerKw, previousModes, capacityKwh);
+
+  // D72: a session Zaptec has closed (CompletedSession): store its exact
+  // energy and hourly meter readings, and correct the rows that ran to its
+  // end. After enforcement, so rows closed on this tick's unplug count.
+  // Bookkeeping only: it never fails the tick.
+  await recordCompletedSessions(
+    chargers.map((c) => stateCache.get(c.id)).filter((s): s is ChargerState => s != null),
+  ).catch((error) => console.error("[scheduler] recording completed sessions failed:", error));
 
   // Written only after enforcement succeeded: a tick that throws before
   // here (e.g. code deployed before its migration) leaves the heartbeat
@@ -442,10 +478,6 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
     checkedAt: now0,
     allQuiet: allDisconnected && schedules.length === 0 && !anyOpenSessionsRemain,
   };
-
-  if (schedules.length === 0) {
-    return { processed: 0 };
-  }
 
   for (const schedule of schedules) {
     // UC15: while the charger is lent out, plans wait (the guest's car is
@@ -487,6 +519,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
           },
           state.sessionId,
           state.sessionEnergyKwh ?? 0,
+          state.lastCompletedSession,
         );
         effectiveState = { ...state, sessionEnergyKwh: effectiveSessionEnergyKwh };
         sessionEnergyUpdate = {
@@ -540,10 +573,8 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
       // D64: a few unanswered start commands since the plug-in, and the plan
       // stops trying (and says so once) instead of sending one every minute.
       if (decision.action === "resume" && (await startAttemptsUsedUp(schedule, now))) {
+        // Said once, by the D75 "start_failed" incident (syncIncidents, end of tick).
         decision = { action: "none", reason: START_FAILED_REASON, isProblem: true };
-        if (schedule.lastError !== START_FAILED_REASON) {
-          await notify(push.planStartFailed({ scheduleId: schedule.id }));
-        }
       }
 
       const decisionDetail = decision.action === "none" ? ` — ${decision.reason}` : "";
@@ -765,6 +796,11 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         .where(stillOpen(schedule.id));
     }
   }
+
+  // D75: after every command this tick sent, so the incidents see the plans' latest state.
+  await syncIncidents({ chargers, stateCache, pausedChargerIds, capacityKwh, now: new Date() }).catch((error) =>
+    console.error("[scheduler] incidents failed:", error),
+  );
 
   console.log(`[scheduler] tick done: processed ${schedules.length} schedule(s)`);
   return { processed: schedules.length };

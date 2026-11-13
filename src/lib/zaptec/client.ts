@@ -20,8 +20,8 @@ import type {
   ZaptecChargeHistoryApiResponse,
   ZaptecCircuitApiResponse,
   ZaptecInstallationApiResponse,
-  LastCompletedSession,
 } from "./types";
+import { parseCompletedSession } from "./ocmf";
 
 export { isCurrentlyCharging, isPausedAndResumable } from "./state";
 
@@ -125,22 +125,11 @@ function findObservation(
   return observations.find((observation) => observation.stateId === stateId);
 }
 
-// CompletedSession's value is a JSON blob (StartDateTime/EndDateTime/Energy);
-// parsed defensively since its exact shape isn't formally documented.
-function parseCompletedSession(raw: string | null | undefined): LastCompletedSession | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as {
-      StartDateTime?: string;
-      EndDateTime?: string;
-      Energy?: number;
-    };
-    if (!parsed.StartDateTime || !parsed.EndDateTime || parsed.Energy == null) return null;
-    return { startedAt: parsed.StartDateTime, endedAt: parsed.EndDateTime, energyKwh: parsed.Energy };
-  } catch {
-    return null;
-  }
-}
+const numberOf = (raw: string | null | undefined): number | null => {
+  if (raw == null || raw === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+};
 
 // NextScheduleEvent's exact format (e.g. for Smart Eco Mode) isn't
 // documented publicly; parsed defensively as an ISO-ish date string and
@@ -251,6 +240,11 @@ export async function getChargerState(
     maxPowerKw,
     installationRequiresAuth,
     phaseCurrentsAmps: phaseCurrents.some((a) => a != null) ? phaseCurrents : null,
+    health: {
+      warnings: numberOf(findObservation(observations, ObservationId.Warnings)?.valueAsString),
+      notifications: numberOf(findObservation(observations, ObservationId.Notifications)?.valueAsString),
+      signalDbm: numberOf(findObservation(observations, ObservationId.CommunicationSignalStrength)?.valueAsString),
+    },
     rawObservations: Object.fromEntries(observations.map((o) => [String(o.stateId), o.valueAsString ?? null])),
   };
 }

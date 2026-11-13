@@ -45,7 +45,32 @@ export const ObservationId = {
   CurrentPhase1: 507,
   CurrentPhase2: 508,
   CurrentPhase3: 509,
+  // D72: hourly OCMF meter reading ("OCMF|{...}", RD[].RV = total kWh).
+  SignedMeterValue: 554,
+  // D73: charger health. Warnings is a bitmask (SmartWarnings in
+  // /api/constants, see health.ts); 0 = none.
+  Notifications: 803,
+  Warnings: 804,
+  CommunicationSignalStrength: 809,
 } as const;
+
+// The IDs a /state dump reports that aren't in /api/constants "Observations"
+// are named in its "Schema.Apollo.ObservationIds" (Apollo = Zaptec Go), read
+// 2026-11-13. Not used by the app; kept here so nobody has to look them up
+// again. Values from the production charger that day in brackets.
+//   145 TransmitInterval [3600]        147 PulseInterval [600 -> changed at the stop]
+//   160 DpsScopeIdSource [EEPROM]      204 TemperatureEMeterPhase2
+//   206/207 TemperatureTM/TM2          220/221 TemperatureSessionMaxAir/Board
+//   544 MaxCurrentConfigurationSource [2]   545 SwitchPosition [0]
+//   546 ChargeCurrentInstallationMaxLimit [25]  547 StandAloneCurrent [20]
+//   548 PhaseRotation [10]             732 OvercurrentWarningValue [0]
+//   733 OverrideNetworkType [1]        749 NrOfChargeCards [1]
+//   802 ChargePointName                815 ESPResetSource
+//   864 OcppNativeAuthorizationKeyFromZaptec   916 SourceVersion [go-2.6.0.7]
+//   917/918 HwIdMainBoard/HwIdPowerBoard
+// Named ones from the backlog: 702 ChargeMode, 714 CableType,
+// 151 PermanentCableLock, 519 SetPhases, 808 DiagnosticsString,
+// 811 McuResetSource, -2 IsOnline.
 
 // ChargerOperationMode values — all 4 documented values (there's no 4).
 export const ChargerOperationMode = {

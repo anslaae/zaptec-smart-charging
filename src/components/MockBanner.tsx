@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { MOCK_MODE } from "@/lib/mock/mode";
+import { MockSync } from "@/components/MockSync";
 
 /** Always-visible strip in mock mode, so it's never mistaken for the real app. */
 export function MockBanner() {
@@ -10,6 +11,7 @@ export function MockBanner() {
       <Link href="/dev/mock" className="flex min-h-8 items-center underline">
         Kontrollpanel
       </Link>
+      <MockSync />
     </div>
   );
 }

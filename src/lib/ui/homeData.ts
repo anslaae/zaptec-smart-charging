@@ -1,6 +1,7 @@
 import type { ChargerState } from "@/lib/zaptec/types";
 import type { Prices } from "@/lib/pricing";
 import type { SinceUnplug } from "@/lib/ui/sinceUnplug";
+import type { IncidentData } from "@/lib/ui/incidentView";
 
 /**
  * Everything the Hjem card needs for one charger, as plain serialisable data
@@ -33,6 +34,8 @@ export interface HomeCardData {
   /** Latest start time from estimateChargingPlan, for a pending plan. */
   startTimeIso: string | null;
   startsImmediately: boolean;
+  /** D71: the open Lad nå / Forvarm / automatic row (never a guest window), sent back with a command. */
+  openRowId?: string | null;
   openSession: { kind: "manual" | "preheat" | "guest" | "automatic"; startedAtIso: string; guestName?: string | null } | null;
   lastCompletedPlanSessionId: string | null;
   stateOfCharge: { percent: number; oemUpdatedAtIso: string } | null;
@@ -45,6 +48,8 @@ export interface HomeCardData {
   automationPaused: boolean;
   /** D68: during Forvarm (session or hold) the car stopped drawing power -- the heater runs on the battery. */
   preheatOnBattery?: boolean;
+  /** D75: the open incident, when the rules say it shows (src/lib/incidents/rules.ts). */
+  incident?: IncidentData | null;
   /** noCar: what happened since the last unplug (HANDOFF §3 "Koblet fra"); null = hide the card. */
   sinceUnplug: SinceUnplug | null;
   /** ready: the plan that just finished, for the status line and the "Siste lading" card. */

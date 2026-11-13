@@ -57,18 +57,42 @@ const formatPercent = (value: number) => `${Math.round(value)} %`;
  * charging: a light highlight sweeps along the filled arc (use-case doc,
  * "animated sweep while charging"); off under prefers-reduced-motion.
  */
-/** Small round badge on the ring (HANDOFF §3): "unplugged" in noCar, a lime check when a plan reached its target. */
-export type RingBadge = "unplugged" | "check";
+/**
+ * Small round badge on the ring (HANDOFF §3): "unplugged" in noCar, a lime
+ * check when a plan reached its target or the car is probably full. D75
+ * (§6e): a red ✕ for a fault, an amber ! when the car stopped, a grey pause
+ * while it idles.
+ */
+export type RingBadge = "unplugged" | "check" | "fault" | "warning" | "pause";
+
+const BADGE_CLASS: Record<RingBadge, string> = {
+  unplugged: "bg-surface-2 text-muted",
+  check: "bg-accent text-on-accent",
+  fault: "bg-danger text-on-danger",
+  warning: "bg-amber text-surface",
+  pause: "bg-surface-2 text-muted",
+};
 
 function Badge({ kind }: { kind: RingBadge }) {
   return (
     <span
       aria-hidden
-      className={`absolute right-3 bottom-3 flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-surface ${
-        kind === "check" ? "bg-accent text-on-accent" : "bg-surface-2 text-muted"
-      }`}
+      data-badge={kind}
+      className={`absolute right-3 bottom-3 flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-surface ${BADGE_CLASS[kind]}`}
     >
-      {kind === "check" ? (
+      {kind === "fault" ? (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+          <path d="M7 7l10 10M17 7 7 17" />
+        </svg>
+      ) : kind === "warning" ? (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+          <path d="M12 6v8M12 18.5v.01" />
+        </svg>
+      ) : kind === "pause" ? (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+          <path d="M9 7v10M15 7v10" />
+        </svg>
+      ) : kind === "check" ? (
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
           <path d="m5 12 5 5 9-10" />
         </svg>

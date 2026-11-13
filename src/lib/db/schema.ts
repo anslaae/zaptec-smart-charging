@@ -192,6 +192,54 @@ export const chargerStateLog = pgTable(
   (t) => [index("charger_state_log_charger_observed").on(t.chargerId, t.observedAt)],
 );
 
+// D72: every Zaptec session as Zaptec itself closed it -- CompletedSession
+// (observation 723), recorded by the tick when a session ends. Exact final
+// energy, plus the charger's signed meter readings (OCMF: begin, every whole
+// hour, end) that make Historikk/Innsikt's cost per hour exact. Keyed by
+// Zaptec's session id, so a re-read never duplicates.
+export const zaptecSessions = pgTable(
+  "zaptec_sessions",
+  {
+    id: text("id").primaryKey(),
+    chargerId: text("charger_id").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
+    energyKwh: numeric("energy_kwh", { precision: 8, scale: 3 }).notNull(),
+    // [{ at: ISO, kwh: meter register }], oldest first; null when Zaptec sent none.
+    meterReadings: jsonb("meter_readings"),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("zaptec_sessions_charger_started").on(t.chargerId, t.startedAt)],
+);
+
+// D75: an unexpected stop while charging was asked for -- one row per
+// incident, kept up to date by the tick and read by Hjem, so both phones show
+// the same card and at most one push goes out. kind: "car" (the car stopped
+// taking power), "start_failed" (D64), "offline", "locked" (D65 / Zaptec's
+// restart lock), "charger_warning" (D73). subject: "session:<row id>",
+// "schedule:<id>" or "charger" (the loop guard). since = when the condition
+// was first seen; the card shows once the rules say so (src/lib/incidents/rules.ts).
+export const chargeIncidents = pgTable(
+  "charge_incidents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    chargerId: text("charger_id").notNull(),
+    kind: text("kind").notNull(),
+    subject: text("subject").notNull(),
+    since: timestamp("since", { withTimezone: true }).notNull(),
+    // Values for the push / activity line, saved when it went out (percent, kWh, warning text, ...).
+    detail: jsonb("detail"),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    retriedAt: timestamp("retried_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("charge_incidents_one_open").on(t.chargerId).where(sql`${t.closedAt} is null`),
+    index("charge_incidents_subject").on(t.subject),
+  ],
+);
+
 // A plain chronological log of everything worth showing on the history
 // page's "Activity" list -- both physical events we observe (plugged in,
 // charging started/stopped) and things this app did (manual start/stop, plan

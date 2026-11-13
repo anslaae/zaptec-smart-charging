@@ -7,6 +7,7 @@ import { MyOpelLink } from "@/components/MyOpelLink";
 import { ActionButton } from "@/components/ActionButton";
 import { stopPreheatDialog } from "@/lib/ui/dialogs";
 import { SubmitButton } from "@/components/SubmitButton";
+import { useFreshness } from "@/components/Freshness";
 import { startPreheat, stopChargingNow, startChargingNow, type ActionResult } from "@/lib/zaptec/actions";
 import { formatNumber, formatTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
@@ -40,6 +41,8 @@ export interface PreheatSheetData {
     | null;
   /** "i morgen 07:30" when a plan is open: starting cancels it (asked here). */
   planReadyBy: string | null;
+  /** D71: what this render shows (serializeSeen), sent back with the command. */
+  seen: string;
 }
 
 function StepDot({ done, n }: { done: boolean; n: number }) {
@@ -63,9 +66,13 @@ export function PreheatSheet({ data }: { data: PreheatSheetData }) {
     startPreheat.bind(null, data.chargerId, data.chargerName),
     {},
   );
+  const { settle } = useFreshness();
   useEffect(() => {
-    if (startState.error) toast.error(nb.actions.preheatFailed, { description: startState.error });
-  }, [startState]);
+    if (startState.stale) toast.error(startState.error ?? nb.freshness.changed);
+    else if (startState.error) toast.error(nb.actions.preheatFailed, { description: startState.error });
+    else if (startState.notice) toast.info(startState.notice);
+    else if (startState.success) settle("charging");
+  }, [startState, settle]);
 
   const on = data.preheating != null;
   const ride = on ? null : data.alreadyCharging;
@@ -96,6 +103,7 @@ export function PreheatSheet({ data }: { data: PreheatSheetData }) {
                 <p className="text-sm text-muted">{t.starting}</p>
               ) : (
                 <form action={startAction} className="mt-2">
+                  <input type="hidden" name="seen" value={data.seen} />
                   <p className="mb-2 text-sm text-text-2">
                     {preheatHoldText(hold)} {t.holdAfter}
                   </p>
@@ -118,6 +126,7 @@ export function PreheatSheet({ data }: { data: PreheatSheetData }) {
               <p className="text-sm text-muted">{t.starting}</p>
             ) : data.connected ? (
               <form action={startAction} className="mt-2">
+                <input type="hidden" name="seen" value={data.seen} />
                 {data.planReadyBy && (
                   <>
                     <input type="hidden" name="cancelPlan" value="1" />
@@ -151,7 +160,12 @@ export function PreheatSheet({ data }: { data: PreheatSheetData }) {
       />
       {on && (
         <ActionButton
-          action={() => stopChargingNow(data.chargerId, data.chargerName, {}, new FormData())}
+          action={() => {
+            const fd = new FormData();
+            fd.set("seen", data.seen);
+            return stopChargingNow(data.chargerId, data.chargerName, {}, fd);
+          }}
+          settle="stopped"
           label={t.stop}
           className="mt-1 flex h-11 w-full items-center justify-center text-[15px] font-semibold text-danger"
           confirm={stopPreheatDialog()}
@@ -168,6 +182,8 @@ export interface ChargeNowSheetData {
   chargerId: string;
   chargerName: string;
   planReadyBy: string | null;
+  /** D71: what this render shows (serializeSeen). */
+  seen: string;
 }
 
 // The "Lad nå" push action lands here (?action=charge-now). Opening a link
@@ -178,10 +194,16 @@ export function ChargeNowSheet({ data }: { data: ChargeNowSheetData }) {
     startChargingNow.bind(null, data.chargerId, data.chargerName),
     {},
   );
+  const { settle } = useFreshness();
   useEffect(() => {
-    if (state.error) toast.error(nb.actions.chargeStartFailed, { description: state.error });
-    else if (state.success) {
+    if (state.stale) toast.error(state.error ?? nb.freshness.changed);
+    else if (state.error) toast.error(nb.actions.chargeStartFailed, { description: state.error });
+    else if (state.notice) {
+      toast.info(state.notice);
+      close();
+    } else if (state.success) {
       toast.success(nb.actions.chargeStarted);
+      settle("charging");
       close();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,6 +217,7 @@ export function ChargeNowSheet({ data }: { data: ChargeNowSheetData }) {
         </p>
       )}
       <form action={formAction} className="mt-5">
+        <input type="hidden" name="seen" value={data.seen} />
         {data.planReadyBy && <input type="hidden" name="cancelPlan" value="1" />}
         <SubmitButton
           pendingLabel={nb.actions.working}

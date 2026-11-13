@@ -14,9 +14,9 @@ import { MOCK_USERS } from "./seed";
 import { applyPreset, PRESETS, type PresetKey } from "./presets";
 import { resetMockDb } from "./db";
 import { mockLog, mockStore } from "./store";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chargeSchedules } from "@/lib/db/schema";
+import { activityEvents, chargeIncidents, chargeSchedules, manualChargeSessions, scheduleActions } from "@/lib/db/schema";
 import { planDeliveredNow } from "@/lib/scheduler/engine";
 
 // Server actions behind the /dev/mock control panel. Every one refuses to run
@@ -47,7 +47,9 @@ export type SimAction =
   | { type: "setSpeed"; speed: number }
   | { type: "setRequiresAuth"; value: boolean }
   | { type: "setOnline"; value: boolean }
-  | { type: "setSmartcarDown"; value: boolean };
+  | { type: "setSmartcarDown"; value: boolean }
+  | { type: "setCommandLag"; seconds: number }
+  | { type: "setWarnings"; value: number };
 
 export async function mockSim(action: SimAction): Promise<void> {
   await guard();
@@ -106,6 +108,14 @@ export async function mockSim(action: SimAction): Promise<void> {
     case "setSmartcarDown":
       sim.settings.smartcarDown = action.value;
       break;
+    case "setCommandLag":
+      sim.settings.commandLagSeconds = action.seconds;
+      mockLog("info", `Kommandoer vises i laderens status etter ${action.seconds} s`);
+      break;
+    case "setWarnings":
+      sim.settings.warnings = action.value;
+      mockLog("info", action.value ? `Laderen melder advarsel ${action.value}` : "Laderen melder ingen advarsler");
+      break;
   }
   revalidatePath("/", "layout");
 }
@@ -148,6 +158,37 @@ export async function mockCronTick(): Promise<string> {
   return callRoute("Cron-tick", GET, "/api/cron/tick", {
     headers: { authorization: `Bearer ${env.CRON_SECRET}` },
   });
+}
+
+/**
+ * D75's waits (2 min not drawing, 5 min no energy, 10 min offline, 30 min
+ * idle / auto-end) without waiting: moves the open incident, the open Lad nå /
+ * automatic row, the plans' commands and the activity log (plug-ins, which
+ * the start-attempt count is measured from) back by `minutes`, then runs a
+ * real cron tick. Only timestamps move; the charger is untouched.
+ */
+export async function mockShiftIncidentTime(minutes: number): Promise<string> {
+  await guard();
+  const shift = minutes * 60_000;
+  const back = (column: Parameters<typeof sql>[1]) => sql`${column} - make_interval(secs => ${shift / 1000})`;
+  await db
+    .update(chargeIncidents)
+    .set({ since: back(chargeIncidents.since) })
+    .where(isNull(chargeIncidents.closedAt));
+  await db
+    .update(manualChargeSessions)
+    .set({ startedAt: back(manualChargeSessions.startedAt) })
+    .where(and(isNull(manualChargeSessions.endedAt), inArray(manualChargeSessions.kind, ["manual", "automatic"])));
+  const open = await db.select({ id: chargeSchedules.id }).from(chargeSchedules).where(inArray(chargeSchedules.status, ["pending", "active"]));
+  if (open.length > 0) {
+    await db
+      .update(scheduleActions)
+      .set({ createdAt: back(scheduleActions.createdAt) })
+      .where(inArray(scheduleActions.scheduleId, open.map((s) => s.id)));
+  }
+  await db.update(activityEvents).set({ createdAt: back(activityEvents.createdAt) });
+  mockLog("info", `Varsler: tiden spolt ${minutes} min fram`);
+  return mockCronTick();
 }
 
 /**

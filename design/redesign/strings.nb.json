@@ -1,5 +1,5 @@
 {
-  "$description": "Norwegian (nb) UI copy for the Lading redesign. {placeholders} are filled at runtime. Formats: 24h time (07:30), decimal comma (7,2 kW), '123,40 kr', dates like 'tir. 10. nov.', relative words i dag / i morgen / i går.",
+  "$description": "Norwegian (nb) UI copy for the Lading redesign. {placeholders} are filled at runtime. Formats: percent with a narrow no-break space U+202F ('80 %'), 24h time (07:30), decimal comma (7,2 kW), '123,40 kr', dates like 'tir. 10. nov.', relative words i dag / i morgen / i går.",
   "app": {
     "name": "Lading",
     "greeting": {
@@ -23,9 +23,9 @@
   "battery": {
     "measured": "målt {time}",
     "approx": "ca.",
-    "target": "mål {percent} %",
+    "target": "mål {percent} %",
     "last": "sist",
-    "derived": "Batteri beregnet fra {percent} % målt {time}"
+    "derived": "Batteri beregnet fra {percent} % målt {time}"
   },
   "home": {
     "noCar": {
@@ -37,11 +37,10 @@
       "primary": "Planlegg lading",
       "sinceTitle": "Koblet fra",
       "sinceBattery": "Batteri",
-      "sinceBatteryValue": "{change} %",
+      "sinceBatteryValue": "{change} %",
       "sinceDriven": "Kjørt",
       "sinceDrivenValue": "ca. {km} km",
-      "sinceMidnight": "midnatt",
-      "sinceEndLabel": "{when} · {percent} %"
+      "sinceEndLabel": "{when} · {percent} %"
     },
     "connected": {
       "status": "Tilkoblet – ingen plan",
@@ -69,7 +68,7 @@
     "chargingPlan": {
       "status": "Lader – ferdig ca. {time}",
       "sub": "Klar til {readyBy} · {kw} kW",
-      "planRow": "Plan: {percent} % klar {readyBy}",
+      "planRow": "Plan: {percent} % klar {readyBy}",
       "edit": "Endre ›",
       "primary": "Avbryt plan"
     },
@@ -132,6 +131,59 @@
       "primary": "Endre for i natt",
       "primaryCharging": "Avbryt for i natt",
       "charging": "Lader – ferdig ca. {time}"
+    },
+    "incident": {
+      "$voice": "Trial (owner, 2026-11-13): the system speaks as \"jeg\", never \"Appen\" or \"Lading\". Open: find a better term for the part of the system doing the orchestration. Older \"vi\" strings (planned.timelineNote, plan_late push) not changed yet.",
+      "$note": "D75 warning family. One card under the battery ring; tone 'fault' (danger) or 'declined' (amber). See HANDOFF §6e.",
+      "check": {
+        "charger": "Laderen:",
+        "chargerText": "har den strøm og nett?",
+        "cable": "Kabelen:",
+        "cableText": "sitter den godt i bilen og laderen?",
+        "zaptecApp": "Zaptec-appen:",
+        "zaptecAppText": "melder den en feil?"
+      },
+      "retry": "Prøv igjen",
+      "retryStillOffline": "Laderen svarer fortsatt ikke",
+      "openMyOpel": "Åpne myOpel ↗",
+      "startFailed": {
+        "status": "Ladingen har stoppet",
+        "sub": "Stoppet {time} · trenger ca. {duration} til",
+        "title": "Laderen startet ikke ladingen igjen",
+        "body": "Jeg prøvde {count} ganger {from}–{to} og venter nå, så laderen ikke blir sperret."
+      },
+      "offline": {
+        "status": "Laderen svarer ikke",
+        "sub": "Sist kontakt {time} · planen lader ikke",
+        "subManual": "Sist kontakt {time} · bilen lader ikke",
+        "title": "Ingen kontakt med laderen",
+        "body": "Laderen har ikke svart på {duration}. Jeg kan ikke starte eller stoppe den nå."
+      },
+      "locked": {
+        "status": "Ladingen er stoppet",
+        "sub": "Laderen ble sperret {time}",
+        "title": "Laderen stoppet for mange ganger",
+        "body": "Koble bilen fra og til igjen, så kan den lade. Jeg prøver ikke på nytt av meg selv. Skjer det igjen: sjekk Zaptec-appen."
+      },
+      "chargerWarning": {
+        "status": "Ladingen har stoppet",
+        "title": "Laderen melder en feil",
+        "body": "{warning}. Ladingen er stoppet."
+      },
+      "declinedPlan": {
+        "status": "Bilen sluttet å lade",
+        "sub": "Kl. {time}, etter {duration} lading",
+        "title": "Trolig bilens ladegrense eller timer",
+        "body": "Planen blir ikke ferdig hvis bilen ikke tar strøm. Sjekk i myOpel."
+      },
+      "chargeNow": {
+        "full": { "status": "Bilen er trolig full", "sub": "Sluttet å lade {time} · etter {duration}", "hint": "Ladingen avsluttes av seg selv kl. {time} hvis bilen ikke tar mer strøm." },
+        "stopped": { "status": "Bilen sluttet å lade", "sub": "Kl. {time}, etter {duration} lading", "title": "Trolig bilens ladegrense eller timer", "body": "Sjekk i myOpel." },
+        "idle": { "status": "Bilen tar en pause", "sub": "Har ikke ladet siden {time} · {minutes} min", "body": "Laderen er fortsatt klar. Bilen starter ofte igjen av seg selv, for eksempel etter batterivarming.", "hint": "Etter 30 min uten lading viser jeg hva det kan skyldes." },
+        "never": { "status": "Bilen har ikke begynt å lade", "sub": "Startet {time} · 0 kWh på {minutes} min", "title": "Sjekk kabelen og bilens timer", "body": "Sitter kabelen godt? Har bilen en ladetimer på?" },
+        "primary": "Avslutt ladingen",
+        "hintOpen": "Bilen kan starte igjen selv. Laderen står klar til du avslutter eller kobler fra."
+      }
     }
   },
   "planSheet": {
@@ -191,7 +243,7 @@
     },
     "tags": {
       "plan": "Plan",
-      "manual": "Lad nå",
+      "manual": "Manuell",
       "preheat": "Forvarming",
       "guest": "Gjest",
       "automatic": "Automatisk",
@@ -228,6 +280,23 @@
       "footnote": "Ut fra kilometerstand og batterinivå fra bilen (Smartcar). Kostnaden bruker snittprisen for lading hjemme.",
       "awayCharges": "{count} lading et annet sted er tatt med i forbruket, ikke i kostnaden.",
       "awayChargesPlural": "{count} ladinger andre steder er tatt med i forbruket, ikke i kostnaden."
+    },
+    "periodMonth": "Måned",
+    "periodYear": "År",
+    "year": {
+      "energy": "Energi i år",
+      "cost": "Kostnad i år",
+      "vsLastYear": "{change} mot {range} {year}",
+      "perMonth": "kWh per måned",
+      "perMonthHint": "Trykk for å se måneden",
+      "partialMonth": "{month} er ikke ferdig ennå (stiplet).",
+      "prevYear": "Forrige år",
+      "nextYear": "Neste år",
+      "drivenYear": "kjørt i år",
+      "effPerMonth": "km/kWh per måned",
+      "effLowest": "Lavest {month} {value}",
+      "effHighest": "Høyest {month} {value}",
+      "effNote": "Kaldt vær gir høyere forbruk. Måneder med for lite data er utelatt fra kurven."
     }
   },
   "settings": {
@@ -266,13 +335,13 @@
   "dialogs": {
     "cancelPlan": {
       "title": "Avbryte planen?",
-      "body": "{percent} % klar {readyBy} {day} slettes. Bilen lader ikke før du lager en ny plan eller trykker Lad nå.",
+      "body": "{percent} % klar {readyBy} {day} slettes. Bilen lader ikke før du lager en ny plan eller trykker Lad nå.",
       "safe": "Behold",
       "action": "Avbryt plan"
     },
     "stopCharging": {
       "title": "Stoppe ladingen?",
-      "body": "Bilen har fått {kwh} kWh og er på ca. {percent} %. Den lader ikke mer før du starter igjen.",
+      "body": "Bilen har fått {kwh} kWh og er på ca. {percent} %. Den lader ikke mer før du starter igjen.",
       "safe": "Fortsett",
       "action": "Stopp lading"
     },
@@ -302,7 +371,7 @@
     },
     "chargerError": {
       "title": "Fikk ikke kontakt med laderen",
-      "body": "Zaptec svarte ikke på «{command}». Planene dine er ikke endret.",
+      "body": "Ingen svar på «{command}». Planene dine er ikke endret.",
       "safe": "Lukk",
       "action": "Prøv igjen"
     },
@@ -320,7 +389,7 @@
     },
     "planCancelled": {
       "title": "Plan avbrutt",
-      "body": "{percent} % klar {readyBy}",
+      "body": "{percent} % klar {readyBy}",
       "undo": "Angre"
     },
     "planSaveFailed": {
@@ -356,6 +425,7 @@
     "charging_started": "Lading startet",
     "charging_stopped": "Lading stoppet",
     "manual_start": "Startet manuelt",
+    "charge_now_started": "{name} startet lading",
     "manual_stop": "Stoppet manuelt",
     "preheat_started": "Forvarming startet",
     "plan_created": "Plan laget",
@@ -368,13 +438,23 @@
     "automatic_allowed": "Automatisk lading slått på",
     "automatic_disallowed": "Automatisk lading slått av",
     "smart_planned": "Smart lading planlagt",
-    "smart_cancelled": "Smart lading avbrutt for denne ladingen"
+    "smart_cancelled": "Smart lading avbrutt for denne ladingen",
+    "car_stopped_full": "Bilen sluttet å lade – trolig full",
+    "car_stopped": "Bilen sluttet å lade – {percent} %",
+    "car_never_started": "Bilen begynte ikke å lade",
+    "start_failed": "Laderen startet ikke – {count} forsøk",
+    "charger_offline": "Laderen mistet kontakt",
+    "charger_back": "Laderen er tilbake",
+    "charger_locked": "Laderen stoppet for mange ganger",
+    "charger_warning": "Laderen meldte feil: {warning}",
+    "retry": "Prøvde igjen ({name})",
+    "unplugged_before_target": "Koblet fra ved {percent} % – planen ble ikke ferdig"
   },
   "onPlugin": {
     "title": "Når bilen kobles til",
     "intro": "Gjelder når det ikke finnes en plan. En plan, Lad nå eller forvarming overstyrer for den ladingen.",
     "settingsRow": "Når bilen kobles til",
-    "settingsRowSmart": "Smart lading · {percent} % innen {time}",
+    "settingsRowSmart": "Smart lading · {percent} % innen {time}",
     "wait": {
       "title": "Vent på plan",
       "sub": "Lader ikke før noen planlegger eller trykker Lad nå"
@@ -385,7 +465,7 @@
     },
     "smart": {
       "title": "Smart lading",
-      "sub": "Billigst mulig til {percent} % innen klar-tid"
+      "sub": "Billigst mulig til {percent} % innen klar-tid"
     },
     "target": "Lad til",
     "readyWeekday": "Klar til, hverdager",

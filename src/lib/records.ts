@@ -2,11 +2,12 @@ import "server-only";
 import { dropOverlappingDuplicates } from "@/lib/sessionOverlap";
 import { and, asc, eq, gte, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chargeSchedules, manualChargeSessions, vehicleTelemetry } from "@/lib/db/schema";
+import { chargeSchedules, manualChargeSessions, vehicleTelemetry, zaptecSessions } from "@/lib/db/schema";
+import { hourlyEnergy, type MeterReading } from "@/lib/zaptec/ocmf";
 import type { DriveReading } from "@/lib/ui/driving";
 import { reachedPercent } from "@/lib/push/notifications";
 import type { SessionRecord, SessionTag } from "@/lib/ui/history";
-import { sessionCost, type Prices } from "@/lib/pricing";
+import { sessionCost, type HourlyKwh, type Prices } from "@/lib/pricing";
 
 // Charging sessions as the app itself recorded them -- the data behind
 // Historikk "Økter" and Innsikt. Deliberately not Zaptec's charge history
@@ -36,11 +37,31 @@ function worthListing(record: SessionRecord): boolean {
   return record.endedAt.getTime() - record.startedAt.getTime() >= MIN_UNMEASURED_MS;
 }
 
-function costOf(kwh: number | null, start: Date, end: Date | null, prices: Prices) {
+function costOf(kwh: number | null, start: Date, end: Date | null, prices: Prices, hourly?: HourlyKwh[] | null) {
   // No energy price set: no cost (shown as "–"), rather than 0 kr (D70).
   if (kwh == null || !(prices.energyNokPerKwh > 0)) return { costNok: null, gridNok: null };
-  const cost = sessionCost(kwh, start, end, prices);
+  const cost = sessionCost(kwh, start, end, prices, hourly);
   return { costNok: cost.totalNok, gridNok: cost.gridNok };
+}
+
+type ZaptecSessionRow = typeof zaptecSessions.$inferSelect;
+
+/**
+ * D72: kWh per clock hour for a record, from the meter readings of the
+ * Zaptec sessions on that charger that overlap it; null when none were
+ * recorded (older rows) -- the cost then spreads the energy evenly.
+ */
+export function recordHourly(
+  sessions: Pick<ZaptecSessionRow, "chargerId" | "startedAt" | "endedAt" | "meterReadings">[],
+  chargerId: string,
+  start: Date,
+  end: Date | null,
+): HourlyKwh[] | null {
+  if (!end) return null;
+  const readings = sessions
+    .filter((s) => s.chargerId === chargerId && s.startedAt <= end && s.endedAt >= start)
+    .flatMap((s) => (Array.isArray(s.meterReadings) ? (s.meterReadings as MeterReading[]) : []));
+  return readings.length >= 2 ? hourlyEnergy(readings, start, end) : null;
 }
 
 /** kWh a plan delivered, from its reconcileSessionEnergy tracker. */
@@ -60,7 +81,7 @@ export async function loadSessionRecords(
   /** Rows from before car attribution count for this car (design 6c); guest sessions never do. */
   defaultCarId: string | null = null,
 ): Promise<{ records: SessionRecord[] }> {
-  const [plans, sessions] = await Promise.all([
+  const [plans, sessions, metered] = await Promise.all([
     db
       .select()
       .from(chargeSchedules)
@@ -75,6 +96,15 @@ export async function loadSessionRecords(
       .select()
       .from(manualChargeSessions)
       .where(and(isNotNull(manualChargeSessions.endedAt), gte(manualChargeSessions.startedAt, since))),
+    db
+      .select({
+        chargerId: zaptecSessions.chargerId,
+        startedAt: zaptecSessions.startedAt,
+        endedAt: zaptecSessions.endedAt,
+        meterReadings: zaptecSessions.meterReadings,
+      })
+      .from(zaptecSessions)
+      .where(gte(zaptecSessions.endedAt, since)),
   ]);
 
   const records: SessionRecord[] = [];
@@ -96,7 +126,7 @@ export async function loadSessionRecords(
           : null,
       userId: plan.source === "smart" ? null : plan.createdByUserId,
       carId: plan.carId ?? defaultCarId,
-      ...costOf(kwh, plan.startedAt!, plan.endedAt, prices),
+      ...costOf(kwh, plan.startedAt!, plan.endedAt, prices, recordHourly(metered, plan.chargerId, plan.startedAt!, plan.endedAt)),
     });
   }
   // D66: a row opened alongside another on the same Zaptec session measured the same energy.
@@ -114,7 +144,13 @@ export async function loadSessionRecords(
       userId: tag === "manual" || tag === "preheat" ? session.startedByUserId : null,
       guestName: session.guestName,
       carId: tag === "guest" ? null : (session.carId ?? defaultCarId),
-      ...costOf(session.energyKwh != null ? Number(session.energyKwh) : null, session.startedAt, session.endedAt, prices),
+      ...costOf(
+        session.energyKwh != null ? Number(session.energyKwh) : null,
+        session.startedAt,
+        session.endedAt,
+        prices,
+        recordHourly(metered, session.chargerId, session.startedAt, session.endedAt),
+      ),
     });
   }
   return { records: records.filter(worthListing) };

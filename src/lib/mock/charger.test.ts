@@ -79,3 +79,36 @@ describe("ChargerSim", () => {
     expect(sim.reading?.at).toEqual(at(1));
   });
 });
+
+describe("ChargerSim: CompletedSession, command lag and warnings (D71-D73)", () => {
+  it("reports the ended session with its id, exact energy and hourly meter readings", () => {
+    const sim = new ChargerSim(at(-15), { powerKw: 6 });
+    sim.plugIn(at(-15)); // 19:45 UTC
+    const sessionId = sim.sessionId;
+    sim.advance(at(30)); // passes 20:00
+    sim.unplug(at(30));
+    const done = sim.lastCompletedSession!;
+    expect(done.sessionId).toBe(sessionId);
+    expect(done.energyKwh).toBeCloseTo(4.5, 2);
+    const readings = done.meterReadings!;
+    expect(readings.map((r) => r.at)).toEqual([at(-15).toISOString(), at(0).toISOString(), at(30).toISOString()]);
+    expect(readings[2].kwh - readings[0].kwh).toBeCloseTo(4.5, 2);
+    expect(readings[1].kwh - readings[0].kwh).toBeCloseTo(1.5, 2);
+  });
+
+  it("with a command lag, the state shows the command only after the lag", () => {
+    const sim = new ChargerSim(t0, { commandLagSeconds: 8 });
+    sim.plugIn(t0);
+    sim.command(ZaptecCommand.StopChargingFinal, t0);
+    expect(sim.toChargerState("c", new Date(t0.getTime() + 5_000)).operationMode).toBe(ChargerOperationMode.Charging);
+    expect(sim.toChargerState("c", new Date(t0.getTime() + 9_000)).operationMode).toBe(ChargerOperationMode.StoppedOrIdle);
+    expect(sim.finalStopActive).toBe(true);
+  });
+
+  it("reports the warnings bitmask in health and raw observation 804", () => {
+    const sim = new ChargerSim(t0, { warnings: 16 });
+    const state = sim.toChargerState("c", t0);
+    expect(state.health?.warnings).toBe(16);
+    expect(state.rawObservations?.["804"]).toBe("16");
+  });
+});

@@ -1,5 +1,5 @@
 import { ChargerOperationMode, ZaptecCommand } from "@/lib/zaptec/constants";
-import type { ChargerState, ChargeHistoryEntry, LastCompletedSession } from "@/lib/zaptec/types";
+import type { ChargerState, ChargeHistoryEntry, LastCompletedSession, MeterReading } from "@/lib/zaptec/types";
 
 // A simulated Zaptec charger + car for mock mode. Pure state + methods (no
 // I/O) so it can be unit-tested; the mock store keeps one instance in memory.
@@ -21,6 +21,10 @@ export interface SimSettings {
   speed: number;
   capacityKwh: number;
   maxPowerKw: number;
+  /** D71: Zaptec's /state lags a command; this many seconds pass before the command shows. */
+  commandLagSeconds: number;
+  /** D73: Warnings (804) bitmask the charger reports; 0 = none. */
+  warnings: number;
 }
 
 export interface SimSnapshot extends SimSettings {
@@ -63,7 +67,15 @@ export class ChargerSim {
   lastCompletedSession: LastCompletedSession | null = null;
   /** D69: the car sits at 0 A while the charger still says "charging" (mode 3). */
   idleWhileCharging = false;
+  /** D75: the car stopped requesting power by itself; a start command is accepted but changes nothing until it asks again. */
+  carDeclined = false;
   history: ChargeHistoryEntry[] = [];
+  /** D72: the charger's lifetime meter register (kWh), like OCMF's RV. */
+  meterKwh = 431.6;
+  /** D72: this session's meter readings: begin, each whole hour, end. */
+  sessionReadings: MeterReading[] = [];
+  /** D71: commands accepted but not yet visible in /state. */
+  private pendingCommands: { commandId: number; applyAt: number }[] = [];
   private lastAdvancedAt: number;
 
   constructor(now: Date, settings?: Partial<SimSettings>, batteryPercent = 46) {
@@ -75,6 +87,8 @@ export class ChargerSim {
       speed: 1,
       capacityKwh: 46,
       maxPowerKw: 11,
+      commandLagSeconds: 0,
+      warnings: 0,
       ...settings,
     };
     this.batteryPercent = batteryPercent;
@@ -93,11 +107,27 @@ export class ChargerSim {
 
   /** Accrue energy for the time passed (times the speed setting). Call before every read or change. */
   advance(now: Date): void {
-    const seconds = Math.max(0, (now.getTime() - this.lastAdvancedAt) / 1000) * this.settings.speed;
+    const from = this.lastAdvancedAt;
+    const seconds = Math.max(0, (now.getTime() - from) / 1000) * this.settings.speed;
     this.lastAdvancedAt = now.getTime();
-    if (!this.drawing || seconds === 0) return;
-    this.addEnergy(this.settings.powerKw * (seconds / 3600));
-    this.chargingSeconds += seconds;
+    const meterBefore = this.meterKwh;
+    if (this.drawing && seconds > 0) {
+      this.addEnergy(this.settings.powerKw * (seconds / 3600));
+      this.chargingSeconds += seconds;
+    }
+    // OCMF-style reading at each whole hour passed while connected (energy split by time).
+    if (this.carConnected) {
+      for (let h = Math.floor(from / 3_600_000) * 3_600_000 + 3_600_000; h <= now.getTime(); h += 3_600_000) {
+        const share = now.getTime() > from ? (h - from) / (now.getTime() - from) : 1;
+        this.sessionReadings.push({ at: new Date(h).toISOString(), kwh: Math.round((meterBefore + (this.meterKwh - meterBefore) * share) * 1000) / 1000 });
+      }
+    }
+    // Commands whose lag is over now show in the state.
+    const due = this.pendingCommands.filter((c) => c.applyAt <= now.getTime());
+    if (due.length > 0) {
+      this.pendingCommands = this.pendingCommands.filter((c) => c.applyAt > now.getTime());
+      for (const c of due) this.applyCommand(c.commandId);
+    }
   }
 
   /** Delivers energy into the session and the battery; the car stops drawing at 100 %. */
@@ -106,6 +136,7 @@ export class ChargerSim {
     const room = ((100 - this.batteryPercent) / 100) * this.settings.capacityKwh;
     const delivered = Math.min(kwh, room);
     this.sessionEnergyKwh += delivered;
+    this.meterKwh += delivered;
     this.batteryPercent = Math.min(100, this.batteryPercent + (delivered / this.settings.capacityKwh) * 100);
     if (this.batteryPercent >= 100 && this.charging) {
       // Car is full: it stops drawing, the session stays open (not a final stop).
@@ -116,7 +147,10 @@ export class ChargerSim {
   /** D68: the car stops requesting power by itself (as the Opel did during Forvarm on 13 Nov) -- mode 5, no final stop. */
   carStopsDrawing(now: Date): void {
     this.advance(now);
-    if (this.charging) this.mode = ChargerOperationMode.StoppedOrIdle;
+    if (this.charging) {
+      this.mode = ChargerOperationMode.StoppedOrIdle;
+      this.carDeclined = true;
+    }
     this.idleWhileCharging = false;
   }
 
@@ -130,6 +164,7 @@ export class ChargerSim {
   carDrawsAgain(now: Date): void {
     this.advance(now);
     this.idleWhileCharging = false;
+    this.carDeclined = false;
     if (this.carConnected && this.mode === ChargerOperationMode.StoppedOrIdle && !this.finalStopActive && this.batteryPercent < 100) {
       this.mode = ChargerOperationMode.Charging;
     }
@@ -140,11 +175,14 @@ export class ChargerSim {
     if (this.carConnected) return;
     this.carConnected = true;
     this.idleWhileCharging = false;
+    this.carDeclined = false;
     this.sessionId = newSessionId();
     this.sessionStartedAt = now;
     this.sessionEnergyKwh = 0;
     this.chargingSeconds = 0;
     this.finalStopActive = false;
+    this.pendingCommands = [];
+    this.sessionReadings = [{ at: now.toISOString(), kwh: Math.round(this.meterKwh * 1000) / 1000 }];
     if (this.settings.requiresAuth) {
       this.mode = ChargerOperationMode.ConnectedRequesting;
     } else {
@@ -159,9 +197,11 @@ export class ChargerSim {
     if (!this.carConnected) return;
     if (this.sessionId && this.sessionStartedAt) {
       const session: LastCompletedSession = {
+        sessionId: this.sessionId,
         startedAt: this.sessionStartedAt.toISOString(),
         endedAt: now.toISOString(),
-        energyKwh: Math.round(this.sessionEnergyKwh * 100) / 100,
+        energyKwh: Math.round(this.sessionEnergyKwh * 1000) / 1000,
+        meterReadings: [...this.sessionReadings, { at: now.toISOString(), kwh: Math.round(this.meterKwh * 1000) / 1000 }],
       };
       this.lastCompletedSession = session;
       this.history.unshift({
@@ -181,6 +221,8 @@ export class ChargerSim {
     this.sessionStartedAt = null;
     this.sessionEnergyKwh = 0;
     this.chargingSeconds = 0;
+    this.sessionReadings = [];
+    this.pendingCommands = [];
   }
 
   /** Someone taps an RFID tag / the Zaptec app: authorises a waiting session even with auth on. */
@@ -194,9 +236,23 @@ export class ChargerSim {
   command(commandId: number, now: Date): CommandResult {
     this.advance(now);
     if (!this.settings.online) return { accepted: false, note: "Charger offline" };
+    const lag = this.settings.commandLagSeconds;
+    if (lag > 0 && this.carConnected && (commandId === ZaptecCommand.ResumeCharging || commandId === ZaptecCommand.StopChargingFinal)) {
+      this.pendingCommands.push({ commandId, applyAt: now.getTime() + lag * 1000 });
+      return { accepted: true, note: `Accepted -- shows in the state after ${lag} s` };
+    }
+    return this.applyCommand(commandId);
+  }
+
+  private applyCommand(commandId: number): CommandResult {
     switch (commandId) {
       case ZaptecCommand.ResumeCharging: {
         if (!this.carConnected) return { accepted: true, note: "No car connected -- nothing to resume (528)" };
+        // A real car that stopped by itself ignores a start (D68/D75).
+        if (this.carDeclined && !this.charging) {
+          this.finalStopActive = false;
+          return { accepted: true, note: "Accepted, but the car isn't asking for power" };
+        }
         if (this.settings.requiresAuth && !this.finalStopActive && !this.charging) {
           return { accepted: true, note: "Not paused and auth required -- can't authorise a new session (528)" };
         }
@@ -253,6 +309,7 @@ export class ChargerSim {
       maxPowerKw: this.settings.maxPowerKw,
       installationRequiresAuth: this.settings.requiresAuth,
       phaseCurrentsAmps,
+      health: { warnings: this.settings.warnings, notifications: 0, signalDbm: -71 },
       rawObservations: {
         "507": String(phaseCurrentsAmps[0]),
         "508": String(phaseCurrentsAmps[1]),
@@ -261,6 +318,7 @@ export class ChargerSim {
         "710": String(this.mode),
         "718": this.carConnected ? (this.finalStopActive ? "1" : "0") : null,
         "721": this.sessionId,
+        "804": String(this.settings.warnings),
       },
     };
   }

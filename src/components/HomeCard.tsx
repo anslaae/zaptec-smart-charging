@@ -10,6 +10,11 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ActionButton } from "@/components/ActionButton";
 import { LastSessionCard, SinceUnplugCard } from "@/components/HomeExtraCards";
 import { SmartTimeline } from "@/components/SmartTimeline";
+import { settledBy, useFreshness } from "@/components/Freshness";
+import { serializeSeen } from "@/lib/zaptec/freshness";
+import { IncidentCard } from "@/components/IncidentCard";
+import { incidentView, type IncidentView } from "@/lib/ui/incidentView";
+import { REQUEST_SETTLE_MS } from "@/lib/incidents/rules";
 
 /** Smart lading says "Lader i natt 03:46–06:00" for a night window, "Lader 13:00–15:00" otherwise. */
 const isDaytime = (iso: string) => {
@@ -105,17 +110,57 @@ interface View {
   ringBadge?: RingBadge;
   /** Smart lading pill above the status line. */
   pill?: string;
+  /** D75: the open incident's lines, card and button label. */
+  incident?: IncidentView | null;
+  /** chargingManual: the stop button's label when no incident says otherwise. */
+  stopLabel?: string;
 }
 
+// D75: an open incident replaces the state's status and sub lines and adds
+// its card, badge and hint (HANDOFF §6e); the state's own actions stay.
 function buildView(data: HomeCardData): View {
+  const view = stateView(data);
+  if (!data.incident) return view;
+  const remainingKwh =
+    data.schedule && (data.schedule.status === "pending" || data.schedule.status === "active")
+      ? Math.max(0, data.schedule.targetEnergyKwh - data.schedule.deliveredKwh)
+      : null;
+  const incident = incidentView({
+    incident: data.incident,
+    now: new Date(data.nowIso),
+    chargeSeconds: data.state.chargeDurationSeconds ?? null,
+    remainingSeconds:
+      remainingKwh != null && data.learnedPowerKw ? (remainingKwh / data.learnedPowerKw) * 3600 : null,
+  });
+  return {
+    ...view,
+    status: incident.status,
+    sub: incident.sub,
+    statusAmber: false,
+    note: incident.hint ?? view.note,
+    ringBadge: incident.badge ?? view.ringBadge,
+    incident,
+  };
+}
+
+function stateView(data: HomeCardData): View {
   const now = new Date(data.nowIso);
   const { state, schedule } = data;
-  const state_ = homeState({
+  const rawState = homeState({
     state,
     schedule,
     openSession: data.openSession,
     lastCompletedPlanSessionId: data.lastCompletedPlanSessionId,
   });
+  // D75: a plan whose car stopped taking power still reads as charging by
+  // plan -- the plan row and "Avbryt plan" stay (HANDOFF §6e).
+  const planIncident = data.incident?.subject === "schedule";
+  const state_: HomeState =
+    planIncident && rawState === "planned"
+      ? "chargingPlan"
+      : planIncident && rawState === "smartWaiting"
+        ? "smartCharging"
+        : rawState;
 
   const charging = isCurrentlyCharging(state);
   const kw = state.instantPowerWatts != null && state.instantPowerWatts > 0 ? state.instantPowerWatts / 1000 : null;
@@ -295,10 +340,18 @@ function buildView(data: HomeCardData): View {
     }
     case "chargingManual": {
       const automatic = data.openSession?.kind === "automatic";
+      // D75: the first 2 min after Lad nå the car is still picking it up;
+      // after that, not charging (before the tick has opened an incident) reads as a pause.
+      const startedAt = data.openSession ? Date.parse(data.openSession.startedAtIso) : null;
+      const justStarted = startedAt != null && now.getTime() - startedAt < REQUEST_SETTLE_MS;
+      const paused = !charging && !justStarted;
       return {
         ...base,
+        stopLabel: paused ? nb.home.incident.chargeNow.primary : nb.home.chargingManual.primary,
         status: !charging
-          ? nb.home.chargingManualIdle
+          ? justStarted
+            ? nb.home.chargingManualNoKw
+            : nb.home.incident.chargeNow.idle.status
           : automatic
             ? kw != null
               ? fill(nb.home.chargingAutomatic, { kw: kwNumber(kw) })
@@ -419,6 +472,23 @@ function buildView(data: HomeCardData): View {
   }
 }
 
+/** A debug preview's incident (made-up times; its card has no actions). */
+function previewIncident(kind: "locked" | "start_failed", nowIso: string): NonNullable<HomeCardData["incident"]> {
+  const now = Date.parse(nowIso);
+  const ago = (minutes: number) => formatTime(new Date(now - minutes * 60_000));
+  return {
+    id: "preview",
+    kind,
+    carCase: null,
+    sinceIso: new Date(now - 20 * 60_000).toISOString(),
+    subject: kind === "locked" ? "charger" : "schedule",
+    requestedAtIso: null,
+    detail: kind === "start_failed" ? { count: 3, from: ago(24), to: ago(20) } : null,
+    retried: false,
+    autoEndAtIso: null,
+  };
+}
+
 /** The Hjem hero card for one charger: ring, status, and the one primary action for its state. */
 export function HomeCard({ data }: { data: HomeCardData }) {
   // A debug scenario is a pure front-end preview: it replaces the displayed
@@ -457,6 +527,12 @@ export function HomeCard({ data }: { data: HomeCardData }) {
           : null,
         lastCompletedPlanSessionId: scenario.lastCompletedPlanSessionId,
         automationPaused: scenario.automationPaused ?? false,
+        // D75: the loop guard and a stuck plan preview as their incident cards.
+        incident: scenario.automationPaused
+          ? previewIncident("locked", data.nowIso)
+          : scenario.schedule?.lastError === START_FAILED_REASON
+            ? previewIncident("start_failed", data.nowIso)
+            : null,
         stateOfCharge: scenario.stateOfCharge
           ? { percent: scenario.stateOfCharge.percent, oemUpdatedAtIso: scenario.stateOfCharge.oemUpdatedAt.toISOString() }
           : null,
@@ -480,6 +556,25 @@ export function HomeCard({ data }: { data: HomeCardData }) {
     ? { targetPercent: schedule.targetPercent, targetKwh: schedule.targetEnergyKwh, readyByIso: schedule.readyByIso }
     : null;
 
+  // D71: after Lad nå / Forvarm / Stopp the screen polls until the charger
+  // shows the change; while it waits (or shows an old render) buttons are locked.
+  const freshness = useFreshness();
+  const { endSettling } = freshness;
+  const chargingNow = isCurrentlyCharging(effective.state);
+  const settled = freshness.settling != null && settledBy(freshness.settling, chargingNow);
+  useEffect(() => {
+    if (settled) endSettling();
+  }, [settled, endSettling]);
+  const freshnessLine = scenario
+    ? null
+    : freshness.settling && !settled
+      ? freshness.settling === "charging"
+        ? nb.freshness.waitingStart
+        : nb.freshness.waitingStop
+      : freshness.stale
+        ? nb.freshness.updating
+        : null;
+
   // With an open plan, Lad nå / Forvarm cancel it (after asking) -- the
   // scheduler would otherwise pause them again within a minute.
   // Smart lading steps aside without asking (HANDOFF §6b); only a user plan asks.
@@ -487,8 +582,14 @@ export function HomeCard({ data }: { data: HomeCardData }) {
     schedule && (schedule.status === "pending" || schedule.status === "active") && schedule.source !== "smart"
       ? schedule
       : null;
-  const startForm = () => {
+  // What this screen shows, so the server can refuse when it's out of date (D71).
+  const seenForm = () => {
     const fd = new FormData();
+    fd.set("seen", serializeSeen({ rowId: effective.openRowId ?? null, planId: openPlan?.id ?? null }));
+    return fd;
+  };
+  const startForm = () => {
+    const fd = seenForm();
     if (openPlan) fd.set("cancelPlan", "1");
     return fd;
   };
@@ -501,6 +602,7 @@ export function HomeCard({ data }: { data: HomeCardData }) {
       className={secondaryClass}
       success={nb.toasts.chargingStarted.title}
       errorMessage={nb.actions.chargeStartFailed}
+      settle="charging"
     />
   );
   const preheat = (
@@ -513,6 +615,7 @@ export function HomeCard({ data }: { data: HomeCardData }) {
       success={nb.actions.preheatStarted}
       errorMessage={nb.actions.preheatFailed}
       onSuccess={() => router.push("/?sheet=preheat", { scroll: false })}
+      settle="charging"
     />
   );
   // D67: while charging, Forvarm only opens the sheet -- the power is already
@@ -536,7 +639,8 @@ export function HomeCard({ data }: { data: HomeCardData }) {
     );
   const stop = (label: string, preheat = false, className = primaryClass) => (
     <ActionButton
-      action={() => stopChargingNow(chargerId, chargerName, {}, new FormData())}
+      action={() => stopChargingNow(chargerId, chargerName, {}, seenForm())}
+      settle="stopped"
       label={label}
       className={className}
       confirm={
@@ -622,7 +726,8 @@ export function HomeCard({ data }: { data: HomeCardData }) {
     case "chargingManual":
       actions = (
         <>
-          {stop(nb.home.chargingManual.primary)}
+          {/* D75: "Avslutt ladingen" while the car isn't drawing (stop + close the session). */}
+          {stop(view.incident?.stopLabel ?? view.stopLabel ?? nb.home.chargingManual.primary)}
           {preheatLink}
         </>
       );
@@ -665,12 +770,6 @@ export function HomeCard({ data }: { data: HomeCardData }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {effective.automationPaused && view.homeState !== "noControl" && (
-        <div role="status" className="rounded-[var(--radius-card)] border border-amber-border bg-amber-bg p-4">
-          <p className="text-[15px] font-semibold text-amber">{nb.home.automationPaused.title}</p>
-          <p className="mt-1 text-sm text-text-2">{nb.home.automationPaused.body}</p>
-        </div>
-      )}
       {view.homeState === "noControl" && (
         <div className="rounded-[var(--radius-card)] border border-amber-border bg-amber-bg p-4">
           <p className="text-[15px] font-semibold text-amber">{nb.home.noControl.title}</p>
@@ -687,7 +786,14 @@ export function HomeCard({ data }: { data: HomeCardData }) {
             {fill(nb.debug.preview, { label: scenario.label })}
           </p>
         )}
-        {!effective.state.isOnline && <p className="text-sm font-semibold text-amber">{nb.home.offline}</p>}
+        {!effective.state.isOnline && effective.incident?.kind !== "offline" && (
+          <p className="text-sm font-semibold text-amber">{nb.home.offline}</p>
+        )}
+        {freshnessLine && (
+          <p role="status" aria-live="polite" data-testid="freshness" className="text-center text-sm font-semibold text-muted">
+            {freshnessLine}
+          </p>
+        )}
 
         <BatteryRing
           mode={view.ring}
@@ -704,11 +810,6 @@ export function HomeCard({ data }: { data: HomeCardData }) {
           )}
           <p className={`text-xl font-semibold ${view.statusAmber ? "text-amber" : "text-text"}`}>{view.status}</p>
           {view.sub && <p className="mt-1 text-[15px] text-muted">{view.sub}</p>}
-          {effective.preheatOnBattery && (
-            <p role="status" className="mt-1 text-sm font-semibold text-amber">
-              {nb.preheatSheet.onBattery}
-            </p>
-          )}
           {schedule?.preheatHoldUntilIso && (
             <p className="mt-1 text-sm font-semibold text-accent">
               {fill(nb.preheatSheet.homeLine, { time: formatTime(schedule.preheatHoldUntilIso) })}
@@ -731,6 +832,26 @@ export function HomeCard({ data }: { data: HomeCardData }) {
               <dd className="mt-0.5 text-[15px] font-semibold">{view.stats.cost}</dd>
             </div>
           </dl>
+        )}
+
+        {/* D75: one warning card under the ring (a fault outranks the car). D68's Forvarm-on-battery joins the family. */}
+        {view.incident?.card ? (
+          <IncidentCard card={view.incident.card} incidentId={effective.incident?.id ?? null} chargerName={chargerName} preview={scenario != null} />
+        ) : (
+          effective.preheatOnBattery && (
+            <IncidentCard
+              card={{
+                tone: "declined",
+                title: nb.home.incident.preheatBattery.title,
+                body: nb.home.incident.preheatBattery.body,
+                checklist: false,
+                retry: false,
+                myOpel: false,
+              }}
+              incidentId={null}
+              chargerName={chargerName}
+            />
+          )
         )}
 
         {/* Secondary cards (HANDOFF §3); hidden in debug previews, whose data is made up. */}

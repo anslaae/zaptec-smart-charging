@@ -94,6 +94,17 @@ export interface LastCompletedSession {
   startedAt: string;
   endedAt: string;
   energyKwh: number;
+  /** D72: the Zaptec session this was (723's SessionId). */
+  sessionId?: string | null;
+  /** D72: the charger's meter register at the begin, every whole hour and the end (OCMF). */
+  meterReadings?: MeterReading[] | null;
+}
+
+export interface MeterReading {
+  /** ISO time. */
+  at: string;
+  /** Cumulative meter register, kWh. */
+  kwh: number;
 }
 
 // Derived, convenience view over the raw observation array for a single charger.
@@ -134,4 +145,6 @@ export interface ChargerState {
   // D69: every observation as Zaptec reported it (stateId -> ValueAsString),
   // kept in charger_state_log when something changes.
   rawObservations?: Record<string, string | null> | null;
+  // D73: Warnings (804, bitmask), Notifications (803), signal (809, dBm).
+  health?: { warnings: number | null; notifications: number | null; signalDbm: number | null } | null;
 }

@@ -45,6 +45,18 @@ export const ActivityType = {
   // D65: the loop guard tripped -- the app stopped sending automated
   // commands to this charger until the car is re-plugged or someone acts.
   AutomationPaused: "automation_paused",
+  // D75 incidents: one line per incident (detail = JSON values for the label's
+  // {placeholders}, see src/lib/ui/activity.ts), plus "Prøv igjen" and the
+  // unplug before a plan's target.
+  CarStoppedFull: "car_stopped_full",
+  CarStopped: "car_stopped",
+  CarNeverStarted: "car_never_started",
+  StartFailed: "start_failed",
+  ChargerOffline: "charger_offline",
+  ChargerBack: "charger_back",
+  ChargerWarning: "charger_warning",
+  IncidentRetry: "retry",
+  UnpluggedBeforeTarget: "unplugged_before_target",
 } as const;
 
 export type ActivityType = (typeof ActivityType)[keyof typeof ActivityType];

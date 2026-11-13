@@ -38,6 +38,17 @@ async function preset(page: Page, label: string) {
   await untilNewLogLine(page, `Scenario: ${label}`, () =>
     page.getByRole("button", { name: label, exact: true }).click(),
   );
+  // A scenario keeps the panel's charger choices (command delay, warning);
+  // tests start from none and set them after the scenario when they need them.
+  for (const [setting, log] of [
+    ["Kommando-forsinkelse", "Kommandoer vises i laderens status etter 0 s"],
+    ["Laderen melder", "Laderen melder ingen advarsler"],
+  ] as const) {
+    const select = page.getByLabel(setting);
+    if ((await select.inputValue()) !== "0") await untilNewLogLine(page, log, async () => {
+      await select.selectOption("0");
+    });
+  }
 }
 
 async function mockButton(page: Page, name: string) {
@@ -513,7 +524,7 @@ test("D64: a charger that won't start gets three tries, then one push", async ({
   await expect(page.getByRole("checkbox", { name: "Laderen krever innlogging (RFID)" })).toBeChecked();
   await mockButton(page, "Koble til bil");
   const resumes = page.getByText(/\[command\] ResumeCharging/);
-  const push = page.getByText(/\[push\] Ladingen starter ikke/);
+  const push = page.getByText(/\[push\] Ladingen stoppet/);
   const resumesBefore = await resumes.count();
   const pushesBefore = await push.count();
   for (let i = 0; i < 5; i++) await tick(page);
@@ -538,7 +549,8 @@ test("D64: Hjem tells you to re-plug when the plan gave up starting", async ({ p
     localStorage.setItem("zaptec-debug-scenario", "plannedStartFailed");
   });
   await page.reload();
-  await expect(page.getByText("Laderen svarer ikke – koble bilen fra og til igjen")).toBeVisible();
+  await expect(page.getByTestId("incident-card")).toContainText("Laderen startet ikke ladingen igjen");
+  await expect(page.getByTestId("incident-card")).toContainText("Jeg prøvde 3 ganger");
   await page.evaluate(() => {
     localStorage.removeItem("zaptec-debug-enabled");
     localStorage.removeItem("zaptec-debug-scenario");
@@ -552,10 +564,11 @@ test("D65: Hjem shows the loop guard's pause and the plan's line", async ({ page
     localStorage.setItem("zaptec-debug-scenario", "plannedAutomationPaused");
   });
   await page.reload();
-  await expect(page.getByRole("status").filter({ hasText: "Appen har tatt pause" })).toContainText(
-    "Ladingen ble slått av og på for ofte",
-  );
-  await expect(page.getByText("Appen har tatt pause – koble bilen fra og til igjen")).toBeVisible();
+  const card = page.getByTestId("incident-card");
+  await expect(card).toHaveAttribute("data-tone", "fault");
+  await expect(card).toContainText("Laderen stoppet for mange ganger");
+  await expect(card).toContainText("Jeg prøver ikke på nytt av meg selv.");
+  await expect(card.getByRole("button", { name: "Prøv igjen" })).toHaveCount(0);
   await page.evaluate(() => {
     localStorage.removeItem("zaptec-debug-enabled");
     localStorage.removeItem("zaptec-debug-scenario");
@@ -721,7 +734,8 @@ test("D68: the car stops drawing during Forvarm: amber line, one push, cleared w
   const pushLine = page.locator("[data-log-seq]").filter({ hasText: "Forvarming bruker batteriet — Bilen sluttet å trekke strøm fra laderen kl." });
   await expect(pushLine).toHaveCount(1);
   await page.goto("/");
-  await expect(page.getByText("Bilen har sluttet å trekke strøm – forvarmingen går nå på batteriet.")).toBeVisible();
+  await expect(page.getByTestId("incident-card")).toContainText("Bilen har sluttet å trekke strøm");
+  await expect(page.getByTestId("incident-card")).toContainText("Forvarmingen går nå på batteriet.");
   await page.goto("/?sheet=preheat");
   await expect(
     page.getByRole("dialog", { name: "Forvarm bilen" }).getByText("Bilen har sluttet å trekke strøm – forvarmingen går nå på batteriet."),
@@ -746,4 +760,356 @@ test("D70: sessions imported from Zaptec show in Historikk with the car's short 
   await expect(rows.first().getByText("Zaptec", { exact: true })).toBeVisible();
   await expect(rows.first().getByText(/kWh$/)).toBeVisible();
   await expect(rows.first().getByText(/\d+ kr$/)).toBeVisible();
+});
+
+// ---- D71: fresh status and commands from out-of-date screens ----
+
+test("D71: Lad nå on a second phone that still shows 'not charging' says who already started it", async ({ page }) => {
+  await preset(page, "Tilkoblet – ingen plan");
+  await page.goto("/");
+  const phone2 = await page.context().newPage();
+  await phone2.goto("/");
+  await expect(phone2.getByRole("button", { name: "Lad nå" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Lad nå" }).click();
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+
+  // phone2 hasn't refreshed: it still offers Lad nå.
+  await phone2.getByRole("button", { name: "Lad nå" }).click();
+  await expect(phone2.getByText(/^Lader allerede \(startet av Roger \d\d:\d\d\)$/)).toBeVisible();
+  // …and gets the fresh screen with the answer.
+  await expect(phone2.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+  await phone2.close();
+});
+
+test("D71: Stopp from an out-of-date screen doesn't stop a session someone else started since", async ({ page }) => {
+  await preset(page, "Lad nå");
+  await page.goto("/");
+  const phone2 = await page.context().newPage();
+  await phone2.goto("/");
+  await expect(phone2.getByRole("button", { name: "Stopp lading" })).toBeEnabled();
+
+  // Someone stops and starts again on the first phone.
+  await page.getByRole("button", { name: "Stopp lading" }).click();
+  await page.getByRole("alertdialog", { name: "Stoppe ladingen?" }).getByRole("button", { name: "Stopp lading" }).click();
+  await expect(page.getByText("Lading stoppet")).toBeVisible();
+  await page.goto("/");
+  await page.getByRole("button", { name: "Lad nå" }).click();
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+
+  // phone2 still shows the first session: its Stopp is refused.
+  await phone2.getByRole("button", { name: "Stopp lading" }).click();
+  await phone2.getByRole("alertdialog", { name: "Stoppe ladingen?" }).getByRole("button", { name: "Stopp lading" }).click();
+  await expect(phone2.getByText("Statusen har endret seg – sjekk igjen")).toBeVisible();
+  await phone2.close();
+
+  // The new session still runs: the last charger command is the start.
+  await page.goto("/dev/mock");
+  await expect(page.locator("[data-log-seq]").filter({ hasText: "StopChargingFinal" }).first()).toBeVisible();
+  const lastCommand = page.locator("[data-log-seq]").filter({ hasText: /ResumeCharging|StopChargingFinal/ }).first();
+  await expect(lastCommand).toContainText("ResumeCharging");
+});
+
+test("D71: Stopp when it has already been stopped says so and sends nothing", async ({ page }) => {
+  await preset(page, "Lad nå");
+  await page.goto("/");
+  const phone2 = await page.context().newPage();
+  await phone2.goto("/");
+  await expect(phone2.getByRole("button", { name: "Stopp lading" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Stopp lading" }).click();
+  await page.getByRole("alertdialog", { name: "Stoppe ladingen?" }).getByRole("button", { name: "Stopp lading" }).click();
+  await expect(page.getByText("Lading stoppet")).toBeVisible();
+
+  await phone2.getByRole("button", { name: "Stopp lading" }).click();
+  await phone2.getByRole("alertdialog", { name: "Stoppe ladingen?" }).getByRole("button", { name: "Stopp lading" }).click();
+  await expect(phone2.getByText("Allerede stoppet", { exact: true })).toBeVisible();
+  await expect(phone2.getByRole("button", { name: "Lad nå" })).toBeVisible();
+  await phone2.close();
+});
+
+test("D71: after Lad nå Hjem waits for the charger, with buttons locked, until Zaptec shows it", async ({ page }) => {
+  await preset(page, "Tilkoblet – ingen plan");
+  await page.getByLabel("Kommando-forsinkelse").selectOption("8");
+  await expect(page.getByText("Kommandoer vises i laderens status etter 8 s")).toBeVisible();
+  await page.goto("/");
+  await page.getByRole("button", { name: "Lad nå" }).click();
+
+  const waiting = page.getByTestId("freshness");
+  await expect(waiting).toHaveText("Venter på at laderen starter…");
+  // The action buttons are locked meanwhile.
+  const actions = page.getByRole("button", { name: /^(Lad nå|Forvarm bilen|Stopp lading)$/ });
+  expect(await actions.count()).toBeGreaterThan(0);
+  for (const button of await actions.all()) await expect(button).toBeDisabled();
+  // Polling picks the change up without a manual refresh (lag 8 s, polled every 5 s).
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeEnabled({ timeout: 20_000 });
+  await expect(waiting).toHaveCount(0);
+});
+
+test("D71: a screen shown again after 10 s says it's updating and locks buttons until fresh", async ({ page }) => {
+  await preset(page, "Tilkoblet – ingen plan");
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Lad nå" })).toBeEnabled();
+  // Watch for the lock: the line and disabled buttons, however briefly they show.
+  await page.evaluate(() => {
+    const w = window as unknown as { __sawLock?: boolean };
+    new MutationObserver(() => {
+      const line = document.querySelector("[data-testid=freshness]");
+      const button = [...document.querySelectorAll("main button")].find((b) => b.textContent === "Lad nå") as
+        | HTMLButtonElement
+        | undefined;
+      if (line?.textContent === "Oppdaterer…" && button?.disabled) w.__sawLock = true;
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+  });
+  // The app goes to the background (no refreshes meanwhile) and comes back after 11 s.
+  const setVisibility = (state: "hidden" | "visible") =>
+    page.evaluate((s) => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => s });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, state);
+  await setVisibility("hidden");
+  await page.waitForTimeout(11_000);
+  await setVisibility("visible");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sawLock?: boolean }).__sawLock ?? false)).toBe(true);
+  await expect(page.getByTestId("freshness")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Lad nå" })).toBeEnabled();
+});
+
+// ---- D73: charger health ----
+
+test("D73/D75: a charger warning stays in Innstillinger, and is a fault card on Hjem while charging is wanted", async ({ page }) => {
+  await preset(page, "Tilkoblet – ingen plan");
+  await page.goto("/settings");
+  await expect(page.getByText("Tilkoblet · ingen feil · signal -71 dBm")).toBeVisible();
+
+  await page.goto("/dev/mock");
+  await page.getByLabel("Laderen melder").selectOption("2");
+  await expect(page.getByText("Laderen melder advarsel 2")).toBeVisible();
+  await page.goto("/settings");
+  await expect(page.getByText(/^Feil: høy temperatur.*WARNING_TEMPERATURE/)).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByTestId("incident-card")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Lad nå" }).click();
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+  await mockButton(page, "Bilen slutter å trekke strøm");
+  await tick(page);
+  await page.goto("/");
+  const card = page.getByTestId("incident-card");
+  await expect(card).toHaveAttribute("data-tone", "fault");
+  await expect(card).toContainText("Laderen melder en feil");
+  await expect(card).toContainText("Høy temperatur. Ladingen er stoppet.");
+  await expect(card.getByRole("button", { name: "Prøv igjen" })).toBeVisible();
+});
+
+test("Mock panel in one tab changes Hjem in another, without a reload", async ({ page }) => {
+  // Hjem in this tab, the panel in a second tab of the same browser -- both
+  // stay visible, like two windows side by side.
+  await preset(page, "Tilkoblet – ingen plan");
+  const panel = await page.context().newPage();
+  await panel.goto("/dev/mock");
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Lad nå" })).toBeEnabled();
+
+  // Unplugging in the panel shows on Hjem at once (well inside the minute refresh).
+  await panel.getByRole("button", { name: "Koble fra bil", exact: true }).click();
+  await expect(page.getByText("Ikke tilkoblet", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await panel.getByLabel("Laderen melder").selectOption("2");
+  await expect(panel.getByText("Laderen melder advarsel 2")).toBeVisible();
+
+  // "Kommando-forsinkelse" survives picking a scenario afterwards.
+  await panel.getByLabel("Kommando-forsinkelse").selectOption("20");
+  await expect(panel.getByText("Kommandoer vises i laderens status etter 20 s")).toBeVisible();
+  await untilNewLogLine(panel, "Scenario: Tilkoblet – ingen plan", () =>
+    panel.getByRole("button", { name: "Tilkoblet – ingen plan", exact: true }).click(),
+  );
+  await expect(panel.getByLabel("Kommando-forsinkelse")).toHaveValue("20");
+  await expect(panel.getByLabel("Laderen melder")).toHaveValue("2");
+
+  // Lad nå on Hjem then waits for the charger.
+  await expect(page.getByRole("button", { name: "Lad nå" })).toBeEnabled();
+  await page.getByRole("button", { name: "Lad nå" }).click();
+  await expect(page.getByTestId("freshness")).toHaveText("Venter på at laderen starter…");
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeDisabled();
+
+  // Back to normal.
+  await panel.getByLabel("Laderen melder").selectOption("0");
+  await expect(panel.getByText("Laderen melder ingen advarsler")).toBeVisible();
+  await panel.getByLabel("Kommando-forsinkelse").selectOption("0");
+  await expect(panel.getByText("Kommandoer vises i laderens status etter 0 s")).toBeVisible();
+  await panel.close();
+});
+
+
+// ---- D75: unexpected stops are always visible ----
+
+async function shiftIncidents(page: Page) {
+  // The incident waits (2 min, 5 min, 10 min, 30 min) without waiting: timestamps move back 10 min, then a tick.
+  await mockButton(page, "Spol varsler 10 min fram");
+  await expect(page.getByText("Varsler: tiden spolt 10 min fram").first()).toBeVisible();
+  await tick(page);
+}
+
+async function chargeNowWithEnergy(page: Page) {
+  await preset(page, "Tilkoblet – ingen plan");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Lad nå" }).click();
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+  await mockButton(page, "+1 kWh");
+  await tick(page); // binds the row and reads its energy
+}
+
+const pushLines = (page: Page, title: string) => page.locator("[data-log-seq]").filter({ hasText: `[push] ${title}` });
+
+test("D75: the car stops during Lad nå: amber card, Avslutt ladingen, one push, one activity line", async ({ page }) => {
+  await freshLog(page);
+  await chargeNowWithEnergy(page);
+  await mockButton(page, "Bilen slutter å trekke strøm");
+  await shiftIncidents(page);
+  await expect(pushLines(page, "Bilen sluttet å lade — Stoppet ved")).toHaveCount(1);
+
+  await page.goto("/");
+  await expect(page.getByText("Bilen sluttet å lade", { exact: true })).toBeVisible();
+  const card = page.getByTestId("incident-card");
+  await expect(card).toHaveAttribute("data-tone", "declined");
+  await expect(card).toContainText("Trolig bilens ladegrense eller timer");
+  await expect(card.getByRole("link", { name: "Åpne myOpel ↗" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Avslutt ladingen" })).toBeVisible();
+  await expect(page.getByText(/^Bilen sluttet å lade – \d+\u202F%$/)).toBeVisible();
+
+  // Another tick: no second push. Drawing again clears it.
+  await tick(page);
+  await expect(pushLines(page, "Bilen sluttet å lade")).toHaveCount(1);
+  await mockButton(page, "Bilen trekker strøm igjen");
+  await tick(page);
+  await page.goto("/");
+  await expect(page.getByTestId("incident-card")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+});
+
+test("D75: a full car is good news, and its Lad nå ends by itself after 30 min", async ({ page }) => {
+  await freshLog(page);
+  await chargeNowWithEnergy(page);
+  const slider = page.getByRole("slider");
+  await slider.fill("97");
+  await slider.press("ArrowRight");
+  await mockButton(page, "Bilen rapporterer");
+  await mockButton(page, "Bilen slutter å trekke strøm");
+  await shiftIncidents(page);
+  await expect(pushLines(page, "Bilen er trolig full")).toHaveCount(1);
+  await page.goto("/");
+  await expect(page.getByText("Bilen er trolig full", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("incident-card")).toHaveCount(0);
+  await expect(page.getByText(/^Ladingen avsluttes av seg selv kl\. \d\d:\d\d/)).toBeVisible();
+
+  for (let i = 0; i < 3; i++) await shiftIncidents(page);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Lad nå" })).toBeVisible();
+  await expect(page.getByText("Bilen sluttet å lade – trolig full")).toBeVisible();
+});
+
+test("D75: idling is a calm pause; after 30 min it's a stop with its push", async ({ page }) => {
+  await freshLog(page);
+  await chargeNowWithEnergy(page);
+  await mockButton(page, "Bilen trekker 0 A (modus 3)");
+  await tick(page); // opens the incident; the shift then makes it 10 min old
+  await shiftIncidents(page);
+  await page.goto("/");
+  await expect(page.getByText("Bilen tar en pause", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("incident-card")).toHaveAttribute("data-tone", "calm");
+  await page.goto("/dev/mock");
+  await expect(pushLines(page, "Bilen sluttet å lade")).toHaveCount(0);
+  for (let i = 0; i < 3; i++) await shiftIncidents(page);
+  await expect(pushLines(page, "Bilen sluttet å lade")).toHaveCount(1);
+  await page.goto("/");
+  await expect(page.getByText("Bilen sluttet å lade", { exact: true })).toBeVisible();
+});
+
+test("D75: Lad nå that never starts drawing says so after 5 min", async ({ page }) => {
+  await freshLog(page);
+  await preset(page, "Tilkoblet – ingen plan");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Lad nå" }).click();
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+  await mockButton(page, "Bilen slutter å trekke strøm");
+  await shiftIncidents(page);
+  await expect(pushLines(page, "Bilen lader ikke")).toHaveCount(1);
+  await page.goto("/");
+  await expect(page.getByText("Bilen har ikke begynt å lade", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("incident-card")).toContainText("Sjekk kabelen og bilens timer");
+});
+
+test("D75: a plan whose car stops before the target keeps its plan row and Avbryt plan", async ({ page }) => {
+  await freshLog(page);
+  await preset(page, "Lader etter plan");
+  await tick(page);
+  await mockButton(page, "Bilen slutter å trekke strøm");
+  // The plan sends its starts (D64: three tries); the car ignores them. No fault push for that.
+  for (let i = 0; i < 4; i++) await tick(page);
+  await shiftIncidents(page);
+  await expect(pushLines(page, "Bilen sluttet å lade — Stoppet ved")).toHaveCount(1);
+  await expect(pushLines(page, "Ladingen stoppet")).toHaveCount(0);
+  await page.goto("/");
+  await expect(page.getByText("Bilen sluttet å lade", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("incident-card")).toContainText("Planen blir ikke ferdig hvis bilen ikke tar strøm");
+  await expect(page.getByRole("button", { name: "Avbryt plan" })).toBeVisible();
+});
+
+test("D75: the charger offline during Lad nå: fault card after 10 min, one Prøv igjen, then 'Laderen er tilbake'", async ({ page }) => {
+  await freshLog(page);
+  await chargeNowWithEnergy(page);
+  await page.getByText("Laderen er online").click();
+  await expect(page.getByRole("checkbox", { name: "Laderen er online" })).not.toBeChecked();
+  await tick(page);
+  await shiftIncidents(page);
+  await expect(pushLines(page, "Laderen svarer ikke")).toHaveCount(1);
+
+  await page.goto("/");
+  const card = page.getByTestId("incident-card");
+  await expect(card).toHaveAttribute("data-tone", "fault");
+  await expect(card).toContainText("Ingen kontakt med laderen");
+  await expect(card).toContainText("Kabelen: sitter den godt i bilen og laderen?");
+  await card.getByRole("button", { name: "Prøv igjen" }).click();
+  await expect(page.getByText("Laderen svarer fortsatt ikke")).toBeVisible();
+  await expect(card.getByRole("button", { name: "Prøv igjen" })).toHaveCount(0);
+
+  await page.goto("/dev/mock");
+  await page.getByText("Laderen er online").click();
+  await expect(page.getByRole("checkbox", { name: "Laderen er online" })).toBeChecked();
+  await tick(page);
+  await page.goto("/");
+  await expect(page.getByTestId("incident-card")).toHaveCount(0);
+  await expect(page.getByText("Laderen er tilbake")).toBeVisible();
+  await expect(page.getByText("Prøvde igjen (Roger)")).toBeVisible();
+});
+
+test("D75: unplugging before a plan's target leaves a line in Aktivitet, no warning", async ({ page }) => {
+  await freshLog(page);
+  await preset(page, "Lader etter plan");
+  await tick(page);
+  await mockButton(page, "Koble fra bil");
+  await tick(page);
+  await expect(page.locator("[data-log-seq]").filter({ hasText: "[push] Bilen" })).toHaveCount(0);
+  await page.goto("/history?tab=activity");
+  await expect(page.getByText(/^Koblet fra ved \d+\u202F% – planen ble ikke ferdig$/)).toBeVisible();
+});
+
+// ---- D72: CompletedSession ----
+
+test("D72: unplugging records Zaptec's exact final energy for the session", async ({ page }) => {
+  await preset(page, "Tilkoblet – ingen plan");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Lad nå" }).click();
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+  await tick(page); // binds and reads 0 kWh
+  // Energy the tick never saw: delivered right before the unplug.
+  await mockButton(page, "+1 kWh");
+  await mockButton(page, "+1 kWh");
+  await mockButton(page, "Koble fra bil");
+  await tick(page); // closes the row with the last reading (0), then CompletedSession raises it
+  await page.goto("/history");
+  await expect(page.getByRole("heading", { name: "Historikk" })).toBeVisible();
+  await expect(
+    page.locator("li").filter({ hasText: /I dag ·/ }).filter({ hasText: "Lad nå" }).filter({ hasText: /2,\d kWh/ }).first(),
+  ).toBeVisible();
 });

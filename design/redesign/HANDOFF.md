@@ -19,7 +19,7 @@ All numbers in the mockups are sample data. The real battery capacity is 46 kWh 
 | `favicon.ico` | 16/32/48 ICO | `src/app/favicon.ico` (replace) |
 | `apple-icon.png` | 180², opaque | `src/app/apple-icon.png` (replace) |
 | `icon-192.png`, `icon-512.png` | PWA icons, purpose `any` | `public/icons/` |
-| `icon-maskable-512.png` | PWA icon, purpose `maskable` (art sits inside the 80 % safe zone) | `public/icons/` |
+| `icon-maskable-512.png` | PWA icon, purpose `maskable` (art sits inside the 80 % safe zone) | `public/icons/` |
 | `badge-96.png`, `badge.svg` | Android notification badge, white on transparent | `public/icons/` |
 | `favicon-32.png` | Spare PNG favicon | optional |
 | `tokens.json` | Colour, radius, type and size tokens for both themes | reference |
@@ -78,9 +78,9 @@ One hero card plus one primary action. Derive a `homeState` in a pure, unit-test
     - `ready`: the ring is at the reached %, with the target tick and a lime check badge; "mål nådd" replaces "målt". The "Siste lading" card shows Fra % · Levert kWh · Tid · Kostnad (Norgespris), "Plan av {user}", and a "Detaljer ›" link to the session in Historikk. The state lasts until the car is unplugged (→ `noCar`; the session then appears in Siste hendelser/Historikk) or any new action starts (Planlegg, Lad nå, Forvarm). Derive it from the most recent `completed` schedule for the charger whose `zaptecSessionId` matches the current, still-connected session — no new table needed.
     - "Koblet fra" card (only in `noCar`; replaces "Batteri i dag"):
         - The window always starts at the last unplug. The header shows that moment with a day word: "i dag 07:31", "i går 18:40", "man. 16:40", or a date if older than 6 days. Never a bare HH:MM, which is ambiguous across days.
-        - Two figures: **Batteri** change since the unplug ("−18 %"), from the latest reading of any age, and **Kjørt** = odometer now − last odometer reading at or before the unplug ("ca. 41 km").
+        - Two figures: **Batteri** change since the unplug ("−18 %"), from the latest reading of any age, and **Kjørt** = odometer now − last odometer reading at or before the unplug ("ca. 41 km").
         - Show "Kjørt" only when the odometer moved by ≥ 1 km and there are readings on both sides of the unplug; otherwise leave the slot out. With sparse readings the figure is rough, hence "ca.".
-        - Sparkline of battery % from the unplug to the latest reading, capped to the last 7 days. Dashed lines mark each midnight (labelled "midnatt" when there is one). End labels: "{day word} HH:MM · NN %".
+        - Sparkline of battery % from the unplug to the latest reading, capped to the last 7 days. A thin dashed line marks each midnight, unlabelled, so text never collides on a narrow phone. Only the two end labels carry text: "{day word} HH:MM · NN %", left- and right-aligned.
         - Hide the whole card if there is no reading after the unplug.
     - `preheating`: sun icon in amber.
 - **Stats row while charging:** Levert (session kWh), Tid, Kostnad (kWh × Norgespris).
@@ -180,7 +180,7 @@ Switching to `now` or `smart` shows the "anyone at the charger can charge" dialo
 5. If the slots can't cover the need: use every slot and flag `late` (this feeds the `plan_late` notification).
 6. Out of scope for now (decided): spreading the charge at reduced current ("Skån effekttoppen"). It would need the installation's `availableCurrent` via the Zaptec API, unverified on this charger. Revisit later.
 
-**Execution:** on plug-in the tick creates an internal `charge_schedules` row with `source = 'smart'` and the planned blocks (JSON). The existing resume/pause loop then follows the blocks instead of `latestStartTime`. A user plan, Lad nå, Forvarm or guest mode cancels the smart row for that session. Re-plan when SoC changes by more than 5 points, or when the learned kW is off by more than 20 % after the first 10 minutes of charging.
+**Execution:** on plug-in the tick creates an internal `charge_schedules` row with `source = 'smart'` and the planned blocks (JSON). The existing resume/pause loop then follows the blocks instead of `latestStartTime`. A user plan, Lad nå, Forvarm or guest mode cancels the smart row for that session. Re-plan when SoC changes by more than 5 points, or when the learned kW is off by more than 20 % after the first 10 minutes of charging.
 
 **Prices later:** `priceFn` is an interface. `TariffPriceSource` (Norgespris + Elvia) ships now. A future `SpotPriceSource` (NO1) uses real hourly prices when they are published (around 13:00 for the next day). Otherwise it estimates from the last 4 weeks' average for the same weekday and hour, and the UI labels the cost "anslag".
 
@@ -209,7 +209,7 @@ Smartcar already reports `Odometer.TraveledDistance`; it is stored in `vehicle_t
 - **Backfill (owner decision):** one migration sets `car_id` to the default car on every existing `charge_schedules` row, every non-guest `manual_charge_sessions` row and every `vehicle_telemetry` row. Previous sessions are all the Mokka.
 - **UI:**
     - Innsikt shows a car chip under the title: "Opel Mokka", with "Gjestelading telles separat". With one car it is a label, not a picker; with several cars it becomes the picker from "Ladere og biler".
-    - Historikk rows prefix the detail with the car's short name ("Mokka · 41 → 80 %"); guest rows show "Gjest · {name}".
+    - Historikk rows prefix the detail with the car's short name ("Mokka · 41 → 80 %"); guest rows show "Gjest · {name}".
     - The `ready` "Siste lading" line starts with the car name.
 
 **Kjøring card in Innsikt** (below Per person), for the selected month and car:
@@ -225,10 +225,88 @@ Smartcar already reports `Odometer.TraveledDistance`; it is stored in `vehicle_t
 **Rules:**
 
 - Use SoC drops, not home-charged kWh, for consumption, because the car may also charge elsewhere. A pair where the battery rose with no home session in between counts as "lading et annet sted": exclude it from consumption, count it in the footnote, and leave it out of cost.
-- Readings are sparse (hours apart) and the battery % is an integer, so these are monthly figures only, with no per-trip numbers. Show efficiency/consumption/cost only when the month has ≥ 100 km and ≥ 5 % total SoC drop; otherwise show km only, with "For lite data til å regne forbruk ennå".
+- Readings are sparse (hours apart) and the battery % is an integer, so these are monthly figures only, with no per-trip numbers. Show efficiency/consumption/cost only when the month has ≥ 100 km and ≥ 5 % total SoC drop; otherwise show km only, with "For lite data til å regne forbruk ennå".
 - Use "mil" (10 km), the Norwegian convention, for kWh and kr per distance, and km for distance and km/kWh. Format with a decimal comma: 6,1 km/kWh · 1,64 kWh/mil · ca. 2,65 kr/mil.
 - Header line: the latest odometer reading and its age ("km-stand 18 342 · målt i går 18:05"), honest about freshness.
 - Pure function: `monthDriving(telemetry, homeSessions, month, capacityKwh, avgNokPerKwh)` in `src/lib/ui/driving.ts`, unit-tested with sparse readings, an away charge and a month with no data.
+
+## 6d. Innsikt – year view (design update 2026-11-13)
+
+A "Måned | År" segmented control sits under the Innsikt title; the month view is unchanged. Route: `/insights?year=2026` (`?month=` keeps working). The ‹ › arrows step by year in the year view.
+
+The year view uses the same cards and rules as the month view, aggregated over Jan–Dec of the selected year, up to today for the current year:
+
+| Card | Content |
+| --- | --- |
+| KPIs | Energi i år (kWh) and Kostnad i år (kr, with average kr/kWh). The comparison is "+N % mot jan.–nov. {year−1}", i.e. the same period last year. Hide the comparison when the previous year has no data in that period. |
+| kWh per måned | 12 bars; the current month's bar is outlined (dashed) as unfinished, and future months are empty. Tapping a bar opens that month in the month view. Value labels above bars only when they fit. |
+| Per person | Same split as the month view, summed for the year: users, Gjest, Smart and Automatisk rows. |
+| Kjøring | km driven in the year (last odometer reading of the year − last reading before 1 Jan, or the first reading of the year). Efficiency, consumption and cost per mil over the whole year use the same SoC-drop method as §6c. A km/kWh-per-month line shows seasonal variation, with the lowest and highest month labelled, and leaves out months below the §6c data threshold. Footnote: "Kaldt vær gir høyere forbruk. Måneder med for lite data er utelatt fra kurven." |
+
+**Implementation:** add `yearInsights(records, year, now)` and `yearDriving(telemetry, homeSessions, year, capacityKwh, prices)` next to the month functions, built from the month results so the two views always agree (the year total equals the sum of its months). Unit-test that sum and the "same period last year" comparison.
+
+## 6e. Unexpected stops – one warning family (D75, design update 2026-11-13)
+
+Answers `BRIEF-lad-na-car-not-drawing.md` and its addendum. Artboards on the Design page: row "Lad nå – bilen trekker ikke strøm" (`Hjem-lad-na.dc.html`, prop `variant` full / stopped / idle / never) and row "Feil og stopp – ett varselmønster" (`Hjem-varsel.dc.html`, prop `variant` fault / offline / locked / declined), each with dark and light. Copy is in `strings.nb.json` → `home.incident` and `activity`; push copy in `notifications.nb.json` (`charge_now_*`, `car_declined_plan`, `fault_*`, `incidentRules`).
+
+**Percent (owner, 2026-11-13):** always a narrow no-break space (U+202F) between the number and %, e.g. "80 %", in copy, formatters and push text. Never a normal space or none.
+
+**"Lad nå" is a button, not a noun (owner, 2026-11-13):** use "Lad nå" only as the button label or when pointing at the button ("trykk Lad nå"). Status, hints and activity lines describe what happens: "Roger startet lading", "Ladingen avsluttes av seg selv …", button "Avslutt ladingen". The Historikk tag for these sessions is "Manuell" (owner, 2026-11-13). Push to the other devices on manual taps: no (Q14).
+
+**Naming (owner, 2026-11-13):** say "laderen" in the UI, not "Zaptec". Name Zaptec only for its own things: Zaptec-appen, Zaptec Portal, the Zaptec account, the model name (Zaptec Go) and "Importert fra Zaptec".
+
+**Voice (trial, owner 2026-11-13):** the system speaks as "jeg" ("Jeg prøvde 3 ganger …"), never "Appen" or "Lading" ("Lading prøvde" reads as "the charging tried"). **Open:** find a better term for the part of the system doing the orchestration work ("the minions in the machine"). Older strings that say "vi" or "Appen" (`planned.timelineNote`, the `plan_late` push, `noControl.title`, `preheatSheet.step2Sub`) are not changed yet.
+
+### The card (one component for every warning)
+
+- **Placement:** directly under the battery-ring card, above the plan row and the main button. One card at a time; a fault outranks a car-declined warning.
+- **Anatomy:** icon (20 px) · title (15/600) · body (13, muted) · optional check list · optional outline action(s) (44 px high). `role="status"`.
+- **Two tones:**
+  - *Fault* = `--danger` icon (octagon + !), `--danger-tint` background, `--danger-border` (new token in `theme.css`). The ring badge is a red ✕, and the ring arc uses `--ring-muted`.
+  - *Car declined* = `--amber` icon (triangle + !), `--amber-bg`, `--amber-border`. The ring badge is an amber "!".
+  - *Probably full* and *idling* stay calm: a green ✓ or grey pause badge and no tinted card (idling gets a neutral info card).
+- **Fold in what's already built:** the D68 Forvarm-on-battery line becomes an amber card ("Bilen har sluttet å trekke strøm" / "Forvarmingen går nå på batteriet."). The D73 health line becomes a fault card *only while charging is wanted*; otherwise it stays in Innstillinger → System. D64 and D65 become `startFailed` and `locked` below.
+- The single filled button stays the state's own action (Avbryt plan, Avslutt ladingen, Stopp forvarming). The card's actions are always outline buttons.
+
+### Fault level (charger, Zaptec or the app failed)
+
+| Incident | Status / sub | Card | Actions |
+| --- | --- | --- | --- |
+| Start failed (D64) | "Ladingen har stoppet" / "Stoppet {time} · trenger ca. {duration} til" | "Laderen startet ikke ladingen igjen" – "Jeg prøvde {count} ganger {from}–{to} og venter nå, så laderen ikke blir sperret." + check list | Prøv igjen |
+| Charger offline while charging is wanted (10 min) | "Laderen svarer ikke" / "Sist kontakt {time} · planen lader ikke" | "Ingen kontakt med laderen" – "Laderen har ikke svart på {duration}. …" + check list | Prøv igjen |
+| Locked / loop guard (D65) | "Ladingen er stoppet" / "Laderen ble sperret {time}" | "Laderen stoppet for mange ganger" – "Koble bilen fra og til igjen, så kan den lade. Jeg prøver ikke på nytt av meg selv. Skjer det igjen: sjekk Zaptec-appen." | none |
+| Charger warning (D73) while charging is wanted | "Ladingen har stoppet" | "Laderen melder en feil" – "{warning}. Ladingen er stoppet." + check list | Prøv igjen |
+
+**Check list (owner, 2026-11-13: show what to check):** "Laderen: har den strøm og nett?" · "Kabelen: sitter den godt i bilen og laderen?" · "Zaptec-appen: melder den en feil?"
+
+**Prøv igjen (owner said yes):** one manual try per incident. Re-read the charger. If it's online, send one start (no automatic retries after it). If it's still offline, show the toast "Laderen svarer fortsatt ikke" and send nothing. After that one try the button is hidden until the incident clears; the check list stays. Never offered for the lock/loop guard. Log "Prøvde igjen ({name})" in activity.
+
+### Car-declined level (the car stopped taking power)
+
+During a plan, Smart lading or an automatic session, before the target: "Bilen sluttet å lade" / "Kl. {time}, etter {duration} lading", amber card "Trolig bilens ladegrense eller timer" – "Planen blir ikke ferdig hvis bilen ikke tar strøm. Sjekk i myOpel." + Åpne myOpel ↗. The plan row and "Avbryt plan" stay. Smart lading keeps "Avbryt for i natt".
+
+Lad nå:
+
+| Case | Rule | Status line / sub | Extra card | Amber? |
+| --- | --- | --- | --- | --- |
+| 1 Probably full | not drawing, kWh > 0, battery ≥ 95 % or ≥ last plan target | "Bilen er trolig full" / "Sluttet å lade {hh:mm} · etter {duration}" | none; green check badge on the ring | no |
+| 2 Stopped below full | mode 5, kWh > 0, battery below that | "Bilen sluttet å lade" / "Kl. {hh:mm}, etter {duration} lading" | amber: "Trolig bilens ladegrense eller timer" – "Sjekk i myOpel." + Åpne myOpel ↗ | yes |
+| 3 Idling | mode 3, ≈0 A on all phases, kWh > 0, < 30 min | "Bilen tar en pause" / "Har ikke ladet siden {hh:mm} · {n} min" | calm info card: "Laderen er fortsatt klar. Bilen starter ofte igjen av seg selv, for eksempel etter batterivarming." | no |
+| 4 Never started | 0 kWh and no power 5 min after Lad nå | "Bilen har ikke begynt å lade" / "Startet {hh:mm} · 0 kWh på {n} min" | amber: "Sjekk kabelen og bilens timer" – "Sitter kabelen godt? Har bilen en ladetimer på?" + Åpne myOpel ↗ | yes |
+
+- Idling for 30 min below full turns into case 2's copy and amber card.
+- **Button:** in cases 1–4 the filled button reads **"Avslutt ladingen"** (stop + close the session). It goes back to "Stopp lading" when the car draws again.
+- **Ending by itself:** only case 1. Close the Lad nå session 30 min after the car stopped, if it hasn't drawn power since. The end time is when the car stopped.
+
+### Detection, clearing and the trace
+
+- "Not drawing" = mode 5 at once, otherwise 2 min with no power (D68/D69). Never an automatic restart.
+- **Expected endings (no warning):** Stopp/cancel/"Avbryt for i natt", target or window end, a Forvarm ending, unplug.
+- **Unplug before a plan's target:** no warning and no push, but an activity line "Koblet fra ved {percent} % – planen ble ikke ferdig".
+- **Clears when:** charging resumes, the user acts (Stopp, Avbryt, unplug), or the plan's window ends. The incident then closes.
+- **Push:** exactly one per incident, both levels (owner decided). The flag is saved before sending. Every household device gets it.
+- **Trace:** one activity line per incident (`activity.car_stopped*`, `start_failed`, `charger_offline`, `charger_locked`, `charger_warning`), plus "Laderen er tilbake" when an offline incident clears. Pauses (case 3 under 30 min) get no line. So a fault in the night is still visible in Siste hendelser in the morning.
+- The state lives on the server; both phones show the same thing. No local dismiss.
 
 ## 7. Data model (prepare for multiple chargers and cars, show nothing extra yet)
 

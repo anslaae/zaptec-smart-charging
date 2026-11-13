@@ -4,12 +4,17 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 import { fill, nb } from "@/lib/i18n/nb";
 import { useConfirm, type ConfirmOptions, type ConfirmValues } from "@/components/ConfirmDialog";
+import { useFreshness, type SettleTarget } from "@/components/Freshness";
 
 export interface ActionOutcome {
   error?: string;
   success?: boolean;
   /** The Zaptec command itself failed (nothing else was changed): offer "Prøv igjen". */
   commandFailed?: boolean;
+  /** D71: already as asked -- shown as a neutral notice, nothing was done. */
+  notice?: string;
+  /** D71: the screen was out of date -- nothing was done; the response carries a fresh render. */
+  stale?: boolean;
 }
 
 export type ToastText = string | { title: string; body?: string };
@@ -23,6 +28,9 @@ const UNDO_MS = 10_000;
  * - A failed charger command opens the "Fikk ikke kontakt med laderen"
  *   dialog with "Prøv igjen"; other errors are error toasts.
  * - `undo`: an "Angre" action on the success toast for 10 s.
+ * - `settle`: after a charger command, keep the screen polling (and the
+ *   buttons locked) until it shows the charger charging / stopped (D71).
+ * - While the shown render is stale or settling, the button is disabled.
  * The result is handled right after the awaited call, not in an effect: most
  * of these actions change the very state that rendered the button, so the
  * refresh can unmount it before an effect would run.
@@ -37,6 +45,7 @@ export function ActionButton({
   pendingLabel = nb.actions.working,
   onSuccess,
   undo,
+  settle,
 }: {
   action: (values: ConfirmValues) => Promise<ActionOutcome>;
   label: string;
@@ -47,9 +56,11 @@ export function ActionButton({
   pendingLabel?: string;
   onSuccess?: () => void;
   undo?: { action: () => Promise<ActionOutcome>; success: ToastText };
+  settle?: SettleTarget;
 }) {
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const freshness = useFreshness();
 
   const run = (values: ConfirmValues) =>
     startTransition(async () => {
@@ -68,10 +79,20 @@ export function ActionButton({
         if (retry) run(values);
         return;
       }
+      if (result.stale) {
+        toast.error(result.error ?? errorMessage);
+        return;
+      }
       if (result.error) {
         toast.error(errorMessage, { description: result.error });
         return;
       }
+      if (result.notice) {
+        toast.info(result.notice);
+        onSuccess?.();
+        return;
+      }
+      if (settle) freshness.settle(settle);
       const text = typeof success === "string" ? { title: success } : success;
       toast.success(text.title, {
         description: text.body,
@@ -96,7 +117,7 @@ export function ActionButton({
   return (
     <button
       type="button"
-      disabled={pending}
+      disabled={pending || freshness.locked}
       className={`${className} cursor-pointer disabled:cursor-not-allowed disabled:opacity-60`}
       onClick={async () => {
         const values = confirmOptions ? await confirm(confirmOptions) : {};

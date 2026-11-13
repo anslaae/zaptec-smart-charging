@@ -101,8 +101,16 @@ export async function applyPreset(key: PresetKey): Promise<void> {
   const now = new Date();
   const store = mockStore();
   const keep = store.sim.settings;
-  // A fresh simulated charger each time, keeping power/speed choices.
-  const sim = new ChargerSim(now, { powerKw: keep.powerKw, speed: keep.speed, capacityKwh: keep.capacityKwh });
+  // A fresh simulated charger each time, keeping the panel's choices
+  // (power, speed, command delay, warning) -- a scenario sets up the car and
+  // plans, not how the test charger behaves. The command delay is switched on
+  // only after the setup, whose own commands (plug in + stop) take effect now.
+  const sim = new ChargerSim(now, {
+    powerKw: keep.powerKw,
+    speed: keep.speed,
+    capacityKwh: keep.capacityKwh,
+    warnings: keep.warnings,
+  });
   store.sim = sim;
   await clearOpenState(now);
 
@@ -280,5 +288,6 @@ export async function applyPreset(key: PresetKey): Promise<void> {
       break;
   }
   sim.reading ??= { percent: Math.round(sim.batteryPercent), at: new Date(now.getTime() - 40 * MINUTE) };
+  sim.settings.commandLagSeconds = keep.commandLagSeconds;
   mockLog("info", `Scenario: ${PRESETS[key]}`);
 }

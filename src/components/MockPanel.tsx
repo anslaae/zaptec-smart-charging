@@ -9,6 +9,7 @@ import type { PresetKey } from "@/lib/mock/presets";
 import {
   mockApplyPreset,
   mockCronTick,
+  mockShiftIncidentTime,
   mockFinishPlan,
   mockHealthCheck,
   mockResetAll,
@@ -18,6 +19,7 @@ import {
   type SimAction,
 } from "@/lib/mock/actions";
 import { formatTime } from "@/lib/datetime";
+import { announceMockChange } from "@/components/MockSync";
 
 const MODE_NAME: Record<number, string> = { 1: "Frakoblet", 2: "Tilkoblet, venter", 3: "Lader", 5: "Stoppet/hviler" };
 
@@ -66,6 +68,7 @@ export function MockPanel({
         toast.error(error instanceof Error ? error.message : String(error));
       }
       router.refresh();
+      announceMockChange();
     });
   const simDo = (action: SimAction) => run(() => mockSim(action));
 
@@ -117,6 +120,9 @@ export function MockPanel({
           </button>
           <button type="button" disabled={pending} className={btn} onClick={() => run(mockSmartcarWebhook)}>
             Smartcar-webhook
+          </button>
+          <button type="button" disabled={pending} className={btn} onClick={() => run(() => mockShiftIncidentTime(10))}>
+            Spol varsler 10 min fram
           </button>
           <button type="button" disabled={pending} className={btn} onClick={() => run(mockZaptecSessionEnd)}>
             Zaptec økt-slutt
@@ -230,6 +236,36 @@ export function MockPanel({
           <input type="checkbox" checked={sim.smartcarDown} onChange={(e) => simDo({ type: "setSmartcarDown", value: e.target.checked })} className="h-5 w-5" />
           Smartcar svarer ikke
         </label>
+        {/* D71: Zaptec's /state lags a command; D73: the charger's Warnings (804). */}
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <label className="flex flex-col gap-1">
+            Kommando-forsinkelse
+            <select
+              aria-label="Kommando-forsinkelse"
+              className="min-h-11 rounded border border-border bg-surface px-2"
+              value={sim.commandLagSeconds}
+              onChange={(e) => simDo({ type: "setCommandLag", seconds: Number(e.target.value) })}
+            >
+              {[0, 8, 20, 60].map((s) => (
+                <option key={s} value={s}>{s} s</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            Laderen melder
+            <select
+              aria-label="Laderen melder"
+              className="min-h-11 rounded border border-border bg-surface px-2"
+              value={sim.warnings}
+              onChange={(e) => simDo({ type: "setWarnings", value: Number(e.target.value) })}
+            >
+              <option value={0}>Ingen advarsel</option>
+              <option value={16}>Stoppet for mange ganger</option>
+              <option value={2}>Høy temperatur</option>
+              <option value={512}>Ukjent (512)</option>
+            </select>
+          </label>
+        </div>
       </Card>
 
       <Card title="Logg (kommandoer, varsler, kall)">

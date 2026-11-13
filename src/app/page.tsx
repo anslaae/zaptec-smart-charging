@@ -31,12 +31,16 @@ import { AppHeader } from "@/components/AppHeader";
 import { HomeCard } from "@/components/HomeCard";
 import { RecentActivity } from "@/components/RecentActivity";
 import { ScheduleCreatedToast } from "@/components/ScheduleCreatedToast";
-import { AutoRefresh } from "@/components/AutoRefresh";
+import { FreshnessProvider, MOCK_REFRESH_MS } from "@/components/Freshness";
+import { MOCK_MODE } from "@/lib/mock/mode";
+import { serializeSeen } from "@/lib/zaptec/freshness";
 import { DebugProvider } from "@/components/DebugProvider";
 import { LentOutSheet, PlanInProgressSheet, PlanSheet, type PlanSheetData } from "@/components/PlanSheet";
 import { ChargeNowSheet, PreheatSheet, type PreheatSheetData } from "@/components/PreheatSheet";
 import { nb } from "@/lib/i18n/nb";
 import { loadLoopGuard } from "@/lib/scheduler/loopGuard.server";
+import { loadIncidentView } from "@/lib/incidents/sync.server";
+import type { IncidentData } from "@/lib/ui/incidentView";
 
 // Plan sheet's starting "Klar til" (owner decision D56); "Bruk" keeps last plan's time.
 const DEFAULT_READY_TIME = "08:00";
@@ -121,6 +125,31 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   ]);
   const guards = await Promise.all(chargers.map((c, i) => loadLoopGuard(c.id, now, chargerStates[i].sessionId)));
   const capacityKwh = home.car?.batteryCapacityKwh ?? 46;
+  // D75: the open incident, read with the tick's own rules on the live state.
+  const incidents: (IncidentData | null)[] = await Promise.all(
+    chargers.map(async (c, i) => {
+      const found = await loadIncidentView({
+        chargerId: c.id,
+        state: chargerStates[i],
+        guardPaused: guards[i] !== "ok",
+        capacityKwh,
+        now,
+      }).catch(() => null);
+      if (!found?.status.visible) return null;
+      const { incident, status, context } = found;
+      return {
+        id: incident.id,
+        kind: incident.kind as IncidentData["kind"],
+        carCase: status.carCase,
+        sinceIso: incident.since.toISOString(),
+        subject: incident.subject === "charger" ? "charger" : (context.wanted?.type ?? "charger"),
+        requestedAtIso: context.wanted?.requestedAt?.toISOString() ?? null,
+        detail: (incident.detail as Record<string, unknown> | null) ?? null,
+        retried: incident.retriedAt != null,
+        autoEndAtIso: status.autoEndAt?.toISOString() ?? null,
+      };
+    }),
+  );
 
   const cards: HomeCardData[] = chargers.map((charger, index) => {
     const state = chargerStates[index];
@@ -230,6 +259,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       // if that's in the past when the plan is made -- this only tells the
       // household that's what's about to happen.
       startsImmediately: schedule?.status === "pending" && plan ? plan.latestStartTime <= now : false,
+      openRowId: sessions.find((s) => s.kind !== "guest")?.id ?? null,
       openSession: session
         ? { kind: session.kind as SessionKind, startedAtIso: session.startedAt.toISOString(), guestName: session.guestName }
         : null,
@@ -244,6 +274,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       // "trip" only shows between the tick that trips and the next one.
       automationPaused: guards[index] !== "ok",
       preheatOnBattery: preheatPower?.onBattery ?? false,
+      incident: incidents[index],
       sinceUnplug: sinceUnplug({
         readings: telemetry,
         lastUnplug: lastUnplug?.chargerId === charger.id ? lastUnplug.createdAt : null,
@@ -284,6 +315,16 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   // The sheets act on the first charger -- one location, one charger today
   // (HANDOFF §7: no picker until there's more than one).
   const first = cards[0];
+  // D71: what the sheets show, so a command from an out-of-date sheet is refused.
+  const firstSeen = first
+    ? serializeSeen({
+        rowId: first.openRowId ?? null,
+        planId:
+          first.schedule && first.schedule.source !== "smart" && (first.schedule.status === "pending" || first.schedule.status === "active")
+            ? first.schedule.id
+            : null,
+      })
+    : "";
   const openPlanReadyBy =
     first?.schedule && (first.schedule.status === "pending" || first.schedule.status === "active")
       ? formatDayAndTime(first.schedule.readyByIso, now)
@@ -393,16 +434,17 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
           alreadyCharging: preheatWhileCharging,
           onBattery: first.preheatOnBattery ?? false,
           planReadyBy: openPlanReadyBy,
+          seen: firstSeen,
         }}
       />
     );
   } else if (first && chargeNowAction) {
-    sheetNode = <ChargeNowSheet data={{ chargerId: first.chargerId, chargerName: first.chargerName, planReadyBy: openPlanReadyBy }} />;
+    sheetNode = <ChargeNowSheet data={{ chargerId: first.chargerId, chargerName: first.chargerName, planReadyBy: openPlanReadyBy, seen: firstSeen }} />;
   }
 
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 pt-6 pb-4">
-      <AutoRefresh renderedAtIso={now.toISOString()} />
+      <FreshnessProvider renderedAtIso={now.toISOString()} refreshMs={MOCK_MODE ? MOCK_REFRESH_MS : undefined}>
       <Suspense fallback={null}>
         <ScheduleCreatedToast />
       </Suspense>
@@ -428,6 +470,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         />
       </DebugProvider>
       {sheetNode}
+      </FreshnessProvider>
     </main>
   );
 }

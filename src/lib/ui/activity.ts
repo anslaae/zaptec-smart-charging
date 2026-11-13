@@ -17,9 +17,37 @@ const REPEAT_WINDOW_MS = 60_000;
 // keeps the Zaptec session id there (D65).
 const INTERNAL_DETAIL: ReadonlySet<string> = new Set(["automation_paused"]);
 
+// D75: these labels carry {placeholders}; the event's detail is a JSON object
+// with their values ("Bilen sluttet å lade – 64 %").
+const TEMPLATED: ReadonlySet<string> = new Set([
+  "car_stopped",
+  "start_failed",
+  "charger_warning",
+  "retry",
+  "unplugged_before_target",
+]);
+
+function templateValues(detail: string | null): Record<string, string | number> | null {
+  if (!detail) return null;
+  try {
+    const value: unknown = JSON.parse(detail);
+    return value && typeof value === "object" ? (value as Record<string, string | number>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The label for an event, with any {placeholders} filled from its detail. */
+export function activityText(event: { type: string; detail: string | null }, labels: Record<string, string>): string {
+  const label = labels[event.type] ?? event.type;
+  if (!TEMPLATED.has(event.type)) return label;
+  const values = templateValues(event.detail) ?? {};
+  return label.replace(/\{(\w+)\}/g, (_, key: string) => (values[key] != null ? String(values[key]) : "–"));
+}
+
 /** The detail line to show under an event, or null. */
 export function shownDetail(event: { type: string; detail: string | null }): string | null {
-  return INTERNAL_DETAIL.has(event.type) ? null : event.detail;
+  return INTERNAL_DETAIL.has(event.type) || TEMPLATED.has(event.type) ? null : event.detail;
 }
 
 export interface ActivityLike {

@@ -92,17 +92,6 @@ export function planLate(input: {
   };
 }
 
-// (app) D65: the loop guard tripped; one push per incident (the tick sends it
-// only on the tick that trips, then the guard stays "paused").
-export function automationPaused(input: { chargerId: string }): PushPayload {
-  return {
-    title: t.automationPaused.title,
-    body: t.automationPaused.body,
-    tag: `charger-${input.chargerId}`,
-    url: "/",
-  };
-}
-
 // (app) D68: the car stopped drawing power during Forvarm, so the cabin
 // heater runs on the battery. Once per Forvarm (the tick keeps the flag).
 export function preheatOnBattery(input: { chargerId: string; since: Date }): PushPayload {
@@ -114,17 +103,6 @@ export function preheatOnBattery(input: { chargerId: string; since: Date }): Pus
   };
 }
 
-// (app) D64: the plan tried to start a few times and the car still isn't
-// charging -- usually Zaptec's "stopped too many times" lockout, cleared by
-// unplugging and plugging the car back in.
-export function planStartFailed(input: { scheduleId: string }): PushPayload {
-  return {
-    title: t.planStartFailed.title,
-    body: t.planStartFailed.body,
-    tag: `plan-${input.scheduleId}`,
-    url: "/",
-  };
-}
 
 export function planWaitingForCar(input: {
   scheduleId: string;
@@ -214,4 +192,54 @@ export function reachedPercent(input: {
 }): number | null {
   if (input.startPercent == null) return input.targetPercent;
   return Math.min(100, Math.round(input.startPercent + (input.deliveredKwh / input.capacityKwh) * 100));
+}
+
+// D75: one push per incident (notifications.nb.json charge_now_*,
+// car_declined_plan, fault_*). The tag is the incident, so a phone shows one
+// notification per incident however it's delivered.
+export type IncidentPushInput =
+  | { incidentId: string; kind: "car"; carCase: "full" | "stopped" | "idle"; percent: number | null; kwh: number }
+  | { incidentId: string; kind: "car"; carCase: "never"; minutes: number }
+  | { incidentId: string; kind: "car"; carCase: "declinedPlan"; percent: number | null }
+  | { incidentId: string; kind: "start_failed"; time: Date }
+  | { incidentId: string; kind: "offline"; since: Date }
+  | { incidentId: string; kind: "locked" }
+  | { incidentId: string; kind: "charger_warning"; warning: string };
+
+const percentOrDash = (percent: number | null) => (percent != null ? String(Math.round(percent)) : "–");
+
+export function incidentPush(input: IncidentPushInput): PushPayload {
+  const base = { tag: `incident-${input.incidentId}`, url: "/" };
+  const text = (copy: { title: string; body: string }, values: Record<string, string | number> = {}) => ({
+    ...base,
+    title: copy.title,
+    body: fill(copy.body, values),
+  });
+  switch (input.kind) {
+    case "car":
+      switch (input.carCase) {
+        case "full":
+          return text(t.carFull, { percent: percentOrDash(input.percent), kwh: formatNumber(input.kwh, 1) });
+        case "stopped":
+        case "idle":
+          return text(t.carStopped, { percent: percentOrDash(input.percent) });
+        case "never":
+          return text(t.carNeverStarted, { minutes: input.minutes });
+        case "declinedPlan":
+          return text(t.carDeclinedPlan, { percent: percentOrDash(input.percent) });
+      }
+      break;
+    case "start_failed":
+      return text(t.faultStartFailed, { time: formatTime(input.time) });
+    case "offline":
+      return text(t.faultOffline, { time: formatTime(input.since) });
+    case "locked":
+      return text(t.faultLoopGuard);
+    case "charger_warning":
+      return text(t.faultWarning, { warning: capitalize(input.warning) });
+  }
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }

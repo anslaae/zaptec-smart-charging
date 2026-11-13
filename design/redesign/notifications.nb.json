@@ -12,7 +12,7 @@
       "trigger": "Plug-in observed (Disconnected → connected) and no pending plan for the charger",
       "payload": {
         "title": "Bilen er koblet til",
-        "body": "Batteri {percent} % (målt {time}). Trykk for å planlegge lading.",
+        "body": "Batteri {percent} % (målt {time}). Trykk for å planlegge lading.",
         "tag": "charger-{chargerId}",
         "url": "/?sheet=plan",
         "actions": [
@@ -47,7 +47,7 @@
       "trigger": "Plug-in observed, on_plugin_mode = smart, no user plan; sent once the planner has made blocks",
       "payload": {
         "title": "Smart lading i natt",
-        "body": "Lader til {targetPercent} % {start}–{end} · ca. {cost} kr.",
+        "body": "Lader til {targetPercent} % {start}–{end} · ca. {cost} kr.",
         "tag": "smart-{scheduleId}",
         "url": "/",
         "actions": [
@@ -65,7 +65,7 @@
       "trigger": "First ResumeCharging for a schedule (PlanChargingStarted)",
       "payload": {
         "title": "Lading startet",
-        "body": "Lader til {targetPercent} %, ferdig ca. {finishTime}.",
+        "body": "Lader til {targetPercent} %, ferdig ca. {finishTime}.",
         "tag": "plan-{scheduleId}",
         "url": "/"
       }
@@ -76,7 +76,7 @@
       "trigger": "Target energy reached (PlanCompleted)",
       "payload": {
         "title": "Bilen er klar",
-        "body": "Ladet til ca. {targetPercent} % · {kwh} kWh · ca. {cost} kr.",
+        "body": "Ladet til ca. {targetPercent} % · {kwh} kWh · ca. {cost} kr.",
         "tag": "plan-{scheduleId}",
         "url": "/history"
       }
@@ -87,7 +87,7 @@
       "trigger": "While charging for a plan, estimated finish passes readyBy (send once per plan)",
       "payload": {
         "title": "Rekker ikke helt",
-        "body": "Bilen blir ca. {expectedPercent} % klar {readyBy}. Vi lader videre til {targetPercent} %.",
+        "body": "Bilen blir ca. {expectedPercent} % klar {readyBy}. Vi lader videre til {targetPercent} %.",
         "tag": "plan-{scheduleId}",
         "url": "/"
       }
@@ -102,11 +102,105 @@
         "tag": "plan-{scheduleId}",
         "url": "/"
       }
+    },
+    {
+      "id": "charge_now_car_full",
+      "status": "decided (D75), level: car declined (Lad nå, case 1)",
+      "trigger": "Lad nå open; car stopped drawing (mode 5 at once, or 2 min with no power) and battery >= 95 % or >= last plan target. Max one Lad nå push per session.",
+      "payload": {
+        "title": "Bilen er trolig full",
+        "body": "Sluttet å lade ved {percent} % · {kwh} kWh.",
+        "tag": "incident-{incidentId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "charge_now_car_stopped",
+      "status": "decided (D75), level: car declined (Lad nå, case 2, and case 3 after 30 min)",
+      "trigger": "Lad nå open; car stopped drawing below full after energy came in. Idle (mode 3, 0 A) only after 30 min. Max one Lad nå push per session.",
+      "payload": {
+        "title": "Bilen sluttet å lade",
+        "body": "Stoppet ved {percent} %. Sjekk ladegrensen eller timeren i bilen.",
+        "tag": "incident-{incidentId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "charge_now_never_started",
+      "status": "decided (D75), level: car declined (Lad nå, case 4)",
+      "trigger": "Lad nå open; 0 kWh delivered and no power for 5 min since start. Max one Lad nå push per session.",
+      "payload": {
+        "title": "Bilen lader ikke",
+        "body": "Ingen strøm etter {minutes} min. Sjekk kabelen og bilens timer.",
+        "tag": "incident-{incidentId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "car_declined_plan",
+      "status": "decided (D75), level: car declined",
+      "trigger": "A plan or Smart lading inside its window, or an automatic session; the car stopped drawing (mode 5 at once, or 2 min with no power) before the target. Not when the target is reached. One push per incident.",
+      "payload": {
+        "title": "Bilen sluttet å lade",
+        "body": "Stoppet ved {percent} %, før målet. Sjekk bilens ladegrense eller timer.",
+        "tag": "incident-{incidentId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "fault_start_failed",
+      "status": "decided (D75), level: fault – replaces the D64 'won't start' copy",
+      "trigger": "Charging was asked for and the charger did not carry out the start after the app's tries (D64). One push per incident.",
+      "payload": {
+        "title": "Ladingen stoppet",
+        "body": "Laderen startet ikke kl. {time}. Sjekk laderen, eller prøv igjen i appen.",
+        "tag": "incident-{incidentId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "fault_charger_offline",
+      "status": "decided (D75), level: fault",
+      "trigger": "Charging was asked for (or a plan window is open) and the charger has been offline for 10 min. One push per incident; 'Laderen er tilbake' is an activity line, not a push.",
+      "payload": {
+        "title": "Laderen svarer ikke",
+        "body": "Ingen kontakt siden {time}. Bilen lader ikke.",
+        "tag": "incident-{incidentId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "fault_loop_guard",
+      "status": "decided (D75), level: fault – replaces the D65 loop-guard copy",
+      "trigger": "Zaptec's 'stopped too many times' lock, or the app's loop guard trips (D64/D65). One push per incident.",
+      "payload": {
+        "title": "Laderen stoppet for mange ganger",
+        "body": "Koble bilen fra og til igjen for å lade.",
+        "tag": "incident-{incidentId}",
+        "url": "/"
+      }
+    },
+    {
+      "id": "fault_charger_warning",
+      "status": "decided (D75), level: fault",
+      "trigger": "A D73 charger warning appears while charging was asked for. One push per incident.",
+      "payload": {
+        "title": "Laderen melder en feil",
+        "body": "{warning}. Ladingen er stoppet.",
+        "tag": "incident-{incidentId}",
+        "url": "/"
+      }
     }
   ],
   "neverNotify": [
     "manual start/stop (the person doing it already knows)",
+    "manual Lad nå / Forvarm / Stopp to the other devices either (owner answered Q14: no, 2026-11-13)",
     "automatic sessions stopped by enforcement",
     "guest sessions"
-  ]
+  ],
+  "incidentRules": {
+    "family": "Fault titles name the charger or the charging ('Laderen …', 'Ladingen stoppet'). Car-declined titles start with 'Bilen …' (Forvarm on battery keeps 'Forvarming bruker batteriet', D68). Body = what happened + one thing to do.",
+    "onePerIncident": "An incident opens on the first warning and closes when it clears. Save the notified flag before sending (as D65/D68). A new incident needs charging to have resumed or a new request in between.",
+    "recipients": "Every subscribed device in the household (both phones). Manual taps never notify anyone, not even the other devices (Q14: no)."
+  }
 }

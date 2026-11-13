@@ -34,3 +34,25 @@ describe("sessionCost", () => {
     expect(cost).toEqual({ energyNok: 5, gridNok: null, totalNok: 5 });
   });
 });
+
+describe("sessionCost with hourly meter readings (D72)", () => {
+  const prices = { energyNokPerKwh: 0.5, gridDayNokPerKwh: 0.4, gridNightNokPerKwh: 0.3 };
+  // Thu 2026-11-12, 21:00-23:00 Oslo (20:00-22:00 UTC): one day hour, one night hour.
+  const start = new Date("2026-11-12T20:00:00Z");
+  const end = new Date("2026-11-12T22:00:00Z");
+
+  it("prices each hour's own kWh instead of an even spread", () => {
+    const hourly = [
+      { hourStart: new Date("2026-11-12T20:00:00Z"), kwh: 1 },
+      { hourStart: new Date("2026-11-12T21:00:00Z"), kwh: 3 },
+    ];
+    const exact = sessionCost(4, start, end, prices, hourly);
+    expect(exact.gridNok).toBeCloseTo(1 * 0.4 + 3 * 0.3);
+    const even = sessionCost(4, start, end, prices);
+    expect(even.gridNok).toBeCloseTo(2 * 0.4 + 2 * 0.3);
+  });
+
+  it("falls back to the even spread when the hours carry no energy", () => {
+    expect(sessionCost(4, start, end, prices, []).gridNok).toBeCloseTo(sessionCost(4, start, end, prices).gridNok!);
+  });
+});

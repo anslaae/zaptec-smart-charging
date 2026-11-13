@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { verifySession } from "@/lib/auth/dal";
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chargeSchedules, manualChargeSessions } from "@/lib/db/schema";
+import { chargeSchedules, manualChargeSessions, users } from "@/lib/db/schema";
 import { fill, nb } from "@/lib/i18n/nb";
 import { formatTime } from "@/lib/datetime";
 import { preheatHoldEnd } from "@/lib/scheduler/preheatHold";
@@ -22,12 +22,77 @@ import { cancelSmartRows } from "@/lib/scheduler/smartRun";
 import { logActivity, ActivityType } from "@/lib/activity/log";
 import { getChargerState, isCurrentlyCharging, listChargers, sendChargerCommand } from "./client";
 import { ChargerOperationMode, ZaptecCommand } from "./constants";
+import { parseSeen, precheckCommand, type CommandIntent } from "./freshness";
+import type { ChargerState } from "./types";
 
 export interface ActionResult {
   error?: string;
   success?: boolean;
   /** The Zaptec command itself failed; nothing else was changed (UI offers "Prøv igjen"). */
   commandFailed?: boolean;
+  /** D71: nothing was done because it already is as asked ("Lader allerede …"). */
+  notice?: string;
+  /** D71: the device showed an out-of-date status; nothing was done -- refresh and look again. */
+  stale?: boolean;
+}
+
+/**
+ * D71: re-reads the charger and the open rows before a command and compares
+ * them with what the tapping device showed (the form's `seen` field). The
+ * fresh charger state is returned for reuse (one Zaptec read per tap).
+ */
+async function precheck(
+  chargerId: string,
+  intent: CommandIntent,
+  formData: FormData,
+): Promise<{ result: ActionResult | null; state: ChargerState | undefined }> {
+  const [state, rows, plans] = await Promise.all([
+    readChargerState(chargerId),
+    db
+      .select({
+        id: manualChargeSessions.id,
+        kind: manualChargeSessions.kind,
+        startedAt: manualChargeSessions.startedAt,
+        startedByName: users.name,
+      })
+      .from(manualChargeSessions)
+      .leftJoin(users, eq(users.id, manualChargeSessions.startedByUserId))
+      .where(
+        and(
+          eq(manualChargeSessions.chargerId, chargerId),
+          isNull(manualChargeSessions.endedAt),
+          ne(manualChargeSessions.kind, "guest"),
+        ),
+      ),
+    db
+      .select({ id: chargeSchedules.id })
+      .from(chargeSchedules)
+      .where(
+        and(
+          eq(chargeSchedules.chargerId, chargerId),
+          eq(chargeSchedules.source, "user"),
+          inArray(chargeSchedules.status, ["pending", "active"]),
+        ),
+      ),
+  ]);
+  // Unreadable charger: assume it may be charging, so Stopp still goes out.
+  const charging = state ? isCurrentlyCharging(state) : intent === "stop";
+  const row = rows.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())[0] ?? null;
+  const check = precheckCommand({
+    intent,
+    seen: parseSeen(formData.get("seen")),
+    charging,
+    row,
+    planId: plans[0]?.id ?? null,
+    now: new Date(),
+  });
+  if (check.kind === "proceed") return { result: null, state };
+  // Either way the device's screen is behind: give it a fresh render.
+  revalidatePath("/");
+  return {
+    result: check.kind === "already" ? { success: true, notice: check.message } : { error: check.message, stale: true },
+    state,
+  };
 }
 
 // Lad nå and Forvarm can't run next to an open plan: while a plan waits for
@@ -81,6 +146,8 @@ export async function startChargingNow(
   formData: FormData,
 ): Promise<ActionResult> {
   const session = await verifySession();
+  const { result: checked } = await precheck(chargerId, "manual", formData);
+  if (checked) return checked;
   const blocked = await clearOpenPlan(chargerId, chargerName, formData, session.userId);
   if (blocked) return blocked;
   try {
@@ -114,11 +181,13 @@ export async function startPreheat(
   formData: FormData,
 ): Promise<ActionResult> {
   const session = await verifySession();
+  const { result: checked, state } = await precheck(chargerId, "preheat", formData);
+  if (checked) return checked;
   // D67: already charging? Leave it running -- no plan cancelled, no
   // command, no new row. Under a plan or Smart lading the power gets a hold
   // (the earlier of 60 min and readyBy) so the tick won't pause or stop it
   // meanwhile; under Lad nå / a guest window / automatic it stays on anyway.
-  const running = await runningCharge(chargerId);
+  const running = await runningCharge(chargerId, state);
   if (running) {
     let detail: string | undefined;
     if (running.kind === "plan" || running.kind === "smart") {
@@ -151,8 +220,8 @@ export async function startPreheat(
 /** What's charging the car right now and keeps it charging, if anything (D67). */
 async function runningCharge(
   chargerId: string,
+  state: ChargerState | undefined,
 ): Promise<{ kind: RunningCharge; schedules: { id: string; readyBy: Date }[] } | null> {
-  const state = await readChargerState(chargerId);
   if (!state || !isCurrentlyCharging(state)) return null;
   const open = await db
     .select({ kind: manualChargeSessions.kind })
@@ -174,9 +243,11 @@ export async function stopChargingNow(
   chargerId: string,
   chargerName: string,
   _prevState: ActionResult,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<ActionResult> {
   const session = await verifySession();
+  const { result: checked } = await precheck(chargerId, "stop", formData);
+  if (checked) return checked;
   try {
     await sendChargerCommand(chargerId, ZaptecCommand.StopChargingFinal);
   } catch (error) {

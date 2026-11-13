@@ -176,6 +176,20 @@
       "when": 1794561595433,
       "tag": "0024_charger_state_log",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794569155521,
+      "tag": "0025_zaptec_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794586029731,
+      "tag": "0026_charge_incidents",
+      "breakpoints": true
     }
   ]
 }

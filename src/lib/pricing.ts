@@ -77,12 +77,42 @@ export function nightShare(start: Date, end: Date | null): number {
   return total > 0 ? night / total : 0;
 }
 
-export function sessionCost(kwh: number, start: Date, end: Date | null, prices: Prices): Cost {
+/** kWh drawn in one clock hour (from the charger's hourly meter readings, D72). */
+export interface HourlyKwh {
+  hourStart: Date;
+  kwh: number;
+}
+
+/**
+ * Night/weekend share of the energy itself, from hourly meter readings: each
+ * hour's kWh at that hour's rate. The rate windows start on whole hours, so
+ * this is exact. Null when the hours carry no energy.
+ */
+export function nightShareOfEnergy(hours: HourlyKwh[]): number | null {
+  const total = hours.reduce((sum, h) => sum + h.kwh, 0);
+  if (!(total > 0)) return null;
+  const night = hours.reduce((sum, h) => sum + (isNightOrWeekend(new Date(h.hourStart.getTime() + 30 * 60_000)) ? h.kwh : 0), 0);
+  return night / total;
+}
+
+/**
+ * What a session cost. With `hourly` (the charger's meter readings for the
+ * session's window, D72) the grid rate follows when the energy was actually
+ * drawn; without it the energy is taken as spread evenly over the session.
+ * Either way the total kWh is the session's own figure.
+ */
+export function sessionCost(
+  kwh: number,
+  start: Date,
+  end: Date | null,
+  prices: Prices,
+  hourly?: HourlyKwh[] | null,
+): Cost {
   const energyNok = kwh * prices.energyNokPerKwh;
   if (prices.gridDayNokPerKwh == null || prices.gridNightNokPerKwh == null) {
     return { energyNok, gridNok: null, totalNok: energyNok };
   }
-  const share = nightShare(start, end);
+  const share = (hourly ? nightShareOfEnergy(hourly) : null) ?? nightShare(start, end);
   const gridNok = kwh * (share * prices.gridNightNokPerKwh + (1 - share) * prices.gridDayNokPerKwh);
   return { energyNok, gridNok, totalNok: energyNok + gridNok };
 }

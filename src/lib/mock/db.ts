@@ -36,6 +36,8 @@ const ALL_TABLES = [
   "scheduler_heartbeat",
   "charger_observed_state",
   "charger_state_log",
+  "zaptec_sessions",
+  "charge_incidents",
   "users",
 ];
 
