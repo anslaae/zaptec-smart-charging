@@ -204,6 +204,12 @@ export async function getChargerState(
   const chargerMaxCurrentObs = findObservation(observations, ObservationId.ChargerMaxCurrent);
   const maxPhasesObs = findObservation(observations, ObservationId.MaxPhases);
   const sessionIdObs = findObservation(observations, ObservationId.SessionIdentifier);
+  const phaseCurrents = [ObservationId.CurrentPhase1, ObservationId.CurrentPhase2, ObservationId.CurrentPhase3].map(
+    (id) => {
+      const value = Number(findObservation(observations, id)?.valueAsString ?? NaN);
+      return Number.isFinite(value) ? value : null;
+    },
+  );
 
   const chargerMaxCurrentAmps = chargerMaxCurrentObs?.valueAsString
     ? Number(chargerMaxCurrentObs.valueAsString)
@@ -244,6 +250,8 @@ export async function getChargerState(
     lastCompletedSession: parseCompletedSession(completedSessionObs?.valueAsString),
     maxPowerKw,
     installationRequiresAuth,
+    phaseCurrentsAmps: phaseCurrents.some((a) => a != null) ? phaseCurrents : null,
+    rawObservations: Object.fromEntries(observations.map((o) => [String(o.stateId), o.valueAsString ?? null])),
   };
 }
 

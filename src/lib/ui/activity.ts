@@ -13,6 +13,15 @@ export const TECHNICAL_ACTIVITY: ReadonlySet<string> = new Set([
 
 const REPEAT_WINDOW_MS = 60_000;
 
+// Events whose detail is bookkeeping, not text for people: automation_paused
+// keeps the Zaptec session id there (D65).
+const INTERNAL_DETAIL: ReadonlySet<string> = new Set(["automation_paused"]);
+
+/** The detail line to show under an event, or null. */
+export function shownDetail(event: { type: string; detail: string | null }): string | null {
+  return INTERNAL_DETAIL.has(event.type) ? null : event.detail;
+}
+
 export interface ActivityLike {
   type: string;
   userId?: string | null;

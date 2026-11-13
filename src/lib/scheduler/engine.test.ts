@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { decideNextAction, planDeliveredNow, reconcileSessionEnergy, type ScheduleInput } from "./engine";
+import {
+  decideNextAction,
+  MAX_START_ATTEMPTS,
+  planDeliveredNow,
+  reconcileSessionEnergy,
+  startAttemptsExhausted,
+  type ScheduleInput,
+} from "./engine";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState } from "@/lib/zaptec/types";
 
@@ -95,6 +102,69 @@ describe("decideNextAction", () => {
     });
     const decision = decideNextAction(schedule, state, new Date("2026-01-01T06:59:00Z"));
     expect(decision).toEqual({ action: "resume" });
+  });
+});
+
+// D64: the 13 Nov 2026 night. 17 kWh by 08:00 Oslo (07:00Z), learned rate
+// 2.9 kW → latest start ≈ 00:53Z. Paused, the learned rate says "start";
+// charging at a live 3.6 kW says "too early" -- the plan used to pause, then
+// resume a minute later, about 20 times until Zaptec locked the car out.
+describe("decideNextAction: a started plan keeps charging (D64)", () => {
+  const night: ScheduleInput = { targetEnergyKwh: 17, readyBy: new Date("2026-11-13T07:00:00Z") };
+  const learned = 2.9;
+  const t = new Date("2026-11-13T00:54:00Z");
+  const charging = baseState({ operationMode: ChargerOperationMode.Charging, finalStopActive: false, instantPowerWatts: 3600 });
+
+  it("reproduces the edge: not started, the live rate would pause", () => {
+    expect(decideNextAction(night, baseState(), t, learned).action).toBe("resume");
+    expect(decideNextAction(night, charging, t, learned).action).toBe("pause");
+  });
+
+  it("once started, never pauses because the estimate moved", () => {
+    const started = { ...night, started: true };
+    expect(decideNextAction(started, charging, t, learned)).toEqual({ action: "none", reason: "Already charging" });
+    // still hours early by the live rate
+    expect(decideNextAction(started, charging, new Date("2026-11-13T00:10:00Z"), learned).action).toBe("none");
+  });
+
+  it("a started plan that stopped drawing is resumed, not left waiting", () => {
+    expect(decideNextAction({ ...night, started: true }, baseState(), new Date("2026-11-13T00:10:00Z"), learned).action).toBe(
+      "resume",
+    );
+  });
+
+  it("a plan that hasn't started still pauses a car that started too early", () => {
+    expect(decideNextAction(night, charging, new Date("2026-11-12T20:00:00Z"), learned).action).toBe("pause");
+  });
+
+  it("still completes at the target", () => {
+    const full = baseState({ operationMode: ChargerOperationMode.Charging, sessionEnergyKwh: 17 });
+    expect(decideNextAction({ ...night, started: true }, full, t, learned).action).toBe("complete");
+  });
+});
+
+describe("startAttemptsExhausted (D64)", () => {
+  const now = new Date("2026-11-13T02:00:00Z");
+  const minutesAgo = (m: number) => new Date(now.getTime() - m * 60_000);
+
+  it("allows starts until the cap is reached", () => {
+    const attempts = Array.from({ length: MAX_START_ATTEMPTS - 1 }, (_, i) => minutesAgo(i + 1));
+    expect(startAttemptsExhausted({ attemptTimes: attempts, lastPluggedInAt: minutesAgo(60), now })).toBe(false);
+  });
+
+  it("stops after the cap within the window", () => {
+    const attempts = [minutesAgo(1), minutesAgo(2), minutesAgo(3)];
+    expect(startAttemptsExhausted({ attemptTimes: attempts, lastPluggedInAt: minutesAgo(60), now })).toBe(true);
+  });
+
+  it("re-plugging the car resets the count", () => {
+    const attempts = [minutesAgo(5), minutesAgo(6), minutesAgo(7)];
+    expect(startAttemptsExhausted({ attemptTimes: attempts, lastPluggedInAt: minutesAgo(2), now })).toBe(false);
+  });
+
+  it("attempts older than the window don't count", () => {
+    const attempts = [minutesAgo(20), minutesAgo(30), minutesAgo(40)];
+    expect(startAttemptsExhausted({ attemptTimes: attempts, lastPluggedInAt: null, now })).toBe(false);
   });
 });
 

@@ -17,6 +17,7 @@ export const ActivityType = {
   // row) -- logged separately so the activity feed shows *why* charging
   // started rather than lumping it in with a plain "Charge now" tap.
   PreheatStarted: "preheat_started",
+  PreheatDuringCharge: "preheat_during_charge",
   PlanCreated: "plan_created",
   PlanCancelled: "plan_cancelled",
   // "Angre" on the Plan avbrutt toast (within 10 s).
@@ -41,6 +42,9 @@ export const ActivityType = {
   SmartCancelled: "smart_cancelled",
   // Innstillinger → "Når bilen kobles til" changed (or expired back to "wait").
   OnPluginModeChanged: "on_plugin_mode_changed",
+  // D65: the loop guard tripped -- the app stopped sending automated
+  // commands to this charger until the car is re-plugged or someone acts.
+  AutomationPaused: "automation_paused",
 } as const;
 
 export type ActivityType = (typeof ActivityType)[keyof typeof ActivityType];

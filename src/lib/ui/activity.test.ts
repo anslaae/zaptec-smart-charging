@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { visibleActivity } from "./activity";
+import { shownDetail, visibleActivity } from "./activity";
 
 const e = (iso: string, type: string, userId: string | null = null) => ({ createdAt: new Date(iso), type, userId });
+
+describe("shownDetail (D65)", () => {
+  it("hides the session id kept on automation_paused, keeps other details", () => {
+    expect(shownDetail({ type: "automation_paused", detail: "47429855-eb6d" })).toBeNull();
+    expect(shownDetail({ type: "plan_created", detail: "17,0 kWh" })).toBe("17,0 kWh");
+  });
+});
 
 describe("visibleActivity", () => {
   it("flags the charger's own start/stop and the automatic stop as technical", () => {

@@ -41,6 +41,9 @@ export type SimAction =
   | { type: "setBattery"; percent: number }
   | { type: "addEnergy"; kwh: number }
   | { type: "setPower"; kw: number }
+  | { type: "carStopsDrawing" }
+  | { type: "carDrawsAgain" }
+  | { type: "carIdlesWhileCharging" }
   | { type: "setSpeed"; speed: number }
   | { type: "setRequiresAuth"; value: boolean }
   | { type: "setOnline"; value: boolean }
@@ -73,6 +76,18 @@ export async function mockSim(action: SimAction): Promise<void> {
     case "addEnergy":
       sim.advance(now);
       sim.addEnergy(action.kwh);
+      break;
+    case "carStopsDrawing":
+      sim.carStopsDrawing(now);
+      mockLog("info", "Bilen sluttet å trekke strøm (modus 5)");
+      break;
+    case "carIdlesWhileCharging":
+      sim.carIdlesWhileCharging(now);
+      mockLog("info", "Bilen trekker 0 A, laderen står fortsatt i modus 3");
+      break;
+    case "carDrawsAgain":
+      sim.carDrawsAgain(now);
+      mockLog("info", "Bilen trekker strøm igjen");
       break;
     case "setPower":
       sim.advance(now);

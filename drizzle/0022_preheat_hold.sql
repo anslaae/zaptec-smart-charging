@@ -1,0 +1,1 @@
+ALTER TABLE "charge_schedules" ADD COLUMN "preheat_hold_until" timestamp with time zone;

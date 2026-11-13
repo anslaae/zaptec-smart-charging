@@ -53,18 +53,35 @@ export async function openSession(
     for (const row of open) if (row.kind !== "guest") await closeSession(row);
   }
   const bound = state?.sessionId != null;
-  await db.insert(manualChargeSessions).values({
-    chargerId,
-    kind,
-    // A guest's car never counts for ours (design 6c).
-    carId: kind === "guest" ? null : await defaultCarId(),
-    startedByUserId: userId,
-    guestName,
-    targetKwh: targetKwh == null ? null : targetKwh.toFixed(2),
-    zaptecSessionId: bound ? state.sessionId : null,
-    startEnergyKwh: bound ? kwh(state.sessionEnergyKwh ?? 0) : null,
-    lastObservedEnergyKwh: bound ? kwh(state.sessionEnergyKwh ?? 0) : null,
-  });
+  const carId = kind === "guest" ? null : await defaultCarId(); // a guest's car never counts for ours (design 6c)
+  try {
+    await db.insert(manualChargeSessions).values({
+      chargerId,
+      kind,
+      carId,
+      startedByUserId: userId,
+      guestName,
+      targetKwh: targetKwh == null ? null : targetKwh.toFixed(2),
+      zaptecSessionId: bound ? state.sessionId : null,
+      startEnergyKwh: bound ? kwh(state.sessionEnergyKwh ?? 0) : null,
+      lastObservedEnergyKwh: bound ? kwh(state.sessionEnergyKwh ?? 0) : null,
+    });
+  } catch (error) {
+    // D66: another request opened one in the moment between our check and
+    // this insert (two phones, a double tap) -- the unique index
+    // manual_charge_sessions_one_open stops the second row. Theirs stands.
+    if (kind !== "guest" && isUniqueViolation(error)) return;
+    throw error;
+  }
+}
+
+/** Postgres unique_violation (23505), as thrown by postgres-js or PGlite, possibly wrapped by Drizzle. */
+export function isUniqueViolation(error: unknown): boolean {
+  for (let e: unknown = error, depth = 0; e != null && depth < 4; depth++) {
+    if (typeof e === "object" && (e as { code?: unknown }).code === "23505") return true;
+    e = typeof e === "object" ? (e as { cause?: unknown }).cause : null;
+  }
+  return false;
 }
 
 export async function closeSession(row: SessionRow, at: Date = new Date()): Promise<void> {
@@ -91,7 +108,7 @@ export async function closeSessions(
 }
 
 /** The charger's state right now (one Zaptec call), or undefined when it can't be read. */
-async function readChargerState(chargerId: string): Promise<ChargerState | undefined> {
+export async function readChargerState(chargerId: string): Promise<ChargerState | undefined> {
   const charger = (await listChargers().catch(() => [])).find((c) => c.id === chargerId);
   if (!charger) return undefined;
   return getChargerState(charger.id, charger.isOnline, charger.circuitId, charger.installationId).catch(() => undefined);

@@ -20,7 +20,8 @@ import { useDebugScenario } from "@/components/DebugProvider";
 import { DEBUG_SCENARIOS } from "@/lib/debug/scenarios";
 import { homeState, type HomeState } from "@/lib/ui/homeState";
 import { estimateBattery } from "@/lib/ui/battery";
-import { planDeliveredNow } from "@/lib/scheduler/engine";
+import { planDeliveredNow, START_FAILED_REASON } from "@/lib/scheduler/engine";
+import { AUTOMATION_PAUSED_REASON } from "@/lib/scheduler/loopGuard";
 import { sessionCost } from "@/lib/pricing";
 import type { HomeCardData } from "@/lib/ui/homeData";
 import { isCurrentlyCharging } from "@/lib/zaptec/state";
@@ -46,6 +47,8 @@ const secondaryClass =
 // household member can see on Hjem gets a Norwegian line.
 const LAST_ERROR_NB: Record<string, string> = {
   "Needs to charge but no car is connected": nb.home.lastErrorNoCar,
+  [START_FAILED_REASON]: nb.home.lastErrorStartFailed,
+  [AUTOMATION_PAUSED_REASON]: nb.home.lastErrorAutomationPaused,
 };
 
 const kwNumber = (kw: number | null) => (kw != null ? formatNumber(kw, 1) : "–");
@@ -249,14 +252,23 @@ function buildView(data: HomeCardData): View {
       return { ...base, status: nb.home.connected.status, sub: nb.home.connected.sub, ring: percentRing() };
     case "planned": {
       const kwh = remainingPlanKwh != null ? formatNumber(remainingPlanKwh, 1) : "–";
+      // D64: the plan gave up starting (e.g. Zaptec's "stopped too many times");
+      // D65: the loop guard holds its commands back.
+      const stuckError =
+        schedule?.lastError === START_FAILED_REASON || schedule?.lastError === AUTOMATION_PAUSED_REASON
+          ? LAST_ERROR_NB[schedule.lastError]
+          : null;
+      const startFailed = stuckError != null;
       return {
         ...base,
-        status: data.startsImmediately
-          ? nb.home.planned.tooTight
-          : data.startTimeIso
-            ? fill(nb.home.planned.status, { time: formatTime(data.startTimeIso) })
-            : nb.home.plannedNoTime,
-        statusAmber: data.startsImmediately,
+        status: stuckError
+          ? stuckError
+          : data.startsImmediately
+            ? nb.home.planned.tooTight
+            : data.startTimeIso
+              ? fill(nb.home.planned.status, { time: formatTime(data.startTimeIso) })
+              : nb.home.plannedNoTime,
+        statusAmber: startFailed || data.startsImmediately,
         sub: schedule ? fill(nb.home.planned.sub, { readyBy, kwh }) : null,
         note:
           data.learnedPowerKw != null
@@ -444,6 +456,7 @@ export function HomeCard({ data }: { data: HomeCardData }) {
           ? { kind: scenario.openSession.kind, startedAtIso: scenario.openSession.startedAt }
           : null,
         lastCompletedPlanSessionId: scenario.lastCompletedPlanSessionId,
+        automationPaused: scenario.automationPaused ?? false,
         stateOfCharge: scenario.stateOfCharge
           ? { percent: scenario.stateOfCharge.percent, oemUpdatedAtIso: scenario.stateOfCharge.oemUpdatedAt.toISOString() }
           : null,
@@ -501,6 +514,13 @@ export function HomeCard({ data }: { data: HomeCardData }) {
       errorMessage={nb.actions.preheatFailed}
       onSuccess={() => router.push("/?sheet=preheat", { scroll: false })}
     />
+  );
+  // D67: while charging, Forvarm only opens the sheet -- the power is already
+  // on, so there is nothing to start and nothing to cancel.
+  const preheatLink = (
+    <Link href="/?sheet=preheat" scroll={false} className={secondaryClass}>
+      {nb.home.connected.preheat}
+    </Link>
   );
   const cancelPlan = (className: string, label: string = nb.planSheet.cancel) =>
     schedule && (
@@ -584,13 +604,28 @@ export function HomeCard({ data }: { data: HomeCardData }) {
       );
       break;
     case "smartCharging":
-      actions = cancelPlan(primaryClass, nb.home.smart.primaryCharging);
+      actions = (
+        <>
+          {cancelPlan(primaryClass, nb.home.smart.primaryCharging)}
+          {preheatLink}
+        </>
+      );
       break;
     case "chargingPlan":
-      actions = cancelPlan(primaryClass);
+      actions = (
+        <>
+          {cancelPlan(primaryClass)}
+          {preheatLink}
+        </>
+      );
       break;
     case "chargingManual":
-      actions = stop(nb.home.chargingManual.primary);
+      actions = (
+        <>
+          {stop(nb.home.chargingManual.primary)}
+          {preheatLink}
+        </>
+      );
       break;
     case "preheating":
       actions = stop(nb.home.preheating.primary, true);
@@ -630,6 +665,12 @@ export function HomeCard({ data }: { data: HomeCardData }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {effective.automationPaused && view.homeState !== "noControl" && (
+        <div role="status" className="rounded-[var(--radius-card)] border border-amber-border bg-amber-bg p-4">
+          <p className="text-[15px] font-semibold text-amber">{nb.home.automationPaused.title}</p>
+          <p className="mt-1 text-sm text-text-2">{nb.home.automationPaused.body}</p>
+        </div>
+      )}
       {view.homeState === "noControl" && (
         <div className="rounded-[var(--radius-card)] border border-amber-border bg-amber-bg p-4">
           <p className="text-[15px] font-semibold text-amber">{nb.home.noControl.title}</p>
@@ -663,6 +704,16 @@ export function HomeCard({ data }: { data: HomeCardData }) {
           )}
           <p className={`text-xl font-semibold ${view.statusAmber ? "text-amber" : "text-text"}`}>{view.status}</p>
           {view.sub && <p className="mt-1 text-[15px] text-muted">{view.sub}</p>}
+          {effective.preheatOnBattery && (
+            <p role="status" className="mt-1 text-sm font-semibold text-amber">
+              {nb.preheatSheet.onBattery}
+            </p>
+          )}
+          {schedule?.preheatHoldUntilIso && (
+            <p className="mt-1 text-sm font-semibold text-accent">
+              {fill(nb.preheatSheet.homeLine, { time: formatTime(schedule.preheatHoldUntilIso) })}
+            </p>
+          )}
         </div>
 
         {view.stats && (

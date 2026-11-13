@@ -40,6 +40,11 @@ export const ObservationId = {
   // to link a schedule to its real Zaptec session for later lookup via
   // getChargeHistory(). Changes whenever a new physical session starts.
   SessionIdentifier: 721,
+  // D69: current per phase (amps), confirmed in /api/constants on 2026-11-13.
+  // Idle reads ~0.03-0.05 A; a charging phase reads several amps.
+  CurrentPhase1: 507,
+  CurrentPhase2: 508,
+  CurrentPhase3: 509,
 } as const;
 
 // ChargerOperationMode values — all 4 documented values (there's no 4).

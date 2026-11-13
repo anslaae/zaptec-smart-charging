@@ -21,6 +21,9 @@ import { estimateBattery } from "@/lib/ui/battery";
 import { buildSuggestion } from "@/lib/ui/suggestion";
 import type { SmartBlocks } from "@/lib/scheduler/smartRun";
 import { isCurrentlyCharging } from "@/lib/zaptec/state";
+import { chargeToRideAlong } from "@/lib/preheat";
+import { preheatHoldActive, preheatHoldEnd, preheatHoldEstimate } from "@/lib/scheduler/preheatHold";
+import { preheatPowerCheck } from "@/lib/scheduler/preheatPower";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { HomeCardData } from "@/lib/ui/homeData";
 import type { SessionKind } from "@/lib/sessions";
@@ -31,8 +34,9 @@ import { ScheduleCreatedToast } from "@/components/ScheduleCreatedToast";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { DebugProvider } from "@/components/DebugProvider";
 import { LentOutSheet, PlanInProgressSheet, PlanSheet, type PlanSheetData } from "@/components/PlanSheet";
-import { ChargeNowSheet, PreheatSheet } from "@/components/PreheatSheet";
+import { ChargeNowSheet, PreheatSheet, type PreheatSheetData } from "@/components/PreheatSheet";
 import { nb } from "@/lib/i18n/nb";
+import { loadLoopGuard } from "@/lib/scheduler/loopGuard.server";
 
 // Plan sheet's starting "Klar til" (owner decision D56); "Bruk" keeps last plan's time.
 const DEFAULT_READY_TIME = "08:00";
@@ -115,6 +119,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
     Promise.all(chargers.map((c) => getChargerState(c.id, c.isOnline, c.circuitId, c.installationId))),
     getHomeContext(chargers),
   ]);
+  const guards = await Promise.all(chargers.map((c, i) => loadLoopGuard(c.id, now, chargerStates[i].sessionId)));
   const capacityKwh = home.car?.batteryCapacityKwh ?? 46;
 
   const cards: HomeCardData[] = chargers.map((charger, index) => {
@@ -178,6 +183,29 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       };
     }
 
+    // D67 hold / D68 "on battery": the same checks the tick makes, on the live state.
+    const holdOn =
+      schedule != null &&
+      preheatHoldActive({ holdUntil: schedule.preheatHoldUntil, scheduleSessionId: schedule.zaptecSessionId, state, now });
+    const preheatSession = sessions.find((s) => s.kind === "preheat");
+    const preheatPower = preheatSession
+      ? preheatPowerCheck({
+          state,
+          lostAt: preheatSession.powerLostAt,
+          notifiedAt: preheatSession.powerLostNotifiedAt,
+          startedAt: preheatSession.startedAt,
+          now,
+        })
+      : holdOn
+        ? preheatPowerCheck({
+            state,
+            lostAt: schedule!.preheatPowerLostAt,
+            notifiedAt: schedule!.preheatPowerLostNotifiedAt,
+            startedAt: null,
+            now,
+          })
+        : null;
+
     return {
       chargerId: charger.id,
       chargerName: charger.name,
@@ -194,6 +222,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
             targetPercent: schedule.targetPercent,
             source: schedule.source,
             smart: schedule.source === "smart" && schedule.blocks ? (schedule.blocks as SmartBlocks) : null,
+            preheatHoldUntilIso: holdOn ? schedule.preheatHoldUntil!.toISOString() : null,
           }
         : null,
       startTimeIso: schedule?.status === "pending" && plan ? plan.latestStartTime.toISOString() : null,
@@ -212,6 +241,9 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       suggestion,
       capacityKwh,
       prices: pricesOf(settings),
+      // "trip" only shows between the tick that trips and the next one.
+      automationPaused: guards[index] !== "ok",
+      preheatOnBattery: preheatPower?.onBattery ?? false,
       sinceUnplug: sinceUnplug({
         readings: telemetry,
         lastUnplug: lastUnplug?.chargerId === charger.id ? lastUnplug.createdAt : null,
@@ -312,6 +344,44 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
     sheetNode = <PlanSheet key={first.schedule?.id ?? "new"} data={data} />;
   } else if (first && sheet === "preheat") {
     const kw = first.state.instantPowerWatts ? first.state.instantPowerWatts / 1000 : null;
+    // D67: already charging? Under a plan / Smart lading Forvarm offers a hold
+    // on the power (with what it may add); under Lad nå etc. it's just on.
+    const openPlanRow =
+      first.schedule && (first.schedule.status === "pending" || first.schedule.status === "active") ? first.schedule : null;
+    const riding = chargeToRideAlong({
+      charging: isCurrentlyCharging(first.state),
+      openKinds: first.openSession ? [first.openSession.kind] : [],
+      scheduleSources: openPlanRow ? [openPlanRow.source] : [],
+    });
+    let preheatWhileCharging: PreheatSheetData["alreadyCharging"] = null;
+    if (riding === "plan" || riding === "smart") {
+      const holdOn = openPlanRow!.preheatHoldUntilIso;
+      const until = holdOn ? new Date(holdOn) : preheatHoldEnd(now, new Date(openPlanRow!.readyByIso));
+      if (until) {
+        const battery = estimateBattery({
+          reading: stateOfCharge,
+          capacityKwh,
+          now,
+          charging: true,
+          sessionEnergyKwh: first.state.sessionEnergyKwh,
+          chargeDurationSeconds: first.state.chargeDurationSeconds,
+          remainingPlanKwh: null,
+        });
+        preheatWhileCharging = {
+          kind: "hold",
+          untilIso: until.toISOString(),
+          active: holdOn != null,
+          targetPercent: openPlanRow!.targetPercent,
+          estimate: preheatHoldEstimate({
+            now,
+            until,
+            powerKw: kw ?? plannedPowerKw(learnedPowerKw, first.state.maxPowerKw),
+            prices: pricesOf(settings),
+            roomKwh: battery.percent != null ? (capacityKwh * (100 - battery.percent)) / 100 : null,
+          }),
+        };
+      } else preheatWhileCharging = { kind: "on" };
+    } else if (riding) preheatWhileCharging = { kind: "on" };
     sheetNode = (
       <PreheatSheet
         data={{
@@ -320,6 +390,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
           connected: first.state.operationMode !== ChargerOperationMode.Disconnected,
           preheating:
             first.openSession?.kind === "preheat" ? { startedAtIso: first.openSession.startedAtIso, kw } : null,
+          alreadyCharging: preheatWhileCharging,
+          onBattery: first.preheatOnBattery ?? false,
           planReadyBy: openPlanReadyBy,
         }}
       />

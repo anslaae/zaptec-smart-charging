@@ -3,11 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { verifySession } from "@/lib/auth/dal";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chargeSchedules, manualChargeSessions } from "@/lib/db/schema";
-import { nb } from "@/lib/i18n/nb";
-import { bindOpenSessions, closeSession, closeSessions, finalizeSessionEnergy, openSession } from "@/lib/sessions";
+import { fill, nb } from "@/lib/i18n/nb";
+import { formatTime } from "@/lib/datetime";
+import { preheatHoldEnd } from "@/lib/scheduler/preheatHold";
+import {
+  bindOpenSessions,
+  closeSession,
+  closeSessions,
+  finalizeSessionEnergy,
+  openSession,
+  readChargerState,
+} from "@/lib/sessions";
+import { chargeToRideAlong, type RunningCharge } from "@/lib/preheat";
 import { cancelSmartRows } from "@/lib/scheduler/smartRun";
 import { logActivity, ActivityType } from "@/lib/activity/log";
 import { getChargerState, isCurrentlyCharging, listChargers, sendChargerCommand } from "./client";
@@ -104,6 +114,26 @@ export async function startPreheat(
   formData: FormData,
 ): Promise<ActionResult> {
   const session = await verifySession();
+  // D67: already charging? Leave it running -- no plan cancelled, no
+  // command, no new row. Under a plan or Smart lading the power gets a hold
+  // (the earlier of 60 min and readyBy) so the tick won't pause or stop it
+  // meanwhile; under Lad nå / a guest window / automatic it stays on anyway.
+  const running = await runningCharge(chargerId);
+  if (running) {
+    let detail: string | undefined;
+    if (running.kind === "plan" || running.kind === "smart") {
+      const now = new Date();
+      for (const schedule of running.schedules) {
+        const until = preheatHoldEnd(now, schedule.readyBy);
+        if (!until) continue;
+        await db.update(chargeSchedules).set({ preheatHoldUntil: until, preheatPowerLostAt: null, preheatPowerLostNotifiedAt: null, updatedAt: now }).where(eq(chargeSchedules.id, schedule.id));
+        detail = fill(nb.preheatSheet.holdDetail, { time: formatTime(until) });
+      }
+    }
+    await logActivity(chargerId, chargerName, ActivityType.PreheatDuringCharge, { userId: session.userId, detail });
+    revalidatePath("/");
+    return { success: true };
+  }
   const blocked = await clearOpenPlan(chargerId, chargerName, formData, session.userId);
   if (blocked) return blocked;
   try {
@@ -116,6 +146,28 @@ export async function startPreheat(
   await logActivity(chargerId, chargerName, ActivityType.PreheatStarted, { userId: session.userId });
   revalidatePath("/");
   return { success: true };
+}
+
+/** What's charging the car right now and keeps it charging, if anything (D67). */
+async function runningCharge(
+  chargerId: string,
+): Promise<{ kind: RunningCharge; schedules: { id: string; readyBy: Date }[] } | null> {
+  const state = await readChargerState(chargerId);
+  if (!state || !isCurrentlyCharging(state)) return null;
+  const open = await db
+    .select({ kind: manualChargeSessions.kind })
+    .from(manualChargeSessions)
+    .where(and(eq(manualChargeSessions.chargerId, chargerId), isNull(manualChargeSessions.endedAt)));
+  const schedules = await db
+    .select({ id: chargeSchedules.id, source: chargeSchedules.source, readyBy: chargeSchedules.readyBy })
+    .from(chargeSchedules)
+    .where(and(eq(chargeSchedules.chargerId, chargerId), inArray(chargeSchedules.status, ["pending", "active"])));
+  const kind = chargeToRideAlong({
+    charging: true,
+    openKinds: open.map((r) => r.kind),
+    scheduleSources: schedules.map((r) => r.source),
+  });
+  return kind ? { kind, schedules } : null;
 }
 
 export async function stopChargingNow(
@@ -134,6 +186,11 @@ export async function stopChargingNow(
   // the Lad nå / Forvarm / automatic authorisations end here.
   const closed = await closeSessions(chargerId, { keepGuest: true });
   after(() => finalizeSessionEnergy(chargerId, closed.map((row) => row.id)));
+  // A Forvarm hold (D67) ends with Stopp too.
+  await db
+    .update(chargeSchedules)
+    .set({ preheatHoldUntil: null, preheatPowerLostAt: null, preheatPowerLostNotifiedAt: null })
+    .where(and(eq(chargeSchedules.chargerId, chargerId), isNotNull(chargeSchedules.preheatHoldUntil)));
   // …and Smart lading for this plug-in, or the next tick would resume it.
   await cancelSmartRows(chargerId, chargerName, session.userId);
   await logActivity(chargerId, chargerName, ActivityType.ManualStop, { userId: session.userId });

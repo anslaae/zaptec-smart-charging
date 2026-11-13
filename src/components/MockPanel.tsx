@@ -175,6 +175,15 @@ export function MockPanel({
           <button type="button" disabled={pending} className={btn} onClick={() => run(() => mockFinishPlan())}>
             Fullfør plan
           </button>
+          <button type="button" disabled={pending} className={btn} onClick={() => simDo({ type: "carStopsDrawing" })}>
+            Bilen slutter å trekke strøm
+          </button>
+          <button type="button" disabled={pending} className={btn} onClick={() => simDo({ type: "carIdlesWhileCharging" })}>
+            Bilen trekker 0 A (modus 3)
+          </button>
+          <button type="button" disabled={pending} className={btn} onClick={() => simDo({ type: "carDrawsAgain" })}>
+            Bilen trekker strøm igjen
+          </button>
           <button type="button" disabled={pending} className={btn} onClick={() => simDo({ type: "authorise" })}>
             RFID-brikke
           </button>
@@ -228,8 +237,8 @@ export function MockPanel({
           <p className="text-sm text-muted">Ingenting ennå.</p>
         ) : (
           <ul className="flex flex-col gap-1 font-mono text-xs">
-            {log.map((entry, i) => (
-              <li key={i} className={entry.kind === "push" ? "text-accent" : entry.kind === "command" ? "text-amber" : "text-text-2"}>
+            {log.map((entry) => (
+              <li key={entry.seq} data-log-seq={entry.seq} className={entry.kind === "push" ? "text-accent" : entry.kind === "command" ? "text-amber" : "text-text-2"}>
                 {formatTime(entry.at)} [{entry.kind}] {entry.text}
               </li>
             ))}

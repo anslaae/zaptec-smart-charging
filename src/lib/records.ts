@@ -1,4 +1,5 @@
 import "server-only";
+import { dropOverlappingDuplicates } from "@/lib/sessionOverlap";
 import { and, asc, eq, gte, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chargeSchedules, manualChargeSessions, vehicleTelemetry } from "@/lib/db/schema";
@@ -97,7 +98,8 @@ export async function loadSessionRecords(
       ...costOf(kwh, plan.startedAt!, plan.endedAt, prices),
     });
   }
-  for (const session of sessions) {
+  // D66: a row opened alongside another on the same Zaptec session measured the same energy.
+  for (const session of dropOverlappingDuplicates(sessions)) {
     const tag = session.kind as SessionTag;
     records.push({
       id: session.id,

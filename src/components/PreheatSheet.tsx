@@ -10,6 +10,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { startPreheat, stopChargingNow, startChargingNow, type ActionResult } from "@/lib/zaptec/actions";
 import { formatNumber, formatTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
+import { preheatHoldText } from "@/lib/ui/preheatHoldText";
 
 const t = nb.preheatSheet;
 
@@ -19,6 +20,24 @@ export interface PreheatSheetData {
   connected: boolean;
   /** Set once the preheat session is open (after the action and a refresh). */
   preheating: { startedAtIso: string; kw: number | null } | null;
+  /**
+   * D67: the car is already charging, so nothing is started or cancelled.
+   * "on": Lad nå / guest / automatic keep the power on -- step 1 is done.
+   * "hold": a plan or Smart lading; Forvarm offers to hold the power on until
+   * untilIso (active once it's set), with what that may add.
+   */
+  /** D68: the car stopped drawing power -- the heater runs on the battery (step 1 not done). */
+  onBattery: boolean;
+  alreadyCharging:
+    | { kind: "on" }
+    | {
+        kind: "hold";
+        untilIso: string;
+        active: boolean;
+        targetPercent: number | null;
+        estimate: { kwh: number; nok: number | null };
+      }
+    | null;
   /** "i morgen 07:30" when a plan is open: starting cancels it (asked here). */
   planReadyBy: string | null;
 }
@@ -49,7 +68,10 @@ export function PreheatSheet({ data }: { data: PreheatSheetData }) {
   }, [startState]);
 
   const on = data.preheating != null;
-  const starting = !on && startState.success;
+  const ride = on ? null : data.alreadyCharging;
+  const hold = ride?.kind === "hold" ? ride : null;
+  const powerOn = (on || ride?.kind === "on" || hold?.active === true) && !data.onBattery;
+  const starting = !powerOn && !data.onBattery && startState.success;
 
   return (
     <BottomSheet title={t.title}>
@@ -57,10 +79,35 @@ export function PreheatSheet({ data }: { data: PreheatSheetData }) {
 
       <ol className="mt-4 flex flex-col gap-3">
         <li className="flex items-start gap-3 rounded-[var(--radius-card)] bg-surface-2 p-4">
-          <StepDot done={on} n={1} />
+          <StepDot done={powerOn} n={1} />
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold">{t.step1}</p>
-            {on ? (
+            {data.onBattery && (
+              <p role="status" className="mb-1 text-sm font-semibold text-amber">
+                {t.onBattery}
+              </p>
+            )}
+            <p className="text-[15px] font-semibold">
+              {hold?.active ? fill(t.holdOn, { time: formatTime(hold.untilIso) }) : ride ? t.step1Charging : t.step1}
+            </p>
+            {hold?.active ? (
+              <p className="text-sm text-muted">{t.holdAfter}</p>
+            ) : ride?.kind === "on" ? null : hold ? (
+              starting ? (
+                <p className="text-sm text-muted">{t.starting}</p>
+              ) : (
+                <form action={startAction} className="mt-2">
+                  <p className="mb-2 text-sm text-text-2">
+                    {preheatHoldText(hold)} {t.holdAfter}
+                  </p>
+                  <SubmitButton
+                    pendingLabel={t.starting}
+                    className="flex h-11 items-center justify-center rounded-[var(--radius-chip)] border border-border bg-surface px-4 text-sm font-semibold"
+                  >
+                    {t.holdConfirm}
+                  </SubmitButton>
+                </form>
+              )
+            ) : on ? (
               <p className="text-sm text-muted">
                 {fill(t.step1Sub, {
                   time: formatTime(data.preheating!.startedAtIso),

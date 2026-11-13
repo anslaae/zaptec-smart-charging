@@ -61,6 +61,8 @@ export class ChargerSim {
   /** The car's last report to Smartcar -- usually older than the real battery. */
   reading: { percent: number; at: Date } | null;
   lastCompletedSession: LastCompletedSession | null = null;
+  /** D69: the car sits at 0 A while the charger still says "charging" (mode 3). */
+  idleWhileCharging = false;
   history: ChargeHistoryEntry[] = [];
   private lastAdvancedAt: number;
 
@@ -84,11 +86,16 @@ export class ChargerSim {
     return this.mode === ChargerOperationMode.Charging;
   }
 
+  /** Charging and actually drawing current (not idling at 0 A in mode 3). */
+  get drawing(): boolean {
+    return this.charging && !this.idleWhileCharging;
+  }
+
   /** Accrue energy for the time passed (times the speed setting). Call before every read or change. */
   advance(now: Date): void {
     const seconds = Math.max(0, (now.getTime() - this.lastAdvancedAt) / 1000) * this.settings.speed;
     this.lastAdvancedAt = now.getTime();
-    if (!this.charging || seconds === 0) return;
+    if (!this.drawing || seconds === 0) return;
     this.addEnergy(this.settings.powerKw * (seconds / 3600));
     this.chargingSeconds += seconds;
   }
@@ -106,10 +113,33 @@ export class ChargerSim {
     }
   }
 
+  /** D68: the car stops requesting power by itself (as the Opel did during Forvarm on 13 Nov) -- mode 5, no final stop. */
+  carStopsDrawing(now: Date): void {
+    this.advance(now);
+    if (this.charging) this.mode = ChargerOperationMode.StoppedOrIdle;
+    this.idleWhileCharging = false;
+  }
+
+  /** D69: the car stops drawing but the charger stays in mode 3 (the mode lags): only the phase currents show it. */
+  carIdlesWhileCharging(now: Date): void {
+    this.advance(now);
+    if (this.charging) this.idleWhileCharging = true;
+  }
+
+  /** The car asks for power again (only if nothing latched it off and it isn't full). */
+  carDrawsAgain(now: Date): void {
+    this.advance(now);
+    this.idleWhileCharging = false;
+    if (this.carConnected && this.mode === ChargerOperationMode.StoppedOrIdle && !this.finalStopActive && this.batteryPercent < 100) {
+      this.mode = ChargerOperationMode.Charging;
+    }
+  }
+
   plugIn(now: Date): void {
     this.advance(now);
     if (this.carConnected) return;
     this.carConnected = true;
+    this.idleWhileCharging = false;
     this.sessionId = newSessionId();
     this.sessionStartedAt = now;
     this.sessionEnergyKwh = 0;
@@ -204,13 +234,16 @@ export class ChargerSim {
   toChargerState(chargerId: string, now: Date): ChargerState {
     this.advance(now);
     const online = this.settings.online;
+    const watts = this.drawing ? Math.round(this.settings.powerKw * 1000) : 0;
+    // Single-phase: the drawing phase carries the current, the others read idle noise.
+    const phaseCurrentsAmps = [this.drawing ? Math.round((watts / 230) * 10) / 10 : 0.05, 0.03, 0.03];
     return {
       chargerId,
       isOnline: online,
       operationMode: this.mode,
       finalStopActive: this.carConnected ? this.finalStopActive : null,
       chargeCurrentSetAmps: null,
-      instantPowerWatts: this.charging ? Math.round(this.settings.powerKw * 1000) : 0,
+      instantPowerWatts: watts,
       sessionEnergyKwh: this.carConnected ? Math.round(this.sessionEnergyKwh * 1000) / 1000 : null,
       observedAt: now.toISOString(),
       sessionId: this.sessionId,
@@ -219,6 +252,16 @@ export class ChargerSim {
       lastCompletedSession: this.lastCompletedSession,
       maxPowerKw: this.settings.maxPowerKw,
       installationRequiresAuth: this.settings.requiresAuth,
+      phaseCurrentsAmps,
+      rawObservations: {
+        "507": String(phaseCurrentsAmps[0]),
+        "508": String(phaseCurrentsAmps[1]),
+        "509": String(phaseCurrentsAmps[2]),
+        "513": String(watts),
+        "710": String(this.mode),
+        "718": this.carConnected ? (this.finalStopActive ? "1" : "0") : null,
+        "721": this.sessionId,
+      },
     };
   }
 

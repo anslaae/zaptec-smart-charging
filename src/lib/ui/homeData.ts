@@ -27,6 +27,8 @@ export interface HomeCardData {
     source: string;
     /** Smart lading: the planned blocks, cost and saving. */
     smart: { blocks: { start: string; end: string }[]; costNok: number; nowCostNok: number } | null;
+    /** D67: Forvarm's hold on the power, while it lasts (null otherwise). */
+    preheatHoldUntilIso?: string | null;
   } | null;
   /** Latest start time from estimateChargingPlan, for a pending plan. */
   startTimeIso: string | null;
@@ -39,6 +41,10 @@ export interface HomeCardData {
   capacityKwh: number;
   /** Norgespris + nettleie rates from Innstillinger (src/lib/pricing.ts). */
   prices: Prices;
+  /** D65: the loop guard holds the app's automated commands back for this charger. */
+  automationPaused: boolean;
+  /** D68: during Forvarm (session or hold) the car stopped drawing power -- the heater runs on the battery. */
+  preheatOnBattery?: boolean;
   /** noCar: what happened since the last unplug (HANDOFF §3 "Koblet fra"); null = hide the card. */
   sinceUnplug: SinceUnplug | null;
   /** ready: the plan that just finished, for the status line and the "Siste lading" card. */

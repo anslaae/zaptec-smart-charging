@@ -35,6 +35,7 @@ const ALL_TABLES = [
   "webhook_events",
   "scheduler_heartbeat",
   "charger_observed_state",
+  "charger_state_log",
   "users",
 ];
 

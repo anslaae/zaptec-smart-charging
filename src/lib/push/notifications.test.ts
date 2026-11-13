@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  automationPaused,
+  planStartFailed,
   lateEstimate,
   planCompleted,
   planStarted,
@@ -36,6 +38,18 @@ describe("push payloads", () => {
     const p = planCompleted({ scheduleId: "s", targetPercent: 80, deliveredKwh: 15.62, costNok: 7.81 });
     expect(p.body).toMatch(/^Ladet til ca\. 80 % · 15,6 kWh · ca\. \d+ kr\.$/);
     expect(p.url).toBe("/history");
+  });
+});
+
+describe("D64/D65 problem pushes", () => {
+  it("loop guard: says what happened and what to do, one tag per charger", () => {
+    const p = automationPaused({ chargerId: "c1" });
+    expect(p.title).toBe("Lading slått av og på for ofte");
+    expect(p.body).toMatch(/Lad nå.*koble bilen fra og til igjen/);
+    expect(p.tag).toBe("charger-c1");
+  });
+  it("start cap: tagged to the plan", () => {
+    expect(planStartFailed({ scheduleId: "s1" })).toMatchObject({ title: "Ladingen starter ikke", tag: "plan-s1" });
   });
 });
 

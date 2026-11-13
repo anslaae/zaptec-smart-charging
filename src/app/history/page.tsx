@@ -19,7 +19,7 @@ import {
 import { formatDayAndTime, formatDayLabel, formatDuration, formatNumber, formatTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
 import { carShortName } from "@/lib/ui/cars";
-import { visibleActivity } from "@/lib/ui/activity";
+import { shownDetail, visibleActivity } from "@/lib/ui/activity";
 import { DebugOnly } from "@/components/DebugOnly";
 
 const t = nb.history;
@@ -285,7 +285,7 @@ async function ActivityTab({ now }: { now: Date }) {
   groups.months = groups.months.filter((m) => shown(m.items) > 0);
   const render = ({ event, technical }: (typeof rows)[number]) => {
     const who = event.userId ? nameById.get(event.userId) : null;
-    const sub = [who, event.detail].filter(Boolean).join(" · ");
+    const sub = [who, shownDetail(event)].filter(Boolean).join(" · ");
     const item = (
       <li key={event.id} className="flex items-baseline justify-between gap-3 py-2.5">
         <div className="min-w-0">

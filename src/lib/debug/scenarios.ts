@@ -46,6 +46,9 @@ function baseSchedule(overrides: Partial<Schedule>): Schedule {
     lastEvaluatedAt: null,
     lastError: null,
     startedAt: null,
+    preheatHoldUntil: null,
+    preheatPowerLostAt: null,
+    preheatPowerLostNotifiedAt: null,
     endedAt: null,
     zaptecSessionId: null,
     estimatedDurationMinutes: null,
@@ -81,6 +84,8 @@ export interface DebugScenario {
   openSession: { kind: "manual" | "preheat" | "guest" | "automatic"; startedAt: string } | null;
   lastCompletedPlanSessionId: string | null;
   stateOfCharge: { percent: number; oemUpdatedAt: Date } | null;
+  /** D65 banner preview. */
+  automationPaused?: boolean;
 }
 
 // Pure front-end previews -- never touch the real charger, DB, or Zaptec
@@ -151,6 +156,37 @@ export const DEBUG_SCENARIOS: Record<string, DebugScenario> = {
     schedule: baseSchedule({ status: "pending", readyBy: new Date(Date.now() + 1 * HOUR) }),
     startTime: new Date(Date.now() - 1 * HOUR).toISOString(),
     startsImmediately: true,
+    openSession: null,
+    lastCompletedPlanSessionId: null,
+    stateOfCharge: freshReading(46),
+  },
+  // D65: the loop guard tripped while a plan was waiting to start again
+  plannedAutomationPaused: {
+    label: "Planlagt – appen har tatt pause",
+    homeState: "planned",
+    state: baseState({ operationMode: ChargerOperationMode.StoppedOrIdle, finalStopActive: true }),
+    schedule: baseSchedule({
+      status: "active",
+      readyBy: new Date(Date.now() + 4 * HOUR),
+      lastError: "Automation paused after repeated on/off",
+    }),
+    startTime: new Date(Date.now() - 1 * HOUR).toISOString(),
+    openSession: null,
+    lastCompletedPlanSessionId: null,
+    stateOfCharge: freshReading(46),
+    automationPaused: true,
+  },
+  // D64: the plan stopped sending start commands after three unanswered ones
+  plannedStartFailed: {
+    label: "Planlagt – laderen starter ikke",
+    homeState: "planned",
+    state: baseState({ operationMode: ChargerOperationMode.StoppedOrIdle, finalStopActive: true }),
+    schedule: baseSchedule({
+      status: "active",
+      readyBy: new Date(Date.now() + 4 * HOUR),
+      lastError: "Charger did not start after repeated attempts",
+    }),
+    startTime: new Date(Date.now() - 1 * HOUR).toISOString(),
     openSession: null,
     lastCompletedPlanSessionId: null,
     stateOfCharge: freshReading(46),

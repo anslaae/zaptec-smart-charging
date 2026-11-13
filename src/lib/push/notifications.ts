@@ -92,6 +92,40 @@ export function planLate(input: {
   };
 }
 
+// (app) D65: the loop guard tripped; one push per incident (the tick sends it
+// only on the tick that trips, then the guard stays "paused").
+export function automationPaused(input: { chargerId: string }): PushPayload {
+  return {
+    title: t.automationPaused.title,
+    body: t.automationPaused.body,
+    tag: `charger-${input.chargerId}`,
+    url: "/",
+  };
+}
+
+// (app) D68: the car stopped drawing power during Forvarm, so the cabin
+// heater runs on the battery. Once per Forvarm (the tick keeps the flag).
+export function preheatOnBattery(input: { chargerId: string; since: Date }): PushPayload {
+  return {
+    title: t.preheatOnBattery.title,
+    body: fill(t.preheatOnBattery.body, { time: formatTime(input.since) }),
+    tag: `preheat-${input.chargerId}`,
+    url: "/?sheet=preheat",
+  };
+}
+
+// (app) D64: the plan tried to start a few times and the car still isn't
+// charging -- usually Zaptec's "stopped too many times" lockout, cleared by
+// unplugging and plugging the car back in.
+export function planStartFailed(input: { scheduleId: string }): PushPayload {
+  return {
+    title: t.planStartFailed.title,
+    body: t.planStartFailed.body,
+    tag: `plan-${input.scheduleId}`,
+    url: "/",
+  };
+}
+
 export function planWaitingForCar(input: {
   scheduleId: string;
   latestStart: Date;

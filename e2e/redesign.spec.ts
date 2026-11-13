@@ -11,13 +11,33 @@ async function login(page: Page) {
   }
 }
 
+// The panel shows the newest 40 log lines, so counting lines breaks once
+// older ones scroll out. Each line carries an ever-increasing data-log-seq:
+// wait for a line newer than the newest one before the action.
+async function newestLogSeq(page: Page): Promise<number> {
+  const first = page.locator("[data-log-seq]").first();
+  return (await first.count()) ? Number(await first.getAttribute("data-log-seq")) : 0;
+}
+
+async function untilNewLogLine(page: Page, text: string, act: () => Promise<void>) {
+  const before = await newestLogSeq(page);
+  await act();
+  await expect
+    .poll(async () => {
+      for (const li of await page.locator("[data-log-seq]").all()) {
+        if (Number(await li.getAttribute("data-log-seq")) <= before) break;
+        if ((await li.textContent())?.includes(text)) return true;
+      }
+      return false;
+    })
+    .toBe(true);
+}
+
 async function preset(page: Page, label: string) {
   await page.goto("/dev/mock");
-  const line = page.getByText(`Scenario: ${label}`);
-  const before = await line.count();
-  await page.getByRole("button", { name: label, exact: true }).click();
-  // The log keeps earlier runs' lines: wait for one more.
-  await expect(line).toHaveCount(before + 1);
+  await untilNewLogLine(page, `Scenario: ${label}`, () =>
+    page.getByRole("button", { name: label, exact: true }).click(),
+  );
 }
 
 async function mockButton(page: Page, name: string) {
@@ -27,10 +47,14 @@ async function mockButton(page: Page, name: string) {
 
 async function tick(page: Page) {
   if (!page.url().endsWith("/dev/mock")) await page.goto("/dev/mock");
-  const line = page.getByText("Cron-tick: 200");
-  const before = await line.count();
-  await mockButton(page, "Kjør cron-tick");
-  await expect(line).toHaveCount(before + 1);
+  await untilNewLogLine(page, "Cron-tick: 200", () => mockButton(page, "Kjør cron-tick"));
+}
+
+async function freshLog(page: Page) {
+  // The mock log keeps the newest 200 lines; tests that count many ticks'
+  // commands start from a clean slate (and clean data).
+  await mockButton(page, "Nullstill alt til startdata");
+  await expect(page.getByText("Alt nullstilt til startdata")).toBeVisible();
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -467,6 +491,77 @@ test("unplugged Hjem: last reading in the ring, kWh left and Koblet fra", async 
   await expect(card.getByText(/^i dag \d\d:\d\d · 62 %$/)).toBeVisible();
 });
 
+test("D64: a plan that has started keeps charging through ticks (no stop/start loop)", async ({ page }) => {
+  await freshLog(page);
+  // Started plan, ready tomorrow 07:30: hours early by any estimate, which
+  // used to make the tick pause it (and resume it a minute later).
+  await preset(page, "Lader etter plan");
+  const stops = page.getByText(/\[command\] StopChargingFinal/);
+  const before = await stops.count();
+  await tick(page);
+  await tick(page);
+  await tick(page);
+  await expect(stops).toHaveCount(before);
+});
+
+test("D64: a charger that won't start gets three tries, then one push", async ({ page }) => {
+  await freshLog(page);
+  await preset(page, "Lader etter plan");
+  // Re-plug with RFID required: ResumeCharging can't start the new session
+  await mockButton(page, "Koble fra bil");
+  await page.getByText("Laderen krever innlogging (RFID)").click();
+  await expect(page.getByRole("checkbox", { name: "Laderen krever innlogging (RFID)" })).toBeChecked();
+  await mockButton(page, "Koble til bil");
+  const resumes = page.getByText(/\[command\] ResumeCharging/);
+  const push = page.getByText(/\[push\] Ladingen starter ikke/);
+  const resumesBefore = await resumes.count();
+  const pushesBefore = await push.count();
+  for (let i = 0; i < 5; i++) await tick(page);
+  await expect(resumes).toHaveCount(resumesBefore + 3);
+  await expect(push).toHaveCount(pushesBefore + 1);
+  // (Hjem shows its own "Appen styrer ikke laderen" card while RFID is
+  // required; the D64 line on the planned card is covered by the debug scenario.)
+  // Re-plugging resets the count: it tries again
+  await page.goto("/dev/mock");
+  await mockButton(page, "Koble fra bil");
+  await mockButton(page, "Koble til bil");
+  await tick(page);
+  await expect(resumes).toHaveCount(resumesBefore + 4);
+  await page.getByText("Laderen krever innlogging (RFID)").click();
+  await expect(page.getByRole("checkbox", { name: "Laderen krever innlogging (RFID)" })).not.toBeChecked();
+});
+
+test("D64: Hjem tells you to re-plug when the plan gave up starting", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    localStorage.setItem("zaptec-debug-enabled", "1");
+    localStorage.setItem("zaptec-debug-scenario", "plannedStartFailed");
+  });
+  await page.reload();
+  await expect(page.getByText("Laderen svarer ikke – koble bilen fra og til igjen")).toBeVisible();
+  await page.evaluate(() => {
+    localStorage.removeItem("zaptec-debug-enabled");
+    localStorage.removeItem("zaptec-debug-scenario");
+  });
+});
+
+test("D65: Hjem shows the loop guard's pause and the plan's line", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    localStorage.setItem("zaptec-debug-enabled", "1");
+    localStorage.setItem("zaptec-debug-scenario", "plannedAutomationPaused");
+  });
+  await page.reload();
+  await expect(page.getByRole("status").filter({ hasText: "Appen har tatt pause" })).toContainText(
+    "Ladingen ble slått av og på for ofte",
+  );
+  await expect(page.getByText("Appen har tatt pause – koble bilen fra og til igjen")).toBeVisible();
+  await page.evaluate(() => {
+    localStorage.removeItem("zaptec-debug-enabled");
+    localStorage.removeItem("zaptec-debug-scenario");
+  });
+});
+
 test("unplugged Hjem keeps the % when the Smartcar API fails (latest webhook reading)", async ({ page }) => {
   await preset(page, "Ingen bil tilkoblet");
   await page.getByText("Smartcar svarer ikke").click();
@@ -575,4 +670,69 @@ test("the plan sheet starts at 08:00 (D56)", async ({ page }) => {
   await page.goto("/?sheet=plan");
   const sheet = page.getByRole("dialog", { name: "Planlegg lading" });
   await expect(sheet.getByRole("button", { name: "08:00" })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("D67: Forvarm while a plan charges offers a hold, with what it may add", async ({ page }) => {
+  for (const label of ["Lader etter plan", "Smart lading – lader"]) {
+    await preset(page, label);
+    await page.goto("/");
+    await page.getByRole("link", { name: "Forvarm bilen" }).click();
+    const sheet = page.getByRole("dialog", { name: "Forvarm bilen" });
+    await expect(sheet.getByText("Strøm er på – lading pågår")).toBeVisible();
+    // Before confirming: until when, and the extra kWh / kr at today's price
+    await expect(
+      sheet.getByText(/^Strømmen holdes på til \d\d:\d\d\. Bilen kan lade (forbi \d+ %|mer enn planen) i mellomtiden – ca\. \d+(,\d)? kWh \/ \d+ kr ekstra ved dagens pris\./),
+    ).toBeVisible();
+    await expect(sheet.getByText(/Dette avbryter planen/)).toHaveCount(0);
+    await sheet.getByRole("button", { name: "Hold strømmen på" }).click();
+    await expect(sheet.getByText(/^Strøm holdes på til \d\d:\d\d$/)).toBeVisible();
+    // Hjem: the plan is kept, with the hold line
+    await page.goto("/");
+    await expect(page.getByText(/^Forvarming – strøm holdes på til \d\d:\d\d$/)).toBeVisible();
+    if (label === "Lader etter plan") await expect(page.getByRole("button", { name: "Avbryt plan" })).toBeVisible();
+    // A tick keeps it charging under the hold
+    await tick(page);
+    await page.goto("/");
+    await expect(page.getByText(/^Forvarming – strøm holdes på til/)).toBeVisible();
+  }
+});
+
+test("D67: Forvarm during Lad nå: power is already on, nothing to confirm", async ({ page }) => {
+  await preset(page, "Lad nå");
+  await page.goto("/");
+  await page.getByRole("link", { name: "Forvarm bilen" }).click();
+  const sheet = page.getByRole("dialog", { name: "Forvarm bilen" });
+  await expect(sheet.getByText("Strøm er på – lading pågår")).toBeVisible();
+  await expect(sheet.getByRole("button", { name: /Forvarm bilen|Hold strømmen på/ })).toHaveCount(0);
+  await expect(sheet.getByRole("link", { name: /Åpne myOpel/ })).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
+  await expect(page.getByText(/^Forvarming – strøm holdes på/)).toHaveCount(0);
+});
+
+test("D68: the car stops drawing during Forvarm: amber line, one push, cleared when it draws again", async ({ page }) => {
+  await freshLog(page);
+  await preset(page, "Forvarmer");
+  await page.goto("/");
+  await expect(page.getByText(/sluttet å trekke strøm/)).toHaveCount(0);
+
+  await mockButton(page, "Bilen slutter å trekke strøm");
+  await tick(page);
+  const pushLine = page.locator("[data-log-seq]").filter({ hasText: "Forvarming bruker batteriet — Bilen sluttet å trekke strøm fra laderen kl." });
+  await expect(pushLine).toHaveCount(1);
+  await page.goto("/");
+  await expect(page.getByText("Bilen har sluttet å trekke strøm – forvarmingen går nå på batteriet.")).toBeVisible();
+  await page.goto("/?sheet=preheat");
+  await expect(
+    page.getByRole("dialog", { name: "Forvarm bilen" }).getByText("Bilen har sluttet å trekke strøm – forvarmingen går nå på batteriet."),
+  ).toBeVisible();
+
+  // Another tick: still on battery, but no second push
+  await tick(page);
+  await expect(pushLine).toHaveCount(1);
+
+  await mockButton(page, "Bilen trekker strøm igjen");
+  await tick(page);
+  await page.goto("/");
+  await expect(page.getByText(/sluttet å trekke strøm/)).toHaveCount(0);
 });

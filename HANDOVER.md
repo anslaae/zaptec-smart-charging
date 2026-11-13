@@ -174,6 +174,44 @@ Opt-in per browser/device (toggle in the dashboard header, off by default — no
 - **#1 Push notifications** — core sending shipped; **per-user, per-event-type configurability** still open (today it's one all-or-nothing toggle per device).
 - **#2 Biometric login (WebAuthn/passkeys)** — not started. Explicitly additive to the existing password login, never a replacement.
 - **Electricity price view** (not a GitHub issue yet; scoped 2026-11-09, not started). Use https://www.hvakosterstrommen.no/strompris-api — free, keyless, CORS-open static JSON per day and price area: `GET /api/v1/prices/{YYYY}/{MM}-{DD}_{NO1..NO5}.json`. Verified live: hourly entries (`NOK_per_kWh`, `EUR_per_kWh`, `EXR`, `time_start`/`time_end` with Oslo offset), 23/25 on DST days; prices are **ex VAT** (NO4 has no VAT) and **without** strømstøtte; source is ENTSO-E converted at Norges Bank's rate. Tomorrow's prices appear after ~13:00. Served via Cloudflare: published days cached 7 days (immutable), but an **unpublished day returns 404 that is itself cached for 4h** — so don't request tomorrow before 13:00, and retry every 15–30 min after. Attribution wanted, not required ("Strømpriser levert av Hva koster strømmen.no"). Planned shape: fetch **on demand** server-side through Next's fetch cache — no cron, nothing stored in the DB (keeps DB load down, see the Neon story); a pure, unit-tested cost calc (spot → +25% VAT → either strømstøtte 90% above 77 øre/kWh ex VAT hour by hour, or Norgespris fixed 40 øre/kWh ex VAT; optionally the grid company's day/night energiledd); config constants like `src/lib/vehicle.ts` (price area, Norgespris vs spot, optional nettleie rates); never on the charging critical path (unavailable → say so, like Smartcar). Open inputs from the owner: price area, whether the household is on Norgespris (if so, spot is informational and only nettleie varies by hour), and grid company. Official-source notes: ENTSO-E is the official spot source (free key by email); Norgespris/strømstøtte rules are on regjeringen.no; there is **no** official nationwide nettleie API (NVE's stops at 2022, Elhub's is still only planned) — use the household's own grid company's published tariff. Price-optimized charging stays deferred v2 scope but could reuse this.
+- **Fresh status on app open, and Lad nå from two devices** (not a GitHub issue yet; noted 2026-11-13 after the start/stop-loop incident, not started). What the code does today:
+    - *App open / resume:* the page shown first is whatever the browser kept: the client router cache (`staleTimes` 30 s) or the PWA's last render. `AutoRefresh` then calls `router.refresh()` on `visibilitychange`, and right away if the render is > 10 s old, and every 60 s while visible. Until that returns (1–2 s, longer on a cold function), Hjem shows an old status **with live buttons**. Even fresh data can lag: Zaptec's `/state` observations update some seconds after a command, so the render right after Lad nå/Stopp may still show the old state.
+    - *Two devices:* the server actions (`startChargingNow`, `startPreheat`, `stopChargingNow` in `src/lib/zaptec/actions.ts`) act on the tap alone. They don't check the charger's current state or what the tapping device was showing. Concretely:
+        - **Bug: Lad nå twice → two open `manual_charge_sessions` rows** (`openSession` always inserts), both bound to the same Zaptec session by `trackSession`, so Historikk/Innsikt count that energy twice. Same for Lad nå + Forvarm.
+        - Stopp from a device that still shows an old "charging" screen stops whatever is running now, including a session someone else just started. Lad nå on a stale "not charging" screen re-sends ResumeCharging (harmless 528) and logs a second "Startet manuelt".
+        - Only `clearOpenPlan` guards against a plan the device didn't know about (it needs `cancelPlan=1` from the confirm dialog).
+        - The other device only learns of the change at its next 60 s refresh or when it comes back to the foreground.
+    - *Ideas to evaluate:*
+        - `openSession` reuses an open non-guest row for the charger instead of inserting. That fixes the double count, and old duplicate rows could be merged when read.
+        - Actions re-read the charger state and return a friendly answer instead of acting blindly: "Lader allerede (startet av Astrid 21:04)", "Allerede stoppet".
+        - Forms carry the state the device rendered (e.g. the open session id or plan id, or the render time). The action refuses with "Statusen har endret seg – sjekk igjen" when it no longer matches.
+        - After a command, poll every ~5 s for up to ~30 s until Zaptec's state shows the change, with a pending state on the button instead of a stale screen.
+        - On resume, mark the screen as updating and disable action buttons until fresh data is in, when the shown render is older than N seconds.
+        - Tell the other devices: a push ("Astrid startet lading") or live updates (Supabase Realtime / SSE). Weigh this against Zaptec's fair-use polling limits; push may be enough.
+- **Use more of Zaptec's charger state** (not a GitHub issue yet; noted 2026-11-13). Source: a read-only dump of `/api/chargers/{id}/state` on 2026-11-13. It returns 81 observations; the app reads about 10 (`constants.ts`). Re-check names and IDs against the live `/api/constants` before relying on them. Worth adding, most useful first:
+    - **Current per phase, 507/508/509.** Shows whether the car actually draws power and how much.
+        - Evidence from 2026-11-13 08:37 UTC, while preheating: 0.048 A and 0 kW, with mode 5. The car had stopped drawing and the climate control ran on the battery.
+        - Uses: "the car stopped drawing" detection (Forvarm), a live "Bilen trekker X kW" readout, and telling a stopped charger from a car that is idle while still authorised.
+        - *Being added by the fork* (Forvarm detection), together with the raw-state log below.
+    - **DiagnosticsString, 808.** A text line with voltages, currents, kW, kWh, and the pilot state (e.g. `CP: 20.0 C6 CM3`). The pilot state (A/B/C) says whether the car requests power or is only connected.
+        - It updates rarely (about every 2 h), so it suits after-the-fact diagnosis, not live UI.
+    - **CompletedSession, 723.** JSON with the final `Energy`, start and end of the session that just ended. It removes the "last value seen is carried forward" undercount in session energy reconciliation (see *Session energy survives a disconnect*).
+    - **Hourly metered energy.**
+        - Observation 554 SignedMeterValue: an OCMF meter reading updated hourly, `RV` = total kWh.
+        - Each charge-history session's `SignedSession`: OCMF readings at every hour boundary.
+        - Use: exact kWh per hour, so cost per hour can be exact instead of the session's kWh spread across its hours.
+    - **Charger health.**
+        - 804 Warnings and 803 Notifications. Codes to map: a non-zero warning could show "Laderen melder en feil".
+        - -2 IsOnline and 809 CommunicationSignalStrength (−75 dBm today).
+        - Temperatures 201–207/270 and 811 McuResetSource. Useful in debug mode and the health endpoint.
+    - **Other values.** 702 ChargeMode (9 while finished), 714 CableType, 151 PermanentCableLock, 519 SetPhases.
+        - Unnamed IDs to check against /api/constants: 145, 147 (changed to 600 at the moment charging stopped), 544–548, 732, 733.
+    - **Charge history.**
+        - `/api/chargehistory` still works (deprecated). It has `ExternallyEnded`, `CommitMetadata` and per-hour OCMF readings.
+        - `/api/sessions/archived` returns 400 "from and to are required" without a date range. Pass `from`/`to` when migrating.
+    - **Raw state log for understanding incidents.** Store a snapshot of the raw observations (or just the ones that changed) whenever operation mode, power, phase current or FinalStopActive changes. Then a morning like 2026-11-13 can be replayed instead of reconstructed from activity events.
+        - *Being added by the fork.* Watch the table size: prune after ~30 days.
+    - **Unverified: push instead of polling.** Zaptec may offer real-time state messages (Service Bus / installation messaging) instead of minute polling. Not checked. It would help freshness (see the item above) and incident timing.
 - **OCPP migration** — deliberately deferred, see above. Not a GitHub issue (it's a bigger discussion than a single backlog item); re-read the "security model" section above before proposing it again.
 
 ## Where the original Zaptec API knowledge came from

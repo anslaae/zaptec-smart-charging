@@ -127,4 +127,11 @@ export interface ChargerState {
   // it has no way to authorize a brand-new one -- see appHasControl() in
   // state.ts. Null if the lookup failed.
   installationRequiresAuth: boolean | null;
+  // D69: CurrentPhase1-3 (observations 507-509) in amps, one per phase
+  // (null where not reported); null when none are. Shows a car that stopped
+  // drawing even while the operation mode still says "charging".
+  phaseCurrentsAmps?: (number | null)[] | null;
+  // D69: every observation as Zaptec reported it (stateId -> ValueAsString),
+  // kept in charger_state_log when something changes.
+  rawObservations?: Record<string, string | null> | null;
 }

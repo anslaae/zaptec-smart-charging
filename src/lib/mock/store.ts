@@ -6,6 +6,8 @@ import { ChargerSim } from "./charger";
 // server restart does reset everything, by design -- nothing is persisted.
 
 export interface MockLogEntry {
+  /** Ever-increasing (survives "Nullstill alt"), so UI tests can wait for a newer line. */
+  seq: number;
   at: string;
   kind: "command" | "push" | "incoming" | "info";
   text: string;
@@ -14,6 +16,7 @@ export interface MockLogEntry {
 interface MockStore {
   sim: ChargerSim;
   log: MockLogEntry[];
+  seq?: number;
 }
 
 const globalForMock = globalThis as typeof globalThis & { __zaptecMockStore?: MockStore };
@@ -28,7 +31,8 @@ export function mockStore(): MockStore {
 /** Newest first, capped, shown in the /dev/mock panel. */
 export function mockLog(kind: MockLogEntry["kind"], text: string): void {
   const store = mockStore();
-  store.log.unshift({ at: new Date().toISOString(), kind, text });
+  store.seq = (store.seq ?? 0) + 1;
+  store.log.unshift({ seq: store.seq, at: new Date().toISOString(), kind, text });
   if (store.log.length > 200) store.log.length = 200;
   console.log(`[mock:${kind}] ${text}`);
 }

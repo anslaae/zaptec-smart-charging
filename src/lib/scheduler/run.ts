@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   chargeSchedules,
@@ -7,11 +7,20 @@ import {
   schedulerHeartbeat,
   manualChargeSessions,
   chargerObservedState,
+  activityEvents,
 } from "@/lib/db/schema";
 import { listChargers, getChargerState, sendChargerCommand, isCurrentlyCharging } from "@/lib/zaptec/client";
 import { ZaptecCommand, ChargerOperationMode } from "@/lib/zaptec/constants";
 import type { ChargerState, ZaptecCharger } from "@/lib/zaptec/types";
-import { decideNextAction, estimateChargingPlan, reconcileSessionEnergy } from "./engine";
+import {
+  decideNextAction,
+  estimateChargingPlan,
+  reconcileSessionEnergy,
+  START_ATTEMPT_WINDOW_MS,
+  START_FAILED_REASON,
+  startAttemptsExhausted,
+  type SchedulerDecision,
+} from "./engine";
 import { evaluateScheduleAccuracy } from "./accuracy";
 import { getLearnedPowerKw } from "./powerHistory.server";
 import { logActivity, ActivityType } from "@/lib/activity/log";
@@ -24,8 +33,49 @@ import { sessionCost } from "@/lib/pricing";
 import { getDefaultCar } from "@/lib/places";
 import { closeSession, deliveredKwh, endsOnDisconnect, openSession, trackSession, type SessionRow } from "@/lib/sessions";
 import { canSkipDbTouch, type QuietTickMemory } from "./tick-gate";
+import { AUTOMATION_PAUSED_REASON } from "./loopGuard";
+import { applyPreheatHold, preheatHoldActive } from "./preheatHold";
+import { checkHoldPower, checkPreheatSessionPower } from "./preheatPower.server";
+import { logChargerStates } from "./stateLog.server";
+import { loadLoopGuard, NEW_SESSION_ACTION } from "./loopGuard.server";
 
 type Schedule = typeof chargeSchedules.$inferSelect;
+
+// Start commands this plan sent since the car was last plugged in (at most
+// START_ATTEMPT_WINDOW_MS back) -- see startAttemptsExhausted.
+async function startAttemptsUsedUp(schedule: Schedule, now: Date): Promise<boolean> {
+  const windowStart = new Date(now.getTime() - START_ATTEMPT_WINDOW_MS);
+  const [attempts, [lastPlug], [lastNewSession]] = await Promise.all([
+    db
+      .select({ createdAt: scheduleActions.createdAt })
+      .from(scheduleActions)
+      .where(
+        and(
+          eq(scheduleActions.scheduleId, schedule.id),
+          eq(scheduleActions.action, "resume"),
+          gte(scheduleActions.createdAt, windowStart),
+        ),
+      ),
+    db
+      .select({ createdAt: activityEvents.createdAt })
+      .from(activityEvents)
+      .where(and(eq(activityEvents.chargerId, schedule.chargerId), eq(activityEvents.type, ActivityType.PluggedIn)))
+      .orderBy(desc(activityEvents.createdAt))
+      .limit(1),
+    db
+      .select({ createdAt: scheduleActions.createdAt })
+      .from(scheduleActions)
+      .where(and(eq(scheduleActions.scheduleId, schedule.id), eq(scheduleActions.action, NEW_SESSION_ACTION)))
+      .orderBy(desc(scheduleActions.createdAt))
+      .limit(1),
+  ]);
+  const plugTimes = [lastPlug?.createdAt, lastNewSession?.createdAt].filter((d): d is Date => d != null);
+  return startAttemptsExhausted({
+    attemptTimes: attempts.map((a) => a.createdAt),
+    lastPluggedInAt: plugTimes.length ? new Date(Math.max(...plugTimes.map((d) => d.getTime()))) : null,
+    now,
+  });
+}
 
 // Status writes in the loop only touch rows that are still open: a plan
 // cancelled meanwhile (a person, a mode change, another tick) must not be
@@ -178,6 +228,7 @@ async function enforceAuthorizedCharging(
   settings: HouseholdSettings,
   previousModes: Map<string, number | null>,
   capacityKwh: number,
+  pausedChargerIds: Set<string>,
 ): Promise<{ anyOpenSessionsRemain: boolean; guestChargerIds: Set<string> }> {
   const now0 = new Date();
   const openSessions = await db
@@ -221,6 +272,8 @@ async function enforceAuthorizedCharging(
         continue;
       }
       const tracked = await trackSession(row, state);
+      // D68: a Forvarm whose car stopped drawing power warms on the battery -- say so (no command).
+      if (tracked.kind === "preheat") await checkPreheatSessionPower(tracked, state, now0);
       // "Lad med en gang" stops at its target % (HANDOFF §6b, owner decision D51).
       const target = tracked.kind === "automatic" && tracked.targetKwh != null ? Number(tracked.targetKwh) : null;
       if (target != null && (deliveredKwh(tracked) ?? 0) >= target) {
@@ -258,6 +311,12 @@ async function enforceAuthorizedCharging(
       continue;
     }
 
+    // D65: the loop guard holds the app's automated commands back -- this
+    // car charges unchecked until it's re-plugged or someone acts.
+    if (pausedChargerIds.has(charger.id)) {
+      console.error(`[scheduler] charger ${charger.id} (${charger.name}): charging with no plan, not stopped -- automation paused`);
+      continue;
+    }
     console.error(
       `[scheduler] charger ${charger.id} (${charger.name}) is charging with no schedule or session -- stopping it`,
     );
@@ -292,6 +351,13 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
   if (canSkipDbTouch(modes, now0, lastFullTick)) {
     return { processed: 0, skipped: true };
   }
+
+  // D69: the raw charger state, one row only when something meaningful
+  // changed, plus a 30-day prune. A diagnostic: it never fails the tick.
+  await logChargerStates(
+    chargers.map((c) => stateCache.get(c.id)).filter((s): s is ChargerState => s != null),
+    now0,
+  ).catch((error) => console.error("[scheduler] charger state log failed:", error));
 
   // "Når bilen kobles til" with an end time (HANDOFF §3b/§6b): once it has
   // passed, it's back to "wait" -- saved, logged, open automatic sessions
@@ -329,6 +395,24 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
   // an unauthorized session can happen on a charger with no schedule at all.
   // stateCache is already populated for every charger from the Zaptec calls
   // above, so neither this nor the transition log below needs to re-fetch.
+  // D65 loop guard, per charger, before anything sends a command this tick.
+  // Trips once per incident: one event and one push, then "paused" until a
+  // re-plug or a person acts. Sessions people started are never stopped by
+  // it -- it only holds the app's own automated commands back.
+  const pausedChargerIds = new Set<string>();
+  for (const charger of chargers) {
+    const sessionId = stateCache.get(charger.id)?.sessionId ?? null;
+    const guard = await loadLoopGuard(charger.id, now0, sessionId);
+    if (guard === "ok") continue;
+    pausedChargerIds.add(charger.id);
+    if (guard === "trip") {
+      console.error(`[scheduler] charger ${charger.id} (${charger.name}): on/off too often -- automation paused`);
+      // The session id goes in detail: a different one later clears the guard.
+      await logActivity(charger.id, charger.name, ActivityType.AutomationPaused, { detail: sessionId ?? undefined });
+      await notify(push.automationPaused({ chargerId: charger.id }));
+    }
+  }
+
   const { anyOpenSessionsRemain, guestChargerIds } = await enforceAuthorizedCharging(
     chargers,
     new Set(schedules.map((s) => s.chargerId)),
@@ -336,6 +420,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
     settings,
     previousModes,
     capacityKwh,
+    pausedChargerIds,
   );
   await logStateTransitions(chargers, stateCache, schedules, guestChargerIds, settings, learnedPowerKw, previousModes);
 
@@ -411,10 +496,55 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         };
       }
 
+      if (schedule.zaptecSessionId != null && state.sessionId != null && state.sessionId !== schedule.zaptecSessionId) {
+        await db
+          .insert(scheduleActions)
+          .values({ scheduleId: schedule.id, chargerId: schedule.chargerId, action: NEW_SESSION_ACTION, commandId: 0 });
+      }
+
       const targetKwh = Number(schedule.targetEnergyKwh);
-      const decision = isSmart(schedule)
+      let decision: SchedulerDecision = isSmart(schedule)
         ? smartDecision(schedule, effectiveState, now)
-        : decideNextAction({ targetEnergyKwh: targetKwh, readyBy: schedule.readyBy }, effectiveState, now, learnedPowerKw);
+        : decideNextAction(
+            { targetEnergyKwh: targetKwh, readyBy: schedule.readyBy, started: schedule.startedAt != null },
+            effectiveState,
+            now,
+            learnedPowerKw,
+          );
+
+      // D67: Forvarm's hold keeps the power on -- no pause, no stop at the
+      // target -- until it ends; then the plan decides as usual. A hold that
+      // ended (time, unplug, new session) is cleared from the row.
+      const holdActive = preheatHoldActive({
+        holdUntil: schedule.preheatHoldUntil,
+        scheduleSessionId: schedule.zaptecSessionId,
+        state,
+        now,
+      });
+      if (schedule.preheatHoldUntil != null && !holdActive) {
+        await db
+          .update(chargeSchedules)
+          .set({ preheatHoldUntil: null, preheatPowerLostAt: null, preheatPowerLostNotifiedAt: null })
+          .where(eq(chargeSchedules.id, schedule.id));
+      }
+      // D68: under the hold, the car may still stop drawing by itself.
+      if (holdActive) await checkHoldPower(schedule, state, now);
+      decision = applyPreheatHold(decision, holdActive);
+
+      // D65: the loop guard holds start/pause back (a final stop at the target
+      // still goes out: it ends the plan, it can't start a loop).
+      if ((decision.action === "resume" || decision.action === "pause") && pausedChargerIds.has(schedule.chargerId)) {
+        decision = { action: "none", reason: AUTOMATION_PAUSED_REASON, isProblem: true };
+      }
+
+      // D64: a few unanswered start commands since the plug-in, and the plan
+      // stops trying (and says so once) instead of sending one every minute.
+      if (decision.action === "resume" && (await startAttemptsUsedUp(schedule, now))) {
+        decision = { action: "none", reason: START_FAILED_REASON, isProblem: true };
+        if (schedule.lastError !== START_FAILED_REASON) {
+          await notify(push.planStartFailed({ scheduleId: schedule.id }));
+        }
+      }
 
       const decisionDetail = decision.action === "none" ? ` — ${decision.reason}` : "";
       console.log(

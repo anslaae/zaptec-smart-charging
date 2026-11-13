@@ -128,6 +128,12 @@ export const nb = {
     },
     chargingAutomatic: "Lader automatisk · {kw} kW",
     chargingAutomaticNoKw: "Lader automatisk",
+    // (app) D65: the loop guard holds the app's automated commands back
+    automationPaused: {
+      title: "Appen har tatt pause",
+      body: "Ladingen ble slått av og på for ofte, så appen styrer ikke laderen nå. Planer venter. Start med «Lad nå», eller koble bilen fra og til igjen.",
+    },
+    lastErrorAutomationPaused: "Appen har tatt pause – koble bilen fra og til igjen",
     noControl: {
       title: "Appen styrer ikke laderen akkurat nå",
       body: "Laderen krever innlogging igjen, så planer og «Lad nå» virker ikke. Start lading med brikke eller i Zaptec-appen, eller slå av krav om autentisering i Zaptec Portal.",
@@ -149,6 +155,7 @@ export const nb = {
     noControlNoCar: "Ingen bil tilkoblet – laderen krever innlogging",
     planRowKwh: "Plan: {kwh} klar {readyBy}",
     lastErrorNoCar: "Burde ha startet, men ingen bil er koblet til",
+    lastErrorStartFailed: "Laderen svarer ikke – koble bilen fra og til igjen",
     ringOf: "av {kwh}",
     noChargers: "Fant ingen ladere på Zaptec-kontoen.",
     suggestionDetail: "+{kwh} kWh · klar {time} i morgen",
@@ -202,6 +209,21 @@ export const nb = {
     step2Sub: "Appen kan ikke styre klimaanlegget selv.",
     openMyOpel: "Åpne myOpel",
     stop: "Stopp strøm",
+    // D67: the car is already charging -- Forvarm rides along, nothing is cancelled
+    step1Charging: "Strøm er på – lading pågår",
+    // D67 under a plan / Smart lading: a hold keeps the power on (earlier of 60 min and readyBy)
+    holdIntro: "Strømmen holdes på til {time}.",
+    holdPastTarget: "Bilen kan lade forbi {target} % i mellomtiden",
+    holdPastPlan: "Bilen kan lade mer enn planen i mellomtiden",
+    holdCost: " – ca. {kwh} kWh / {kr} kr ekstra ved dagens pris.",
+    holdKwh: " – ca. {kwh} kWh ekstra.",
+    holdAfter: "Planen fortsetter som før etterpå.",
+    holdConfirm: "Hold strømmen på",
+    holdOn: "Strøm holdes på til {time}",
+    holdDetail: "strøm holdes på til {time}",
+    homeLine: "Forvarming – strøm holdes på til {time}",
+    // D68: the car stopped drawing power -- the cabin heater runs on the battery
+    onBattery: "Bilen har sluttet å trekke strøm – forvarmingen går nå på batteriet.",
     // (app) before the next refresh shows the session
     starting: "Starter…",
   },
@@ -395,6 +417,7 @@ export const nb = {
     manual_start: "Startet manuelt",
     manual_stop: "Stoppet manuelt",
     preheat_started: "Forvarming startet",
+    preheat_during_charge: "Forvarm (under lading)",
     plan_created: "Plan laget",
     plan_cancelled: "Plan avbrutt",
     plan_restored: "Plan gjenopprettet",
@@ -410,6 +433,8 @@ export const nb = {
     smart_cancelled: "Smart lading avbrutt for denne ladingen",
     // (app) Innstillinger → "Når bilen kobles til"; detail = the new choice
     on_plugin_mode_changed: "Når bilen kobles til: endret",
+    // (app) D65
+    automation_paused: "Appen tok pause – ladingen ble slått av og på for ofte",
   },
   // Web Push copy, from design/redesign/notifications.nb.json.
   notifications: {
@@ -424,6 +449,21 @@ export const nb = {
     planStarted: { title: "Lading startet", body: "Lader til {targetPercent} %, ferdig ca. {finishTime}." },
     // (app) variants for plans made without a battery reading (no %)
     planStartedKwh: "Lader {kwh} kWh, ferdig ca. {finishTime}.",
+    // (app) D65: the loop guard tripped
+    automationPaused: {
+      title: "Lading slått av og på for ofte",
+      body: "Appen har tatt pause og styrer ikke laderen nå. Start med Lad nå, eller koble bilen fra og til igjen.",
+    },
+    // (app) D68: the car stopped drawing power during Forvarm
+    preheatOnBattery: {
+      title: "Forvarming bruker batteriet",
+      body: "Bilen sluttet å trekke strøm fra laderen kl. {time}.",
+    },
+    // (app) D64: start commands went unanswered
+    planStartFailed: {
+      title: "Ladingen starter ikke",
+      body: "Laderen svarer ikke på start. Koble bilen fra og til igjen, så prøver planen på nytt.",
+    },
     planCompleted: { title: "Bilen er klar", body: "Ladet til ca. {targetPercent} % · {kwh} kWh · ca. {cost} kr." },
     planCompletedKwh: "Ladet {kwh} kWh · ca. {cost} kr.",
     planLate: {

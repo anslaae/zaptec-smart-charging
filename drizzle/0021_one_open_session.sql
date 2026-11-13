@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "manual_charge_sessions_one_open" ON "manual_charge_sessions" USING btree ("charger_id") WHERE "manual_charge_sessions"."ended_at" is null and "manual_charge_sessions"."kind" <> 'guest';

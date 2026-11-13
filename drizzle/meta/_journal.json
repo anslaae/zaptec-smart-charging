@@ -148,6 +148,34 @@
       "when": 1794428362168,
       "tag": "0020_car_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794554005293,
+      "tag": "0021_one_open_session",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794559398578,
+      "tag": "0022_preheat_hold",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794560890962,
+      "tag": "0023_preheat_power_lost",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794561595433,
+      "tag": "0024_charger_state_log",
+      "breakpoints": true
     }
   ]
 }

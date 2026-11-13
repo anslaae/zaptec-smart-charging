@@ -9,6 +9,9 @@ import {
   jsonb,
   pgEnum,
   uniqueIndex,
+  index,
+  real,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -50,6 +53,14 @@ export const chargeSchedules = pgTable("charge_schedules", {
   lastError: text("last_error"),
   // When the scheduler first resumed charging for this schedule.
   startedAt: timestamp("started_at", { withTimezone: true }),
+  // D67 Forvarm while this plan/Smart row is charging: until then the tick
+  // won't pause or stop it (the earlier of 60 min from the tap and readyBy).
+  // Only counts for the plug-in it was set in (see scheduler/preheatHold.ts).
+  preheatHoldUntil: timestamp("preheat_hold_until", { withTimezone: true }),
+  // D68: during the hold, since when the car hasn't drawn power (null while it
+  // does) and when the "på batteriet" push went out (once per hold).
+  preheatPowerLostAt: timestamp("preheat_power_lost_at", { withTimezone: true }),
+  preheatPowerLostNotifiedAt: timestamp("preheat_power_lost_notified_at", { withTimezone: true }),
   // When the schedule reached a terminal state (completed or cancelled).
   endedAt: timestamp("ended_at", { withTimezone: true }),
   // The real Zaptec session active at the moment charging started -- lets
@@ -157,6 +168,30 @@ export const chargerObservedState = pgTable("charger_observed_state", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// D69: the charger's raw state, one row whenever something meaningful
+// changes (mode, final stop, session, power > 0.3 kW, a phase crossing
+// 0.5 A) -- not every minute. For diagnosing what the car/charger actually
+// did (e.g. the 13 Nov Forvarm on battery). Rows older than 30 days are
+// pruned by the tick.
+export const chargerStateLog = pgTable(
+  "charger_state_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    chargerId: text("charger_id").notNull(),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull().defaultNow(),
+    operationMode: integer("operation_mode"),
+    powerKw: numeric("power_kw", { precision: 6, scale: 2 }),
+    phase1Amps: real("phase1_amps"),
+    phase2Amps: real("phase2_amps"),
+    phase3Amps: real("phase3_amps"),
+    finalStopActive: boolean("final_stop_active"),
+    sessionId: text("session_id"),
+    // Every observation as reported (stateId -> ValueAsString).
+    raw: jsonb("raw"),
+  },
+  (t) => [index("charger_state_log_charger_observed").on(t.chargerId, t.observedAt)],
+);
+
 // A plain chronological log of everything worth showing on the history
 // page's "Activity" list -- both physical events we observe (plugged in,
 // charging started/stopped) and things this app did (manual start/stop, plan
@@ -210,8 +245,20 @@ export const manualChargeSessions = pgTable("manual_charge_sessions", {
   zaptecSessionId: text("zaptec_session_id"),
   startEnergyKwh: numeric("start_energy_kwh", { precision: 6, scale: 2 }),
   lastObservedEnergyKwh: numeric("last_observed_energy_kwh", { precision: 6, scale: 2 }),
+  // D68 (Forvarm rows): since when the car hasn't drawn power (null while it
+  // does) and when the "på batteriet" push went out (once per Forvarm).
+  powerLostAt: timestamp("power_lost_at", { withTimezone: true }),
+  powerLostNotifiedAt: timestamp("power_lost_notified_at", { withTimezone: true }),
   energyKwh: numeric("energy_kwh", { precision: 6, scale: 2 }),
-});
+}, (t) => [
+  // D66: at most one open Lad nå / Forvarm / automatic row per charger, so two
+  // taps at the same moment (two phones) can't both insert -- openSession
+  // treats the second insert's conflict as "already open". Guest windows
+  // live alongside (UC15).
+  uniqueIndex("manual_charge_sessions_one_open")
+    .on(t.chargerId)
+    .where(sql`${t.endedAt} is null and ${t.kind} <> 'guest'`),
+]);
 
 // One row per subscribed browser/device. Existence of a row *is* "this user
 // is subscribed" -- there's no separate enabled flag, matching the Push

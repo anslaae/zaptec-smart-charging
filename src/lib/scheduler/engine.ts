@@ -5,6 +5,39 @@ import { ChargerOperationMode } from "@/lib/zaptec/constants";
 export interface ScheduleInput {
   targetEnergyKwh: number;
   readyBy: Date;
+  /**
+   * The plan has already started charging (startedAt set). From then on it
+   * keeps charging until the target or ready-by: never paused again because
+   * the estimate moved. The estimate uses the live power while charging and
+   * the learned power while not, so a plan starting right at the edge flipped
+   * between "too early" and "must start" every minute (13 Nov 2026: about 20
+   * stop/start cycles in 40 min, then Zaptec refused until the car was
+   * reconnected). See DECISIONS D64.
+   */
+  started?: boolean;
+}
+
+/** Start commands that can go unanswered before the plan stops trying (D64). */
+export const MAX_START_ATTEMPTS = 3;
+/** How far back start attempts count: a plug-in, or this long ago, whichever is later. */
+export const START_ATTEMPT_WINDOW_MS = 15 * 60_000;
+/** Stored as lastError (English, like the other engine reasons); Hjem shows it in Norwegian. */
+export const START_FAILED_REASON = "Charger did not start after repeated attempts";
+
+/**
+ * Whether to stop sending start commands: this many were already sent since
+ * the car was plugged in (or within the window) and it still isn't charging.
+ * Keeps a stuck charger -- or any future flip-flop bug -- from turning into a
+ * command every minute for hours. Re-plugging the car resets the count.
+ */
+export function startAttemptsExhausted(input: {
+  attemptTimes: Date[];
+  lastPluggedInAt: Date | null;
+  now: Date;
+}): boolean {
+  const windowStart = input.now.getTime() - START_ATTEMPT_WINDOW_MS;
+  const since = Math.max(windowStart, input.lastPluggedInAt?.getTime() ?? -Infinity);
+  return input.attemptTimes.filter((t) => t.getTime() > since).length >= MAX_START_ATTEMPTS;
 }
 
 export type SchedulerDecision =
@@ -152,7 +185,7 @@ export function decideNextAction(
   }
 
   const { latestStartTime } = estimateChargingPlan(schedule, state, learnedPowerKw);
-  const mustBeChargingNow = now >= latestStartTime || now >= schedule.readyBy;
+  const mustBeChargingNow = schedule.started === true || now >= latestStartTime || now >= schedule.readyBy;
 
   if (mustBeChargingNow) {
     if (isCurrentlyCharging(state)) {
