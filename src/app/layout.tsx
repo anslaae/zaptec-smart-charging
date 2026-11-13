@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: nb.app.name,
-  description: "Planlegg lading av bilen på Zaptec-laderen",
+  description: "Planlegg lading av bilen på laderen hjemme",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

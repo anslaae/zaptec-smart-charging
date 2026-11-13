@@ -117,3 +117,85 @@ export function monthInsights(records: SessionRecord[], month: string, now: Date
     smartCostNok,
   };
 }
+
+// Innsikt year view (HANDOFF §6d): built from the month results so the two
+// views always agree -- the year total is the sum of its months. Pure.
+
+export interface YearInsights {
+  year: number;
+  /** Jan..Dec; null for months after the current one. */
+  months: (MonthInsights | null)[];
+  /** 1-12: the current month in the current year (unfinished), else null. */
+  partialMonth: number | null;
+  /** Last month counted (12 for a past year). */
+  lastMonth: number;
+  totalKwh: number;
+  totalCostNok: number;
+  gridNok: number | null;
+  perPerson: { userId: string; kwh: number; costNok: number }[];
+  guestKwh: number;
+  guestCostNok: number;
+  automaticKwh: number;
+  automaticCostNok: number;
+  importedKwh: number;
+  importedCostNok: number;
+  smartKwh: number;
+  smartCostNok: number;
+  /** % change vs the same period of the previous year; null when that period had nothing. */
+  changePercent: number | null;
+}
+
+export const yearOf = (now: Date) => Number(monthKeyOf(now).slice(0, 4));
+const monthKey = (year: number, month: number) => `${year}-${String(month).padStart(2, "0")}`;
+
+export function yearInsights(records: SessionRecord[], year: number, now: Date): YearInsights {
+  const current = monthKeyOf(now);
+  const currentYear = Number(current.slice(0, 4));
+  const lastMonth = year === currentYear ? Number(current.slice(5, 7)) : 12;
+  const months = Array.from({ length: 12 }, (_, i) =>
+    i < lastMonth ? monthInsights(records, monthKey(year, i + 1), now) : null,
+  );
+  const counted = months.filter((m): m is MonthInsights => m != null);
+  const sum = (pick: (m: MonthInsights) => number) => counted.reduce((s, m) => s + pick(m), 0);
+
+  const people = new Map<string, { kwh: number; costNok: number }>();
+  for (const m of counted) {
+    for (const p of m.perPerson) {
+      const q = people.get(p.userId) ?? { kwh: 0, costNok: 0 };
+      people.set(p.userId, { kwh: q.kwh + p.kwh, costNok: q.costNok + p.costNok });
+    }
+  }
+  const grids = counted.map((m) => m.gridNok).filter((g): g is number => g != null);
+
+  // Same period last year: whole months before the last one, then the last
+  // month up to the same day (the whole month for a past year).
+  let previousKwh = 0;
+  for (let i = 1; i <= lastMonth; i++) {
+    const prev = monthInsights(records, monthKey(year - 1, i), now);
+    const days = i === lastMonth ? months[i - 1]!.days : prev.perDay.length;
+    previousKwh += prev.perDay.slice(0, days).reduce((s, kwh) => s + kwh, 0);
+  }
+
+  const totalKwh = sum((m) => m.totalKwh);
+  return {
+    year,
+    months,
+    partialMonth: year === currentYear ? lastMonth : null,
+    lastMonth,
+    totalKwh,
+    totalCostNok: sum((m) => m.totalCostNok),
+    gridNok: grids.length > 0 ? grids.reduce((s, g) => s + g, 0) : null,
+    perPerson: [...people.entries()]
+      .map(([userId, p]) => ({ userId, kwh: p.kwh, costNok: p.costNok }))
+      .sort((a, b) => b.kwh - a.kwh),
+    guestKwh: sum((m) => m.guestKwh),
+    guestCostNok: sum((m) => m.guestCostNok),
+    automaticKwh: sum((m) => m.automaticKwh),
+    automaticCostNok: sum((m) => m.automaticCostNok),
+    importedKwh: sum((m) => m.importedKwh),
+    importedCostNok: sum((m) => m.importedCostNok),
+    smartKwh: sum((m) => m.smartKwh),
+    smartCostNok: sum((m) => m.smartCostNok),
+    changePercent: previousKwh > 0 ? Math.round(((totalKwh - previousKwh) / previousKwh) * 100) : null,
+  };
+}

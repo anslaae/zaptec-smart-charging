@@ -239,7 +239,7 @@ export async function manageSmartRows(input: {
     const first = plan.blocks[0];
     const last = plan.blocks[plan.blocks.length - 1];
     await logActivity(charger.id, charger.name, ActivityType.SmartPlanned, {
-      detail: `${settings.smartTargetPercent} % · ${formatTime(first.start)}–${formatTime(last.end)}`,
+      detail: `${settings.smartTargetPercent}\u202F% · ${formatTime(first.start)}–${formatTime(last.end)}`,
     });
     await sendPushToAllSubscribers(
       smartPlanned({

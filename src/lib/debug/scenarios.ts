@@ -347,7 +347,7 @@ export const DEBUG_SCENARIOS: Record<string, DebugScenario> = {
     stateOfCharge: freshReading(80, 15),
   },
   noControl: {
-    label: "Appen styrer ikke laderen",
+    label: "Jeg styrer ikke laderen",
     homeState: "noControl",
     state: baseState({
       operationMode: ChargerOperationMode.ConnectedRequesting,

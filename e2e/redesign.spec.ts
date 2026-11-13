@@ -92,29 +92,29 @@ test("UC1/UC3: create, edit and cancel a plan in the plan sheet", async ({ page 
   await page.getByRole("link", { name: "Planlegg lading" }).click();
   const sheet = page.getByRole("dialog", { name: "Planlegg lading" });
   await expect(sheet).toBeVisible();
-  await sheet.getByRole("button", { name: "90 %" }).click();
+  await sheet.getByRole("button", { name: "90\u202F%" }).click();
   await expect(sheet.getByText(/^\+\d+,\d kWh$/)).toBeVisible();
   await sheet.getByRole("button", { name: "Lagre plan" }).click();
 
   await expect(page.getByText("Plan lagret")).toBeVisible();
   await expect(page.getByText(/^Starter ca\. \d\d:\d\d · klar /)).toBeVisible();
   await expect(page.getByText(/^Planlagt/)).toBeVisible();
-  await expect(page.getByText("mål 90 %")).toBeVisible();
+  await expect(page.getByText("mål 90\u202F%")).toBeVisible();
 
   // Edit: the sheet opens prefilled with the saved target
   await page.getByRole("link", { name: "Endre plan" }).click();
   const edit = page.getByRole("dialog", { name: "Endre plan" });
-  await expect(edit.getByRole("button", { name: "90 %" })).toHaveAttribute("aria-pressed", "true");
-  await edit.getByRole("button", { name: "100 %" }).click();
+  await expect(edit.getByRole("button", { name: "90\u202F%" })).toHaveAttribute("aria-pressed", "true");
+  await edit.getByRole("button", { name: "100\u202F%" }).click();
   await edit.getByRole("button", { name: "Lagre plan" }).click();
-  await expect(page.getByText("mål 100 %")).toBeVisible();
+  await expect(page.getByText("mål 100\u202F%")).toBeVisible();
 
   // Cancel from the sheet
   await page.getByRole("link", { name: "Endre plan" }).click();
   await page.getByRole("dialog", { name: "Endre plan" }).getByRole("button", { name: "Avbryt plan" }).click();
   const confirm = page.getByRole("alertdialog", { name: "Avbryte planen?" });
   await expect(confirm).toBeVisible();
-  await expect(confirm.getByText(/^100 % klar \d\d:\d\d i morgen slettes/)).toBeVisible();
+  await expect(confirm.getByText(/^100\s% klar \d\d:\d\d i morgen slettes/)).toBeVisible();
   await expect(confirm.getByRole("button", { name: "Behold" })).toBeFocused();
   await confirm.getByRole("button", { name: "Avbryt plan" }).click();
   await expect(page.getByText("Plan avbrutt", { exact: true })).toBeVisible();
@@ -123,7 +123,7 @@ test("UC1/UC3: create, edit and cancel a plan in the plan sheet", async ({ page 
   // Angre on the toast brings the plan back
   await page.getByRole("button", { name: "Angre" }).click();
   await expect(page.getByText("Planen er tilbake")).toBeVisible();
-  await expect(page.getByText("mål 100 %")).toBeVisible();
+  await expect(page.getByText("mål 100\u202F%")).toBeVisible();
 });
 
 test("plan sheet blocks a target at or below the battery", async ({ page }) => {
@@ -131,7 +131,7 @@ test("plan sheet blocks a target at or below the battery", async ({ page }) => {
   await page.goto("/?sheet=plan");
   const sheet = page.getByRole("dialog", { name: "Planlegg lading" });
   await sheet.locator("#battery-now").fill("95");
-  await sheet.getByRole("button", { name: "90 %" }).click();
+  await sheet.getByRole("button", { name: "90\u202F%" }).click();
   await expect(sheet.getByText("Målet må være høyere enn batteriet nå.")).toBeVisible();
   await expect(sheet.getByRole("button", { name: "Lagre plan" })).toBeDisabled();
 });
@@ -165,7 +165,7 @@ test("UC8: Forvarm starts power and opens the Forvarm sheet", async ({ page }) =
 test("UC5: Lad nå push action asks before starting", async ({ page }) => {
   await preset(page, "Tilkoblet – ingen plan");
   await page.goto("/?action=charge-now");
-  const sheet = page.getByRole("dialog", { name: "Lad nå?" });
+  const sheet = page.getByRole("dialog", { name: "Lade nå?" });
   await expect(sheet).toBeVisible();
   await sheet.getByRole("button", { name: "Lad nå" }).click();
   await expect(page.getByText("Lading startet")).toBeVisible();
@@ -176,7 +176,7 @@ test("Lad nå with a plan asks, then cancels the plan and charges", async ({ pag
   await preset(page, "Planlagt");
   await page.goto("/");
   await page.getByRole("button", { name: "Lad nå" }).click();
-  const confirm = page.getByRole("dialog", { name: "Lad nå i stedet for planen?" });
+  const confirm = page.getByRole("dialog", { name: "Lade nå i stedet for planen?" });
   await expect(confirm.getByText(/^Planen \(klar .+\) blir avbrutt/)).toBeVisible();
   await confirm.getByRole("button", { name: "Avbryt plan og lad" }).click();
   await expect(page.getByText("Lading startet")).toBeVisible();
@@ -214,7 +214,7 @@ test("plug-in without a plan sends the Planlegg / Lad nå push", async ({ page }
   await tick(page);
   await mockButton(page, "Koble til bil");
   await tick(page);
-  await expect(page.getByText(/Bilen er koblet til — Batteri \d+ %/)).toBeVisible();
+  await expect(page.getByText(/Bilen er koblet til — Batteri \d+\s%/)).toBeVisible();
   await expect(page.getByText(/StopChargingFinal/).first()).toBeVisible();
 });
 
@@ -257,9 +257,85 @@ test("Innsikt 6c: car chip and Kjøring card from the odometer", async ({ page }
   await expect(page.getByRole("region", { name: "Kjøring" }).getByText(/lading et annet sted er holdt utenfor/)).toBeVisible();
 });
 
+// ---- 6d: Innsikt year view ----
+
+const osloNow = () => {
+  const [y, m] = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Oslo", year: "numeric", month: "2-digit" })
+    .format(new Date())
+    .split("-")
+    .map(Number);
+  const name = new Intl.DateTimeFormat("nb-NO", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, 15)));
+  return { year: y, month: m, monthName: name.charAt(0).toUpperCase() + name.slice(1) };
+};
+
+test("Innsikt 6d: Måned | År control, year KPIs, 12 month bars and the year's Kjøring", async ({ page }) => {
+  const now = osloNow();
+  await page.goto("/insights");
+  const period = page.getByRole("navigation", { name: "Periode" });
+  await expect(period.getByRole("link", { name: "Måned" })).toHaveAttribute("aria-current", "page");
+  await period.getByRole("link", { name: "År" }).click();
+  await expect(page).toHaveURL(new RegExp(`year=${now.year}$`));
+  await expect(period.getByRole("link", { name: "År" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByText(String(now.year), { exact: true })).toBeVisible();
+  await expect(page.getByText("Energi i år")).toBeVisible();
+  await expect(page.getByText("Kostnad i år")).toBeVisible();
+  await expect(page.getByText(/^snitt \d+,\d\d kr\/kWh$/)).toBeVisible();
+  if (now.month >= 3) {
+    // The seeded Lad nå sessions a year back; U+202F before % (owner, 2026-11-13)
+    await expect(page.getByText(new RegExp(`^[+−±]\\d+\\u202F% mot jan\\.–\\S+ ${now.year - 1}$`))).toBeVisible();
+  }
+  await expect(page.getByRole("heading", { name: "kWh per måned", exact: true })).toBeVisible();
+  const bars = page.getByRole("list", { name: `Energi per måned i ${now.year}` });
+  await expect(bars.getByRole("listitem")).toHaveCount(12);
+  await expect(bars.getByRole("link")).toHaveCount(now.month); // later months can't be opened
+  await expect(page.getByText("Trykk for å se måneden", { exact: true })).toBeVisible();
+  await expect(page.getByText(`${now.monthName} er ikke ferdig ennå (stiplet).`, { exact: true })).toBeVisible();
+  await expect(page.getByText("Per person")).toBeVisible();
+  await expect(page.getByText("Roger", { exact: true })).toBeVisible();
+
+  const drive = page.getByRole("region", { name: "Kjøring" });
+  await expect(drive.getByText("kjørt i år")).toBeVisible();
+  await expect(drive.getByText(/^\d+,\d km\/kWh$/)).toBeVisible();
+  await expect(drive.getByText("km/kWh per måned")).toBeVisible();
+  await expect(drive.getByRole("img", { name: `Kilometer per kWh per måned i ${now.year}` })).toBeVisible();
+  if (now.month >= 3) {
+    await expect(drive.getByText(/^Lavest \S+ \d+,\d$/)).toBeVisible();
+    await expect(drive.getByText(/^Høyest \S+ \d+,\d$/)).toBeVisible();
+  }
+  await expect(drive.getByText("Kaldt vær gir høyere forbruk. Måneder med for lite data er utelatt fra kurven.")).toBeVisible();
+
+  // No "Neste år" in the current year; a bar opens its month in the month view
+  await expect(page.getByRole("link", { name: "Neste år" })).toHaveCount(0);
+  await bars.getByRole("link", { name: new RegExp(`^${now.monthName}: `) }).click();
+  await expect(page).toHaveURL(/\/insights$/);
+  await expect(page.getByText("Energi hittil")).toBeVisible();
+});
+
+test("Innsikt 6d: ‹ › step by year; a past year names the year and hides a comparison without data", async ({ page }) => {
+  const now = osloNow();
+  await page.goto(`/insights?year=${now.year}`);
+  await page.getByRole("link", { name: "Forrige år" }).click();
+  await expect(page).toHaveURL(new RegExp(`year=${now.year - 1}$`));
+  await expect(page.getByText(`Energi ${now.year - 1}`)).toBeVisible();
+  await expect(page.getByText(`Kostnad ${now.year - 1}`)).toBeVisible();
+  await expect(page.getByText(/ mot jan\./)).toHaveCount(0); // nothing two years back
+  await expect(page.getByText(/er ikke ferdig ennå/)).toHaveCount(0);
+  const bars = page.getByRole("list", { name: `Energi per måned i ${now.year - 1}` });
+  await expect(bars.getByRole("link")).toHaveCount(12);
+  // Måned from a past year opens its December
+  await page.getByRole("navigation", { name: "Periode" }).getByRole("link", { name: "Måned" }).click();
+  await expect(page).toHaveURL(new RegExp(`month=${now.year - 1}-12$`));
+  await page.goto(`/insights?year=${now.year - 1}`);
+  await page.getByRole("link", { name: "Neste år" }).click();
+  await expect(page).toHaveURL(new RegExp(`year=${now.year}$`));
+  // A year in the future shows this year
+  await page.goto(`/insights?year=${now.year + 3}`);
+  await expect(page.getByText("Energi i år")).toBeVisible();
+});
+
 test("Historikk 6c: rows start with the car's short name", async ({ page }) => {
   await page.goto("/history");
-  await expect(page.getByText(/^Mokka-e · \d+ → \d+ %$/).first()).toBeVisible();
+  await expect(page.getByText(/^Mokka-e · \d+ → \d+\s%$/).first()).toBeVisible();
 });
 
 test("UC14: 'Lad med en gang' lets an unplanned session run", async ({ page }) => {
@@ -269,13 +345,13 @@ test("UC14: 'Lad med en gang' lets an unplanned session run", async ({ page }) =
   const sheet = page.getByRole("dialog", { name: "Når bilen kobles til" });
   await sheet.getByRole("radio", { name: /Lad med en gang/ }).check();
   // Both automatic choices pick a target % (owner decision D51)
-  await expect(sheet.getByText("Lader til 80 % med en gang («Automatisk»)")).toBeVisible();
-  await sheet.getByRole("button", { name: "70 %" }).click();
+  await expect(sheet.getByText("Lader til 80\u202F% med en gang («Automatisk»)")).toBeVisible();
+  await sheet.getByRole("button", { name: "70\u202F%" }).click();
   await sheet.getByRole("button", { name: "Lagre" }).click();
   // No "Hvor lenge?" dialog any more
   await expect(page.getByText("Lagret", { exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByText("Lad med en gang · 70 % ›")).toBeVisible();
+  await expect(page.getByText("Lad med en gang · 70\u202F% ›")).toBeVisible();
   await expect(page.getByText(/kan da lade/)).toBeVisible();
 
   // Battery 62 %, target 70 % of 46 kWh → stops after ~3,7 kWh
@@ -302,7 +378,7 @@ test("UC14: 'Lad med en gang' lets an unplanned session run", async ({ page }) =
 test("UC16: Smart lading plans the night on plug-in and shows it on Hjem", async ({ page }) => {
   await preset(page, "Smart lading – venter");
   // The real tick planned it and sent smart_planned
-  await expect(page.getByText(/Smart lading i natt — Lader til 80 % \d\d:\d\d–\d\d:\d\d · ca\. \d+ kr\./)).toBeVisible();
+  await expect(page.getByText(/Smart lading i natt — Lader til 80\s% \d\d:\d\d–\d\d:\d\d · ca\. \d+ kr\./)).toBeVisible();
   await page.goto("/");
   await expect(page.getByText("Smart lading", { exact: true })).toBeVisible();
   await expect(page.getByText(/^Lader (i natt )?\d\d:\d\d–\d\d:\d\d$/)).toBeVisible();
@@ -348,15 +424,15 @@ test("UC16: Smart lading settings in the Når bilen kobles til sheet", async ({ 
   await sheet.getByRole("radio", { name: /Smart lading/ }).check();
   await expect(sheet.getByText("Billigst: natt 22–06 og helg · 81 øre/kWh")).toBeVisible();
   await expect(sheet.getByText("Dyrest: hverdager 06–22 · 96 øre/kWh")).toBeVisible();
-  await sheet.getByRole("button", { name: "90 %" }).click();
+  await sheet.getByRole("button", { name: "90\u202F%" }).click();
   await sheet.getByLabel("Klar til, hverdager").selectOption("07:00");
   await sheet.getByRole("button", { name: "Lagre" }).click();
-  await expect(page.getByText("Smart lading · 90 % innen 07:00 ›")).toBeVisible();
+  await expect(page.getByText("Smart lading · 90\u202F% innen 07:00 ›")).toBeVisible();
 });
 
 test("Innstillinger: price sources and the location name from Zaptec", async ({ page }) => {
   await page.goto("/settings");
-  await expect(page.getByText("Hentes fra Zaptec – endres i Zaptec-appen")).toBeVisible();
+  await expect(page.getByText("Hentes fra Zaptec-kontoen – endres i Zaptec-appen")).toBeVisible();
   await expect(page.getByRole("button", { name: /Navn på stedet/ })).toHaveCount(0);
   await page.getByText("Hvor kommer tallene fra?").click();
   await expect(page.getByText(/Elvias standard tariff for forbrukerkunder fra 1\. juli 2026/)).toBeVisible();
@@ -408,10 +484,10 @@ test("no console errors on the main screens", async ({ page }) => {
 test("Bruk reuses last plan's target % and time, from the battery now", async ({ page }) => {
   await preset(page, "Tilkoblet – ingen plan");
   await page.goto("/");
-  await expect(page.getByText(/^Til 80 % \(\+\d+,\d kWh\) · klar \d\d:\d\d i morgen$/)).toBeVisible();
+  await expect(page.getByText(/^Til 80\s% \(\+\d+,\d kWh\) · klar \d\d:\d\d i morgen$/)).toBeVisible();
   await page.getByRole("button", { name: "Bruk" }).click();
   await expect(page.getByText("Plan lagret")).toBeVisible();
-  await expect(page.getByText("mål 80 %")).toBeVisible();
+  await expect(page.getByText("mål 80\u202F%")).toBeVisible();
 });
 
 test("lending and plans are mutually exclusive", async ({ page }) => {
@@ -473,7 +549,7 @@ test("nettleie: Elvia rates by default, editable, and can be left out", async ({
 test("Fullfør plan in the mock panel ends in the ready state with the push", async ({ page }) => {
   await preset(page, "Lader etter plan");
   await mockButton(page, "Fullfør plan");
-  await expect(page.getByText(/Bilen er klar — Ladet til ca\. \d+ %/)).toBeVisible();
+  await expect(page.getByText(/Bilen er klar — Ladet til ca\. \d+\s%/)).toBeVisible();
   await page.goto("/");
   // HANDOFF §3 ready: status without the %, ring at the reached %, "Siste lading"
   // (also listed in Siste hendelser, so take the status line, which comes first)
@@ -492,14 +568,14 @@ test("unplugged Hjem: last reading in the ring, kWh left and Koblet fra", async 
   await page.goto("/");
   await expect(page.getByText("Ikke tilkoblet", { exact: true })).toBeVisible();
   await expect(page.getByText(/^ca\. \d+ kWh igjen$/)).toBeVisible();
-  await expect(page.getByRole("img", { name: /^Batteri 62 %, sist målt \d\d:\d\d$/ })).toBeVisible();
+  await expect(page.getByRole("img", { name: /^Batteri 62\s%, sist målt \d\d:\d\d$/ })).toBeVisible();
   await expect(page.getByText(/^målt \d\d:\d\d$/)).toBeVisible();
   // Design 6c: since the unplug (26 h ago in the preset), with a day word, never a bare HH:MM
   const card = page.getByRole("region", { name: "Koblet fra" });
   await expect(card.getByText(/^i (dag|går) \d\d:\d\d$/)).toBeVisible();
-  await expect(card.getByText("−18 %", { exact: true })).toBeVisible();
+  await expect(card.getByText("−18\u202F%", { exact: true })).toBeVisible();
   await expect(card.getByText("ca. 41 km", { exact: true })).toBeVisible();
-  await expect(card.getByText(/^i dag \d\d:\d\d · 62 %$/)).toBeVisible();
+  await expect(card.getByText(/^i dag \d\d:\d\d · 62\s%$/)).toBeVisible();
 });
 
 test("D64: a plan that has started keeps charging through ticks (no stop/start loop)", async ({ page }) => {
@@ -530,7 +606,7 @@ test("D64: a charger that won't start gets three tries, then one push", async ({
   for (let i = 0; i < 5; i++) await tick(page);
   await expect(resumes).toHaveCount(resumesBefore + 3);
   await expect(push).toHaveCount(pushesBefore + 1);
-  // (Hjem shows its own "Appen styrer ikke laderen" card while RFID is
+  // (Hjem shows its own "Jeg styrer ikke laderen" card while RFID is
   // required; the D64 line on the planned card is covered by the debug scenario.)
   // Re-plugging resets the count: it tries again
   await page.goto("/dev/mock");
@@ -581,13 +657,13 @@ test("unplugged Hjem keeps the % when the Smartcar API fails (latest webhook rea
   await expect(page.getByRole("checkbox", { name: "Smartcar svarer ikke" })).toBeChecked();
   await page.goto("/");
   await expect(page.getByText("Ikke tilkoblet", { exact: true })).toBeVisible();
-  await expect(page.getByRole("img", { name: /^Batteri 62 %, sist målt \d\d:\d\d$/ })).toBeVisible();
+  await expect(page.getByRole("img", { name: /^Batteri 62\s%, sist målt \d\d:\d\d$/ })).toBeVisible();
   // Tab away and back: still there
   await page.getByRole("link", { name: "Historikk" }).click();
   await expect(page.getByRole("heading", { name: "Historikk" })).toBeVisible();
   // Keyboard: the Next dev badge covers the Hjem tab at phone width in dev mode.
   await page.getByRole("link", { name: "Hjem" }).press("Enter");
-  await expect(page.getByRole("img", { name: /^Batteri 62 %/ })).toBeVisible();
+  await expect(page.getByRole("img", { name: /^Batteri 62\s%/ })).toBeVisible();
   await expect(page.getByText("Ingen bil tilkoblet")).toHaveCount(0);
 });
 
@@ -624,7 +700,7 @@ test("Lad nå started twice is one session, and Stopp records its energy (D62)",
   await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
   // A second start (the push action) while it's already charging
   await page.goto("/?action=charge-now");
-  await page.getByRole("dialog", { name: "Lad nå?" }).getByRole("button", { name: "Lad nå" }).click();
+  await page.getByRole("dialog", { name: "Lade nå?" }).getByRole("button", { name: "Lad nå" }).click();
   await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
   // One kWh in, then stop from the app -- no tick in between
   await mockButton(page, "+1 kWh");
@@ -694,7 +770,7 @@ test("D67: Forvarm while a plan charges offers a hold, with what it may add", as
     await expect(sheet.getByText("Strøm er på – lading pågår")).toBeVisible();
     // Before confirming: until when, and the extra kWh / kr at today's price
     await expect(
-      sheet.getByText(/^Strømmen holdes på til \d\d:\d\d\. Bilen kan lade (forbi \d+ %|mer enn planen) i mellomtiden – ca\. \d+(,\d)? kWh \/ \d+ kr ekstra ved dagens pris\./),
+      sheet.getByText(/^Strømmen holdes på til \d\d:\d\d\. Bilen kan lade (forbi \d+\s%|mer enn planen) i mellomtiden – ca\. \d+(,\d)? kWh \/ \d+ kr ekstra ved dagens pris\./),
     ).toBeVisible();
     await expect(sheet.getByText(/Dette avbryter planen/)).toHaveCount(0);
     await sheet.getByRole("button", { name: "Hold strømmen på" }).click();
@@ -975,7 +1051,7 @@ test("D75: the car stops during Lad nå: amber card, Avslutt ladingen, one push,
   await expect(card).toContainText("Trolig bilens ladegrense eller timer");
   await expect(card.getByRole("link", { name: "Åpne myOpel ↗" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Avslutt ladingen" })).toBeVisible();
-  await expect(page.getByText(/^Bilen sluttet å lade – \d+\u202F%$/)).toBeVisible();
+  await expect(page.getByText(/^Bilen sluttet å lade – \d+\s%$/)).toBeVisible();
 
   // Another tick: no second push. Drawing again clears it.
   await tick(page);
@@ -1091,7 +1167,7 @@ test("D75: unplugging before a plan's target leaves a line in Aktivitet, no warn
   await tick(page);
   await expect(page.locator("[data-log-seq]").filter({ hasText: "[push] Bilen" })).toHaveCount(0);
   await page.goto("/history?tab=activity");
-  await expect(page.getByText(/^Koblet fra ved \d+\u202F% – planen ble ikke ferdig$/)).toBeVisible();
+  await expect(page.getByText(/^Koblet fra ved \d+\s% – planen ble ikke ferdig$/)).toBeVisible();
 });
 
 // ---- D72: CompletedSession ----

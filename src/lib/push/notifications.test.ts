@@ -14,7 +14,7 @@ const now = new Date("2026-11-10T21:00:00Z");
 describe("push payloads", () => {
   it("plug-in without plan offers Planlegg and Lad nå", () => {
     const p = pluggedInNoPlan({ chargerId: "c1", battery: { percent: 41.4, measuredAt: new Date("2026-11-10T20:12:00Z") } });
-    expect(p.body).toBe("Batteri 41 % (målt 21:12). Trykk for å planlegge lading.");
+    expect(p.body).toBe("Batteri 41\u202F% (målt 21:12). Trykk for å planlegge lading.");
     expect(p.tag).toBe("charger-c1");
     expect(p.actions?.map((a) => a.url)).toEqual(["/?sheet=plan", "/?action=charge-now"]);
   });
@@ -26,7 +26,7 @@ describe("push payloads", () => {
   it("plan started uses % when known, kWh otherwise", () => {
     const finishTime = new Date("2026-11-11T05:45:00Z");
     expect(planStarted({ scheduleId: "s", targetPercent: 80, targetKwh: 15.6, finishTime }).body).toBe(
-      "Lader til 80 %, ferdig ca. 06:45.",
+      "Lader til 80\u202F%, ferdig ca. 06:45.",
     );
     expect(planStarted({ scheduleId: "s", targetPercent: null, targetKwh: 15.6, finishTime }).body).toBe(
       "Lader 15,6 kWh, ferdig ca. 06:45.",
@@ -35,7 +35,7 @@ describe("push payloads", () => {
 
   it("plan completed shows reached %, kWh and cost", () => {
     const p = planCompleted({ scheduleId: "s", targetPercent: 80, deliveredKwh: 15.62, costNok: 7.81 });
-    expect(p.body).toMatch(/^Ladet til ca\. 80 % · 15,6 kWh · ca\. \d+ kr\.$/);
+    expect(p.body).toMatch(/^Ladet til ca\. 80\u202F% · 15,6 kWh · ca\. \d+ kr\.$/);
     expect(p.url).toBe("/history");
   });
 });

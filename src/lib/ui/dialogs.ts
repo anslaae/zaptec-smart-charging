@@ -10,7 +10,7 @@ const d = nb.dialogs;
 
 /** "80 %" when the plan has a battery target, else "15,6 kWh" (plans from before the plan sheet). */
 function planTarget(plan: { targetPercent: number | null; targetKwh: number }): string {
-  return plan.targetPercent != null ? `${plan.targetPercent} %` : `${formatNumber(plan.targetKwh, 1)} kWh`;
+  return plan.targetPercent != null ? `${plan.targetPercent}\u202F%` : `${formatNumber(plan.targetKwh, 1)} kWh`;
 }
 
 export function cancelPlanDialog(
@@ -19,7 +19,7 @@ export function cancelPlanDialog(
 ): ConfirmOptions {
   return {
     title: d.cancelPlan.title,
-    body: fill(d.cancelPlan.body.replace("{percent} %", "{target}"), {
+    body: fill(d.cancelPlan.body.replace("{percent}\u202F%", "{target}"), {
       target: planTarget(plan),
       readyBy: formatTime(plan.readyByIso),
       day: formatDayLabel(plan.readyByIso, now),
@@ -38,7 +38,7 @@ export function planCancelledToast(
 ) {
   return {
     title: nb.toasts.planCancelled.title,
-    body: fill(nb.toasts.planCancelled.body.replace("{percent} %", "{target}"), {
+    body: fill(nb.toasts.planCancelled.body.replace("{percent}\u202F%", "{target}"), {
       target: planTarget(plan),
       readyBy: formatDayAndTime(plan.readyByIso, now),
     }),

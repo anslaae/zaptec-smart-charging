@@ -95,7 +95,7 @@ describe("incidentStatus: Lad nå cases (HANDOFF §6e)", () => {
       ...input,
     });
 
-  it("case 1 probably full: battery >= 95 % or >= the last plan's target, pushes, ends itself after 30 min", () => {
+  it("case 1 probably full: battery >= 95\u202F% or >= the last plan's target, pushes, ends itself after 30 min", () => {
     const full = status({ batteryPercent: 96 });
     expect(full).toMatchObject({ visible: true, carCase: "full", pushes: true });
     expect(full.autoEndAt).toEqual(at(40));

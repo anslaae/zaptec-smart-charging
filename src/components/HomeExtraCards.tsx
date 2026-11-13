@@ -111,7 +111,7 @@ export function LastSessionCard({ plan }: { plan: NonNullable<HomeCardData["last
         </Link>
       </div>
       <dl className="grid grid-cols-4 gap-2">
-        <Stat label={r.from} value={plan.startPercent != null ? `${plan.startPercent} %` : "–"} />
+        <Stat label={r.from} value={plan.startPercent != null ? `${plan.startPercent}\u202F%` : "–"} />
         <Stat label={r.delivered} value={plan.deliveredKwh != null ? `${formatNumber(plan.deliveredKwh, 1)} kWh` : "–"} />
         <Stat label={r.duration} value={seconds != null ? formatDuration(seconds) : "–"} />
         <Stat label={r.cost} value={plan.costNok != null ? formatKr(plan.costNok) : "–"} />

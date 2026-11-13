@@ -5,7 +5,7 @@ describe("preheatHoldText (D67)", () => {
   const untilIso = "2026-11-13T06:30:00Z"; // 07:30 Oslo
   it("says until when, past which target, and what it may add", () => {
     expect(preheatHoldText({ untilIso, targetPercent: 80, estimate: { kwh: 3, nok: 4 } })).toBe(
-      "Strømmen holdes på til 07:30. Bilen kan lade forbi 80 % i mellomtiden – ca. 3,0 kWh / 4 kr ekstra ved dagens pris.",
+      "Strømmen holdes på til 07:30. Bilen kan lade forbi 80\u202F% i mellomtiden – ca. 3,0 kWh / 4 kr ekstra ved dagens pris.",
     );
   });
   it("only kWh without a price; no target % for a plan without one", () => {

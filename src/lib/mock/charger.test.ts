@@ -44,7 +44,7 @@ describe("ChargerSim", () => {
     expect(state.instantPowerWatts).toBe(6000);
   });
 
-  it("the car stops drawing at 100 %", () => {
+  it("the car stops drawing at 100\u202F%", () => {
     const sim = new ChargerSim(t0, { powerKw: 10, speed: 3600, capacityKwh: 40 }, 90);
     sim.plugIn(t0);
     sim.advance(at(1)); // far more than the 4 kWh of room

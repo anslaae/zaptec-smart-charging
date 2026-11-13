@@ -18,12 +18,12 @@ export const nb = {
   battery: {
     measured: "målt {time}",
     approx: "ca.",
-    target: "mål {percent} %",
+    target: "mål {percent} %",
     last: "sist",
-    derived: "Batteri beregnet fra {percent} % målt {time}",
+    derived: "Batteri beregnet fra {percent} % målt {time}",
     // (app) unplugged: the car's last reading and when it was taken
     lastMeasured: "sist målt {when}",
-    lastMeasuredLabel: "Batteri {percent} %, sist målt {when}",
+    lastMeasuredLabel: "Batteri {percent} %, sist målt {when}",
   },
   home: {
     noCar: {
@@ -35,11 +35,11 @@ export const nb = {
       primary: "Planlegg lading",
       sinceTitle: "Koblet fra",
       sinceBattery: "Batteri",
-      sinceBatteryValue: "{change} %",
+      sinceBatteryValue: "{change} %",
       sinceDriven: "Kjørt",
       sinceDrivenValue: "ca. {km} km",
       sinceMidnight: "midnatt",
-      sinceEndLabel: "{when} · {percent} %",
+      sinceEndLabel: "{when} · {percent} %",
     },
     connected: {
       status: "Tilkoblet – ingen plan",
@@ -60,14 +60,14 @@ export const nb = {
     planned: {
       status: "Planlagt – starter ca. {time}",
       sub: "Klar til {readyBy} · +{kwh} kWh",
-      timelineNote: "Vi venter med å lade til det trengs, og regner med {kw} kW fra tidligere ladinger.",
+      timelineNote: "Jeg venter med å lade til det trengs, og regner med {kw} kW fra tidligere ladinger.",
       tooTight: "Rekker ikke helt – starter med en gang",
       primary: "Endre plan",
     },
     chargingPlan: {
       status: "Lader – ferdig ca. {time}",
       sub: "Klar til {readyBy} · {kw} kW",
-      planRow: "Plan: {percent} % klar {readyBy}",
+      planRow: "Plan: {percent} % klar {readyBy}",
       edit: "Endre ›",
       primary: "Avbryt plan",
     },
@@ -203,9 +203,9 @@ export const nb = {
         body: "Forvarmingen går nå på batteriet."
       }
     },
-    lastErrorAutomationPaused: "Appen har tatt pause – koble bilen fra og til igjen",
+    lastErrorAutomationPaused: "Jeg har tatt pause – koble bilen fra og til igjen",
     noControl: {
-      title: "Appen styrer ikke laderen akkurat nå",
+      title: "Jeg styrer ikke laderen akkurat nå",
       body: "Laderen krever innlogging igjen, så planer og «Lad nå» virker ikke. Start lading med brikke eller i Zaptec-appen, eller slå av krav om autentisering i Zaptec Portal.",
       link: "Les mer i Innstillinger ›",
       status: "Tilkoblet – venter på innlogging",
@@ -228,7 +228,7 @@ export const nb = {
     ringOf: "av {kwh}",
     noChargers: "Fant ingen ladere på Zaptec-kontoen.",
     suggestionDetail: "+{kwh} kWh · klar {time} i morgen",
-    suggestionDetailPercent: "Til {percent} % (+{kwh} kWh) · klar {time} i morgen",
+    suggestionDetailPercent: "Til {percent} % (+{kwh} kWh) · klar {time} i morgen",
   },
   planSheet: {
     titleNew: "Planlegg lading",
@@ -275,14 +275,14 @@ export const nb = {
     step1: "Strøm til bilen er på",
     step1Sub: "Startet {time} · {kw} kW",
     step2: "Start klima i myOpel",
-    step2Sub: "Appen kan ikke styre klimaanlegget selv.",
+    step2Sub: "Jeg kan ikke styre klimaanlegget selv.",
     openMyOpel: "Åpne myOpel",
     stop: "Stopp strøm",
     // D67: the car is already charging -- Forvarm rides along, nothing is cancelled
     step1Charging: "Strøm er på – lading pågår",
     // D67 under a plan / Smart lading: a hold keeps the power on (earlier of 60 min and readyBy)
     holdIntro: "Strømmen holdes på til {time}.",
-    holdPastTarget: "Bilen kan lade forbi {target} % i mellomtiden",
+    holdPastTarget: "Bilen kan lade forbi {target} % i mellomtiden",
     holdPastPlan: "Bilen kan lade mer enn planen i mellomtiden",
     holdCost: " – ca. {kwh} kWh / {kr} kr ekstra ved dagens pris.",
     holdKwh: " – ca. {kwh} kWh ekstra.",
@@ -298,7 +298,7 @@ export const nb = {
   },
   // (app) push action "Lad nå" opens this confirm sheet; a link alone never starts charging.
   chargeNowSheet: {
-    title: "Lad nå?",
+    title: "Lade nå?",
     body: "Bilen lader til du stopper eller kobler fra.",
     confirm: "Lad nå",
     cancel: "Ikke nå",
@@ -371,6 +371,35 @@ export const nb = {
     empty: "Ingen lading registrert denne måneden.",
     changePriceLink: "Om prisene ›",
     chartLabel: "Energi per dag i {month}",
+    // Year view (HANDOFF §6d, design update 2026-11-13)
+    periodMonth: "Måned",
+    periodYear: "År",
+    // (app) aria-label of the Måned | År control
+    periodLabel: "Periode",
+    year: {
+      energy: "Energi i år",
+      cost: "Kostnad i år",
+      // (app) a past year: "i år" would mean this year (DECISIONS D76)
+      energyIn: "Energi {year}",
+      costIn: "Kostnad {year}",
+      vsLastYear: "{change} mot {range} {year}",
+      perMonth: "kWh per måned",
+      perMonthHint: "Trykk for å se måneden",
+      partialMonth: "{month} er ikke ferdig ennå (stiplet).",
+      prevYear: "Forrige år",
+      nextYear: "Neste år",
+      drivenYear: "kjørt i år",
+      // (app) a past year (D76)
+      drivenIn: "kjørt i {year}",
+      effPerMonth: "km/kWh per måned",
+      effLowest: "Lavest {month} {value}",
+      effHighest: "Høyest {month} {value}",
+      effNote: "Kaldt vær gir høyere forbruk. Måneder med for lite data er utelatt fra kurven.",
+      // (app) screen-reader labels
+      chartLabel: "Energi per måned i {year}",
+      barLabel: "{month}: {kwh} kWh",
+      effChartLabel: "Kilometer per kWh per måned i {year}",
+    },
     car: { chipNote: "Gjestelading telles separat" },
     drive: {
       title: "Kjøring",
@@ -431,7 +460,7 @@ export const nb = {
       gridHelp: "Energileddet fra nettselskapets prisliste, med avgifter og mva. La begge stå tomme for å regne uten nettleie.",
       // (app) where the numbers come from (Elvia tariffblad 1.0, 1 Jul 2026; regjeringen.no)
       sourceTitle: "Hvor kommer tallene fra?",
-      sourceNorgespris: "Norgespris: 40 øre/kWh + 25 % mva = 50 øre/kWh (1. okt. 2025 – 31. des. 2026).",
+      sourceNorgespris: "Norgespris: 40 øre/kWh + 25 % mva = 50 øre/kWh (1. okt. 2025 – 31. des. 2026).",
       sourceElvia:
         "Nettleie: Elvias standard tariff for forbrukerkunder fra 1. juli 2026 – 46,40 øre/kWh hverdager 06–22 og 31,40 øre/kWh natt, helg og helligdager, inkl. Enova-avgift, elavgift og mva.",
       sourceFixed:
@@ -444,7 +473,7 @@ export const nb = {
     // (app) the location name shown as the Hjem title
     location: {
       name: "Navn på stedet",
-      fromZaptec: "Hentes fra Zaptec – endres i Zaptec-appen",
+      fromZaptec: "Hentes fra Zaptec-kontoen – endres i Zaptec-appen",
     },
     charging: {
       section: "Lading",
@@ -531,13 +560,13 @@ export const nb = {
   notifications: {
     pluggedIn: {
       title: "Bilen er koblet til",
-      body: "Batteri {percent} % (målt {time}). Trykk for å planlegge lading.",
+      body: "Batteri {percent} % (målt {time}). Trykk for å planlegge lading.",
       bodyNoBattery: "Trykk for å planlegge lading.",
       plan: "Planlegg",
       chargeNow: "Lad nå",
     },
     planWaiting: { title: "Bilen er koblet til", body: "Planen er klar – lading starter ca. {startTime}." },
-    planStarted: { title: "Lading startet", body: "Lader til {targetPercent} %, ferdig ca. {finishTime}." },
+    planStarted: { title: "Lading startet", body: "Lader til {targetPercent} %, ferdig ca. {finishTime}." },
     // (app) variants for plans made without a battery reading (no %)
     planStartedKwh: "Lader {kwh} kWh, ferdig ca. {finishTime}.",
     // D75 incidents (notifications.nb.json charge_now_*, car_declined_plan, fault_*): one push per incident
@@ -554,17 +583,17 @@ export const nb = {
       title: "Forvarming bruker batteriet",
       body: "Bilen sluttet å trekke strøm fra laderen kl. {time}.",
     },
-    planCompleted: { title: "Bilen er klar", body: "Ladet til ca. {targetPercent} % · {kwh} kWh · ca. {cost} kr." },
+    planCompleted: { title: "Bilen er klar", body: "Ladet til ca. {targetPercent} % · {kwh} kWh · ca. {cost} kr." },
     planCompletedKwh: "Ladet {kwh} kWh · ca. {cost} kr.",
     planLate: {
       title: "Rekker ikke helt",
-      body: "Bilen blir ca. {expectedPercent} % klar {readyBy}. Vi lader videre til {targetPercent} %.",
+      body: "Bilen blir ca. {expectedPercent} % klar {readyBy}. Jeg lader videre til {targetPercent} %.",
     },
-    planLateKwh: "Bilen blir ikke helt ferdig {readyBy}. Vi lader videre til målet.",
+    planLateKwh: "Bilen blir ikke helt ferdig {readyBy}. Jeg lader videre til målet.",
     planWaitingForCar: { title: "Planen venter på bilen", body: "Koble til innen {latestStart} for å være klar {readyBy}." },
     smartPlanned: {
       title: "Smart lading i natt",
-      body: "Lader til {targetPercent} % {start}–{end} · ca. {cost} kr.",
+      body: "Lader til {targetPercent} % {start}–{end} · ca. {cost} kr.",
       chargeNowInstead: "Lad nå i stedet",
     },
     // (app) Innstillinger "Send testvarsel"
@@ -582,9 +611,9 @@ export const nb = {
   // Innstillinger → "Når bilen kobles til" (HANDOFF §6b); expired/untilLabel/saved are (app)
   onPlugin: {
     title: "Når bilen kobles til",
-    intro: "Gjelder når det ikke finnes en plan. En plan, Lad nå eller forvarming overstyrer for den ladingen.",
+    intro: "Gjelder når det ikke finnes en plan. En plan, lading du starter selv eller forvarming overstyrer for den ladingen.",
     settingsRow: "Når bilen kobles til",
-    settingsRowSmart: "Smart lading · {percent} % innen {time}",
+    settingsRowSmart: "Smart lading · {percent} % innen {time}",
     wait: {
       title: "Vent på plan",
       sub: "Lader ikke før noen planlegger eller trykker Lad nå"
@@ -595,7 +624,7 @@ export const nb = {
     },
     smart: {
       title: "Smart lading",
-      sub: "Billigst mulig til {percent} % innen klar-tid"
+      sub: "Billigst mulig til {percent} % innen klar-tid"
     },
     target: "Lad til",
     readyWeekday: "Klar til, hverdager",
@@ -606,8 +635,8 @@ export const nb = {
     save: "Lagre",
     expired: "utløpt",
     // (app) both automatic choices charge to the same target % (owner decision D51)
-    nowSubTarget: "Lader til {percent} % med en gang («Automatisk»)",
-    settingsRowNow: "Lad med en gang · {percent} %",
+    nowSubTarget: "Lader til {percent} % med en gang («Automatisk»)",
+    settingsRowNow: "Lad med en gang · {percent} %",
     targetNote: "Gjelder bilen som er registrert. Uten måling fra bilen lades den til den stopper selv.",
     untilLabel: "På til {until}",
     saved: "Lagret",
@@ -620,13 +649,13 @@ export const nb = {
     lendCancelsPlan: "Planen (klar {readyBy}) blir avbrutt.",
     cancelPlan: {
       title: "Avbryte planen?",
-      body: "{percent} % klar {readyBy} {day} slettes. Bilen lader ikke før du lager en ny plan eller trykker Lad nå.",
+      body: "{percent} % klar {readyBy} {day} slettes. Bilen lader ikke før du lager en ny plan eller trykker Lad nå.",
       safe: "Behold",
       action: "Avbryt plan"
     },
     stopCharging: {
       title: "Stoppe ladingen?",
-      body: "Bilen har fått {kwh} kWh og er på ca. {percent} %. Den lader ikke mer før du starter igjen.",
+      body: "Bilen har fått {kwh} kWh og er på ca. {percent} %. Den lader ikke mer før du starter igjen.",
       safe: "Fortsett",
       action: "Stopp lading"
     },
@@ -656,7 +685,7 @@ export const nb = {
     },
     chargerError: {
       title: "Fikk ikke kontakt med laderen",
-      body: "Zaptec svarte ikke på «{command}». Planene dine er ikke endret.",
+      body: "Laderen svarte ikke på «{command}». Planene dine er ikke endret.",
       safe: "Lukk",
       action: "Prøv igjen"
     },
@@ -680,7 +709,7 @@ export const nb = {
     },
     planCancelled: {
       title: "Plan avbrutt",
-      body: "{percent} % klar {readyBy}",
+      body: "{percent} % klar {readyBy}",
       undo: "Angre"
     },
     planSaveFailed: {
@@ -708,7 +737,7 @@ export const nb = {
   // D73: charger health from Zaptec's Warnings (804) / IsOnline / signal (809).
   health: {
     ok: "Tilkoblet · ingen feil",
-    offline: "Laderen er frakoblet fra Zaptec",
+    offline: "Ingen kontakt med laderen",
     signal: "signal {dbm} dBm",
     code: "kode {code}",
     warningHome: "Laderen melder en feil: {what}",
@@ -741,7 +770,7 @@ export const nb = {
     planCreateFailed: "Klarte ikke å planlegge ladingen",
     planInTheWay: "Laderen har en plan. Avbryt planen først, eller bekreft at den skal avbrytes.",
     chargeNowCancelsPlan: {
-      title: "Lad nå i stedet for planen?",
+      title: "Lade nå i stedet for planen?",
       body: "Planen (klar {readyBy}) blir avbrutt, og bilen lader til du stopper.",
       confirm: "Avbryt plan og lad",
     },

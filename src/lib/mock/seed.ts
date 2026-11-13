@@ -110,7 +110,8 @@ function historySql(now: Date): string {
       // Daytime driving, ~6 km/kWh on a 46 kWh battery.
       const km = 25 + ((d * 13) % 30);
       odometer += km;
-      battery = Math.max(10, Math.round(battery - (km / 6.2 / 46) * 100));
+      // Colder last month: lower km/kWh, so the year view's km/kWh line has a low and a high (§6d).
+      battery = Math.max(10, Math.round(battery - (km / (d < 30 ? 5.4 : 6.2) / 46) * 100));
       if (d % 5 === 1) battery = Math.min(95, battery + Math.round(((4 + (d % 6)) / 46) * 100)); // Lad nå
       if (d === 20) battery = Math.min(95, battery + 30); // charged elsewhere
       reading(at(base, 19, 0));
@@ -153,6 +154,13 @@ function historySql(now: Date): string {
     const started = at(new Date(now.getTime() - d * day), hour, 5);
     const ended = new Date(started.getTime() + hours * 3_600_000);
     sessions.push(`(${q(c.id)}, NULL, 'imported', ${ts(started)}, ${ts(ended)}, ${kwh})`);
+  }
+  // Innsikt year view (§6d): a few Lad nå sessions a year back, so "mot jan.–nov. {year−1}" has something to compare with.
+  // Every 12 days from ~13 to ~21 months back (outside Historikk's 12 months).
+  for (let d = 372; d <= 640; d += 12) {
+    const kwh = 14 + ((d * 7) % 11);
+    const started = at(new Date(now.getTime() - d * day), 17, 0);
+    sessions.push(`(${q(c.id)}, ${q(roger.id)}, 'manual', ${ts(started)}, ${ts(new Date(started.getTime() + (kwh / 7) * 3_600_000))}, ${kwh})`);
   }
   return `
 INSERT INTO charge_schedules (id, created_by_user_id, charger_id, charger_name, target_energy_kwh, ready_by, status,

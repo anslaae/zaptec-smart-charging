@@ -18,7 +18,7 @@ import {
   mockZaptecSessionEnd,
   type SimAction,
 } from "@/lib/mock/actions";
-import { formatTime } from "@/lib/datetime";
+import { formatPercent, formatTime } from "@/lib/datetime";
 import { announceMockChange } from "@/components/MockSync";
 
 const MODE_NAME: Record<number, string> = { 1: "Frakoblet", 2: "Tilkoblet, venter", 3: "Lader", 5: "Stoppet/hviler" };
@@ -146,9 +146,9 @@ export function MockPanel({
           <dt className="text-muted">Status</dt>
           <dd>{sim.online ? (MODE_NAME[sim.mode] ?? sim.mode) : "Offline"}{sim.finalStopActive ? " (final stop)" : ""}</dd>
           <dt className="text-muted">Batteri (ekte)</dt>
-          <dd>{sim.batteryPercent} %</dd>
+          <dd>{formatPercent(sim.batteryPercent)}</dd>
           <dt className="text-muted">Smartcar-avlesning</dt>
-          <dd>{sim.reading ? `${sim.reading.percent} % kl. ${formatTime(sim.reading.at)}` : "–"}</dd>
+          <dd>{sim.reading ? `${sim.reading.percent}\u202F% kl. ${formatTime(sim.reading.at)}` : "–"}</dd>
           <dt className="text-muted">Denne økten</dt>
           <dd>{sim.carConnected ? `${sim.sessionEnergyKwh.toFixed(2)} kWh` : "–"}</dd>
           <dt className="text-muted">Åpne planer / Lad nå</dt>
@@ -195,7 +195,7 @@ export function MockPanel({
           </button>
         </div>
         <label className="flex flex-col gap-1 text-sm">
-          Batteri: {battery} %
+          Batteri: {formatPercent(battery)}
           <input
             type="range"
             min={0}

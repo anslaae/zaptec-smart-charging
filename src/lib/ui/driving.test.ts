@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestOdometer, monthDriving, type DriveReading } from "./driving";
+import { latestOdometer, monthDriving, yearDriving, type DriveReading } from "./driving";
 
 const r = (iso: string, odometerKm: number | null, batteryPercent: number | null): DriveReading => ({
   at: new Date(iso),
@@ -78,5 +78,47 @@ describe("latestOdometer", () => {
     const t = [r("2026-10-01T08:00:00Z", 10, 50), r("2026-11-03T08:00:00Z", 30, 50), r("2026-12-01T08:00:00Z", 60, 50)];
     expect(latestOdometer(t, "2026-11")).toEqual({ km: 30, at: new Date("2026-11-03T08:00:00Z") });
     expect(latestOdometer([], "2026-11")).toBeNull();
+  });
+});
+
+describe("yearDriving (§6d)", () => {
+  // Three months of readings: Oct and Nov enough, Dec too little.
+  const readings = [
+    r("2025-12-20T10:00:00Z", 9000, 80), // baseline before 1 Jan
+    r("2026-01-10T10:00:00Z", 9100, 60), // Jan: 100 km, −20 % (crosses the year boundary)
+    r("2026-01-20T10:00:00Z", 9300, 20), // 200 km, −40 %
+    r("2026-02-02T10:00:00Z", 9300, 90), // away charge
+    r("2026-02-10T10:00:00Z", 9350, 85), // Feb: 50 km, −5 % (below MIN_KM)
+  ];
+
+  it("equals the sum of its months: km telescope from the last reading before 1 Jan", () => {
+    const y = yearDriving(readings, [], 2026, CAP, 0.5);
+    const months = ["2026-01", "2026-02"].map((m) => monthDriving(readings, [], m, CAP, null));
+    expect(y.km).toBe(350);
+    expect(y.km).toBe(months.reduce((s, m) => s + (m.km ?? 0), 0));
+    expect(y.awayCharges).toBe(1);
+    const kwh = 0.65 * CAP; // −20 −40 −5 %
+    expect(y.enough).toBe(true);
+    expect(y.kmPerKwh).toBeCloseTo(350 / kwh, 5);
+    expect(y.nokPerMil).toBeCloseTo((kwh / 350) * 10 * 0.5, 5);
+  });
+
+  it("leaves months below the §6c threshold out of the per-month line", () => {
+    const y = yearDriving(readings, [], 2026, CAP, null);
+    expect(y.perMonth[0]).toBeCloseTo(300 / (0.6 * CAP), 5);
+    expect(y.perMonth[1]).toBeNull(); // 50 km
+    expect(y.perMonth.slice(2).every((v) => v == null)).toBe(true);
+    expect(y.nokPerMil).toBeNull();
+  });
+
+  it("uses the first reading of the year without one before it, and stops at lastMonth", () => {
+    const y = yearDriving(readings.slice(1), [], 2026, CAP, null, 1);
+    expect(y.km).toBe(200);
+    expect(y.perMonth).toHaveLength(12);
+    expect(y.awayCharges).toBe(0); // February is not counted
+  });
+
+  it("has no km without readings in the year", () => {
+    expect(yearDriving(readings, [], 2024, CAP, null).km).toBeNull();
   });
 });

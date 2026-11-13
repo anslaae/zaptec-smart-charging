@@ -13,6 +13,7 @@ import {
   HOUSEHOLD_TIME_ZONE,
   formatDayLabel,
   formatNumber,
+  formatPercent,
   formatTime,
   zonedDateKey,
   zonedDateTimeToUtc,
@@ -120,7 +121,7 @@ export function PlanSheet({ data }: { data: PlanSheetData }) {
             <label htmlFor="battery-now" className="text-[15px] font-semibold">
               {t.batteryNow}
             </label>
-            <span className="text-xl font-semibold tabular-nums">{batteryNow} %</span>
+            <span className="text-xl font-semibold tabular-nums">{formatPercent(batteryNow)}</span>
           </div>
           <input
             id="battery-now"
@@ -149,7 +150,7 @@ export function PlanSheet({ data }: { data: PlanSheetData }) {
                 onClick={() => setTarget(value)}
                 className={chip(target === value)}
               >
-                {value} %
+                {formatPercent(value)}
               </button>
             ))}
           </div>

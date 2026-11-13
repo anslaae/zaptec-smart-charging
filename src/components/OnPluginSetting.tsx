@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { BottomSheet } from "@/components/BottomSheet";
 import { setOnPluginMode } from "@/lib/settingsActions";
 import type { OnPluginMode } from "@/lib/settings";
-import { formatDayLabel, formatNumber, formatTime } from "@/lib/datetime";
+import { formatDayLabel, formatNumber, formatPercent, formatTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
 
 const o = nb.onPlugin;
@@ -91,7 +91,7 @@ function OnPluginSheet({ data, onClose }: { data: OnPluginSettingData; onClose: 
       }
       toast.success(o.saved, {
         description:
-          mode === "wait" ? o.wait.title : `${o[mode].title} · ${target} %`,
+          mode === "wait" ? o.wait.title : `${o[mode].title} · ${target}\u202F%`,
       });
       onClose();
     });
@@ -163,7 +163,7 @@ function OnPluginSheet({ data, onClose }: { data: OnPluginSettingData; onClose: 
                     target === value ? "border-accent bg-accent-tint text-accent" : "border-border bg-surface"
                   }`}
                 >
-                  {value} %
+                  {formatPercent(value)}
                 </button>
               ))}
             </div>

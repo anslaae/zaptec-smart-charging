@@ -64,7 +64,7 @@ function Tag({ tag }: { tag: SessionRecord["tag"] }) {
 function sessionDetail(record: SessionRecord, carName: string | null): string | null {
   if (record.tag === "guest") return record.guestName ? `${t.tags.guest} · ${record.guestName}` : null;
   const percent =
-    record.startPercent != null && record.endPercent != null ? `${record.startPercent} → ${record.endPercent} %` : null;
+    record.startPercent != null && record.endPercent != null ? `${record.startPercent} → ${record.endPercent}\u202F%` : null;
   const car = record.carId != null ? carName : null;
   if (record.tag === "imported") return car ? fill(t.carPrefix, { car, detail: t.importedDetail }) : t.importedDetail;
   if (car && percent) return fill(t.carPrefix, { car, detail: percent });
@@ -231,7 +231,7 @@ async function PlansTab({ now }: { now: Date }) {
   const render = (plan: (typeof plans)[number]) => {
     const delivered = planDeliveredKwh(plan);
     const target =
-      plan.targetPercent != null ? `${plan.targetPercent} %` : `${formatNumber(Number(plan.targetEnergyKwh), 1)} kWh`;
+      plan.targetPercent != null ? `${plan.targetPercent}\u202F%` : `${formatNumber(Number(plan.targetEnergyKwh), 1)} kWh`;
     return (
       <li key={plan.id} className="flex items-start justify-between gap-3 py-3">
         <div className="min-w-0">

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -6,24 +5,18 @@ import { getSettings, pricesOf } from "@/lib/settings";
 import { hasGridTariff } from "@/lib/pricing";
 import { getDefaultCar } from "@/lib/places";
 import { loadDriveReadings, loadSessionRecords } from "@/lib/records";
-import { latestOdometer, monthDriving, type MonthDriving } from "@/lib/ui/driving";
+import { latestOdometer, monthDriving, yearDriving, type MonthDriving } from "@/lib/ui/driving";
 import { capitalize, monthName } from "@/lib/ui/history";
-import { monthInsights, monthKeyOf, shiftMonth } from "@/lib/ui/insights";
+import { monthInsights, monthKeyOf, shiftMonth, yearInsights, yearOf } from "@/lib/ui/insights";
 import { formatNumber, formatPastDayAndTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
+import { DriveFigure, InsightsHeader, Kpi, PerPersonCard, PeriodNav, PriceNote, signedPercent } from "./parts";
+import { YearView } from "./YearView";
 
 const t = nb.insights;
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
-
-function Kpi({ label, value, sub }: { label: string; value: string; sub: string | null }) {
-  return (
-    <div className="rounded-[var(--radius-card)] border border-border bg-surface p-4">
-      <p className="text-xs text-muted">{label}</p>
-      <p className="mt-1 text-[26px] leading-tight font-semibold tabular-nums">{value}</p>
-      {sub && <p className="mt-1 text-xs text-muted">{sub}</p>}
-    </div>
-  );
-}
+const YEAR_RE = /^\d{4}$/;
+const DAY = 86_400_000;
 
 function DayBars({ perDay, label }: { perDay: number[]; label: string }) {
   const max = Math.max(...perDay, 1);
@@ -42,34 +35,6 @@ function DayBars({ perDay, label }: { perDay: number[]; label: string }) {
           />
         </div>
       ))}
-    </div>
-  );
-}
-
-function PersonBar({ name, kwh, costNok, max, muted }: { name: string; kwh: number; costNok: number; max: number; muted?: boolean }) {
-  return (
-    <li className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[15px] font-semibold">{name}</span>
-        <span className="text-sm text-muted tabular-nums">
-          {fill(t.personRow, { kwh: formatNumber(kwh, 1), kr: formatNumber(Math.round(costNok), 0) })}
-        </span>
-      </div>
-      <div className="h-2 rounded-full bg-track">
-        <div
-          className={`h-2 rounded-full ${muted ? "bg-ring-muted" : "bg-accent"}`}
-          style={{ width: `${max > 0 ? (kwh / max) * 100 : 0}%` }}
-        />
-      </div>
-    </li>
-  );
-}
-
-function DriveFigure({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className="mt-0.5 text-[15px] font-semibold tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -135,14 +100,20 @@ function DriveCard({
   );
 }
 
+const avgPrice = (x: { totalKwh: number; totalCostNok: number }) => (x.totalKwh > 0 ? x.totalCostNok / x.totalKwh : null);
+
 // Innsikt (design/redesign/HANDOFF.md §5): one month at a time from the
-// app's own session records. Cost = energy (Norgespris) + estimated nettleie
-// energiledd, both from Innstillinger (src/lib/pricing.ts; DECISIONS.md D30).
+// app's own session records, or one year (§6d, `?year=`). Cost = energy
+// (Norgespris) + estimated nettleie energiledd, both from Innstillinger
+// (src/lib/pricing.ts; DECISIONS.md D30).
 export default async function InsightsPage({ searchParams }: PageProps<"/insights">) {
   await verifySession();
   const now = new Date();
   const current = monthKeyOf(now);
-  const { month: monthParam } = await searchParams;
+  const currentYear = yearOf(now);
+  const { month: monthParam, year: yearParam } = await searchParams;
+  const year =
+    typeof yearParam === "string" && YEAR_RE.test(yearParam) ? Math.min(Number(yearParam), currentYear) : null;
   const month =
     typeof monthParam === "string" && MONTH_RE.test(monthParam) && monthParam <= current ? monthParam : current;
   const previous = shiftMonth(month, -1);
@@ -154,70 +125,85 @@ export default async function InsightsPage({ searchParams }: PageProps<"/insight
     db.select({ id: users.id, name: users.name }).from(users),
   ]);
   const capacityKwh = car?.batteryCapacityKwh ?? 46;
-  const since = new Date(Date.UTC(py, pm - 1, 1) - 86_400_000);
+  // Month: from the previous month (its comparison). Year: from 1 Jan of the year before.
+  const since = year != null ? new Date(Date.UTC(year - 1, 0, 1) - DAY) : new Date(Date.UTC(py, pm - 1, 1) - DAY);
+  // Readings from a month further back: the baseline reading "before the month/year".
+  const readingsSince = year != null ? new Date(Date.UTC(year, 0, 1) - 31 * DAY) : new Date(since.getTime() - 31 * DAY);
   const [{ records }, readings] = await Promise.all([
     loadSessionRecords(since, capacityKwh, pricesOf(settings), car?.id ?? null),
-    // A month further back than the previous one: the baseline reading "before the month".
-    loadDriveReadings(car?.id ?? null, new Date(since.getTime() - 31 * 86_400_000)),
+    loadDriveReadings(car?.id ?? null, readingsSince),
   ]);
-  const m = monthInsights(records, month, now);
   // Kjøring: home sessions for this car only (a guest's car never counts for ours).
   const carSessions = records.filter((r) => r.carId != null && r.carId === car?.id);
-  const avgPrice = (x: { totalKwh: number; totalCostNok: number }) => (x.totalKwh > 0 ? x.totalCostNok / x.totalKwh : null);
+  const grid = hasGridTariff(pricesOf(settings));
+  const nameById = new Map(people.map((p) => [p.id, p.name]));
+
+  if (year != null) {
+    const y = yearInsights(records, year, now);
+    const drive = yearDriving(readings, carSessions, year, capacityKwh, avgPrice(y), y.lastMonth);
+    return (
+      <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 pt-6 pb-4">
+        <InsightsHeader
+          carName={car?.name ?? null}
+          period="year"
+          monthHref={year === currentYear ? "/insights" : `/insights?month=${year}-12`}
+          yearHref={`/insights?year=${year}`}
+        />
+        <PeriodNav
+          label={String(year)}
+          prevHref={`/insights?year=${year - 1}`}
+          prevLabel={t.year.prevYear}
+          nextHref={year < currentYear ? `/insights?year=${year + 1}` : null}
+          nextLabel={t.year.nextYear}
+        />
+        <YearView
+          y={y}
+          drive={drive}
+          odometer={latestOdometer(readings, `${year}-12`)}
+          nameById={nameById}
+          currentMonthKey={current}
+          fallbackPrice={settings.energyPriceNokPerKwh}
+          now={now}
+        />
+        <PriceNote grid={grid} />
+      </main>
+    );
+  }
+
+  const m = monthInsights(records, month, now);
   const drive = monthDriving(readings, carSessions, month, capacityKwh, avgPrice(m));
   const drivePrev = monthDriving(readings, carSessions, previous, capacityKwh, avgPrice(monthInsights(records, previous, now)));
   const odometer = latestOdometer(readings, month);
-  const grid = hasGridTariff(pricesOf(settings));
-  const nameById = new Map(people.map((p) => [p.id, p.name]));
-  const personMax = Math.max(...m.perPerson.map((p) => p.kwh), m.guestKwh, m.automaticKwh, m.smartKwh, m.importedKwh, 0);
   const shortPrev = new Intl.DateTimeFormat("nb-NO", { month: "short", timeZone: "UTC" }).format(
     new Date(Date.UTC(py, pm - 1, 15)),
   );
   const change =
     m.changePercent != null
-      ? fill(t.vsLastMonth, {
-          change: `${m.changePercent > 0 ? "+" : m.changePercent < 0 ? "−" : "±"}${Math.abs(m.changePercent)} %`,
-          month: shortPrev,
-        })
+      ? fill(t.vsLastMonth, { change: signedPercent(m.changePercent), month: shortPrev })
       : fill(t.noComparison, { month: monthName(previous) });
 
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 pt-6 pb-4">
-      <div>
-        <h1 className="text-[28px] font-semibold">{t.title}</h1>
-        {car && (
-          // With one car a label, not a picker (HANDOFF.md §6c).
-          <p className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-surface-2 px-3 py-1 text-sm font-semibold">{car.name}</span>
-            <span className="text-xs text-muted">{t.car.chipNote}</span>
-          </p>
-        )}
-      </div>
+      <InsightsHeader
+        carName={car?.name ?? null}
+        period="month"
+        monthHref={month === current ? "/insights" : `/insights?month=${month}`}
+        yearHref={`/insights?year=${month.slice(0, 4)}`}
+      />
 
-      <nav className="flex items-center justify-between">
-        <Link
-          href={`/insights?month=${previous}`}
-          aria-label={t.prevMonth}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-xl text-text-2"
-        >
-          ‹
-        </Link>
-        <span className="text-[17px] font-semibold">
-          {capitalize(monthName(month))}
-          {month.slice(0, 4) !== current.slice(0, 4) ? ` ${month.slice(0, 4)}` : ""}
-        </span>
-        {month < current ? (
-          <Link
-            href={shiftMonth(month, 1) === current ? "/insights" : `/insights?month=${shiftMonth(month, 1)}`}
-            aria-label={t.nextMonth}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-xl text-text-2"
-          >
-            ›
-          </Link>
-        ) : (
-          <span className="h-11 w-11" aria-hidden />
-        )}
-      </nav>
+      <PeriodNav
+        label={`${capitalize(monthName(month))}${month.slice(0, 4) !== current.slice(0, 4) ? ` ${month.slice(0, 4)}` : ""}`}
+        prevHref={`/insights?month=${previous}`}
+        prevLabel={t.prevMonth}
+        nextHref={
+          month < current
+            ? shiftMonth(month, 1) === current
+              ? "/insights"
+              : `/insights?month=${shiftMonth(month, 1)}`
+            : null
+        }
+        nextLabel={t.nextMonth}
+      />
 
       <div className="grid grid-cols-2 gap-3">
         <Kpi label={t.energySoFar} value={`${formatNumber(m.totalKwh, 1)} kWh`} sub={change} />
@@ -246,37 +232,13 @@ export default async function InsightsPage({ searchParams }: PageProps<"/insight
         )}
       </section>
 
-      {personMax > 0 && (
-        <section className="rounded-[var(--radius-card)] border border-border bg-surface p-4">
-          <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.04em] text-muted">{t.perPerson}</h2>
-          <ul className="flex flex-col gap-4">
-            {m.perPerson.map((p) => (
-              <PersonBar key={p.userId} name={nameById.get(p.userId) ?? "–"} kwh={p.kwh} costNok={p.costNok} max={personMax} />
-            ))}
-            {m.guestKwh > 0 && <PersonBar name={t.guest} kwh={m.guestKwh} costNok={m.guestCostNok} max={personMax} muted />}
-            {m.smartKwh > 0 && (
-              <PersonBar name={t.smart} kwh={m.smartKwh} costNok={m.smartCostNok} max={personMax} muted />
-            )}
-            {m.automaticKwh > 0 && (
-              <PersonBar name={t.automatic} kwh={m.automaticKwh} costNok={m.automaticCostNok} max={personMax} muted />
-            )}
-            {m.importedKwh > 0 && (
-              <PersonBar name={t.imported} kwh={m.importedKwh} costNok={m.importedCostNok} max={personMax} muted />
-            )}
-          </ul>
-        </section>
-      )}
+      <PerPersonCard split={m} nameById={nameById} />
 
       {(drive.km != null || odometer) && (
         <DriveCard d={drive} prev={drivePrev} monthLabel={monthName(month)} odometer={odometer} now={now} />
       )}
 
-      <p className="px-1 text-xs text-muted">
-        {grid ? t.priceNoteGrid : t.priceNoteNoGrid}{" "}
-        <Link href="/settings#price" className="font-semibold text-accent">
-          {t.changePriceLink}
-        </Link>
-      </p>
+      <PriceNote grid={grid} />
     </main>
   );
 }

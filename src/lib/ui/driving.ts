@@ -34,6 +34,8 @@ export interface MonthDriving {
   awayCharges: number;
   /** Battery % that fell over the counted pairs. */
   socDropPercent: number;
+  /** Km over the counted pairs (the denominator of the efficiency). */
+  countedKm: number;
 }
 
 export const MIN_KM = 100;
@@ -103,6 +105,7 @@ export function monthDriving(
     nokPerMil: kwhPerMil != null && avgNokPerKwh != null ? kwhPerMil * avgNokPerKwh : null,
     awayCharges,
     socDropPercent: socDrop,
+    countedKm,
   };
 }
 
@@ -113,4 +116,56 @@ export function latestOdometer(telemetry: DriveReading[], month: string): { km: 
     .sort((a, b) => a.at.getTime() - b.at.getTime())
     .at(-1);
   return last ? { km: last.odometerKm!, at: last.at } : null;
+}
+
+// Kjøring in the Innsikt year view (HANDOFF §6d): the year from its months,
+// so the two views agree. Km telescope (each month starts where the one
+// before ended); the efficiency pools the counted pairs of all months with
+// the same §6c thresholds. Pure.
+
+export interface YearDriving {
+  year: number;
+  /** Km driven in the year; null without an odometer reading in it. */
+  km: number | null;
+  enough: boolean;
+  kmPerKwh: number | null;
+  kwhPerMil: number | null;
+  nokPerMil: number | null;
+  awayCharges: number;
+  /** km/kWh per month (index 0 = Jan); null when the month is below the §6c data threshold or not reached yet. */
+  perMonth: (number | null)[];
+}
+
+export function yearDriving(
+  telemetry: DriveReading[],
+  homeSessions: HomeSession[],
+  year: number,
+  capacityKwh: number,
+  avgNokPerKwh: number | null,
+  /** Months counted: 12 for a past year, the current month for this year. */
+  lastMonth = 12,
+): YearDriving {
+  const months = Array.from({ length: 12 }, (_, i) =>
+    i < lastMonth
+      ? monthDriving(telemetry, homeSessions, `${year}-${String(i + 1).padStart(2, "0")}`, capacityKwh, null)
+      : null,
+  );
+  const counted = months.filter((m): m is MonthDriving => m != null);
+  const withKm = counted.filter((m) => m.km != null);
+  const km = withKm.length > 0 ? withKm.reduce((s, m) => s + m.km!, 0) : null;
+  const countedKm = counted.reduce((s, m) => s + m.countedKm, 0);
+  const socDrop = counted.reduce((s, m) => s + m.socDropPercent, 0);
+  const kwh = (socDrop / 100) * capacityKwh;
+  const enough = km != null && km >= MIN_KM && socDrop >= MIN_SOC_DROP && countedKm > 0 && kwh > 0;
+  const kwhPerMil = enough ? (kwh / countedKm) * 10 : null;
+  return {
+    year,
+    km,
+    enough,
+    kmPerKwh: enough ? countedKm / kwh : null,
+    kwhPerMil,
+    nokPerMil: kwhPerMil != null && avgNokPerKwh != null ? kwhPerMil * avgNokPerKwh : null,
+    awayCharges: counted.reduce((s, m) => s + m.awayCharges, 0),
+    perMonth: months.map((m) => (m?.enough ? m.kmPerKwh : null)),
+  };
 }

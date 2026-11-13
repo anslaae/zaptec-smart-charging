@@ -70,7 +70,7 @@ export async function mockSim(action: SimAction): Promise<void> {
       break;
     case "reportBattery":
       sim.reportBattery(now);
-      mockLog("info", `Bilen rapporterte ${sim.reading?.percent} % til Smartcar`);
+      mockLog("info", `Bilen rapporterte ${sim.reading?.percent}\u202F% til Smartcar`);
       break;
     case "setBattery":
       sim.setBattery(action.percent, now);

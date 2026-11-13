@@ -205,7 +205,7 @@ function stateView(data: HomeCardData): View {
   };
   const ringLabel =
     battery.percent != null
-      ? `${battery.approx ? `${nb.battery.approx} ` : ""}${battery.percent} %`
+      ? `${battery.approx ? `${nb.battery.approx} ` : ""}${battery.percent}\u202F%`
       : schedule
         ? `${formatKwh(planDeliveredKwh)} av ${formatKwh(schedule.targetEnergyKwh)}`
         : nb.home.noCar.status;
@@ -430,7 +430,7 @@ function stateView(data: HomeCardData): View {
             })
           : null,
         note: nb.home.preheating.autoStopNote,
-        ring: { kind: "preheat", percent: battery.percent, caption: battery.percent != null ? `${battery.percent} %` : null },
+        ring: { kind: "preheat", percent: battery.percent, caption: battery.percent != null ? `${battery.percent}\u202F%` : null },
         ringLabel: nb.home.preheating.status,
       };
     }
@@ -466,7 +466,7 @@ function stateView(data: HomeCardData): View {
               }
             : percentRing(),
         ringBadge: "check",
-        ringLabel: reached != null ? `${nb.home.ready.status}, ${reached} %` : nb.home.ready.status,
+        ringLabel: reached != null ? `${nb.home.ready.status}, ${reached}\u202F%` : nb.home.ready.status,
       };
     }
   }

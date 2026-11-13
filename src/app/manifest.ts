@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Lading",
     short_name: "Lading",
-    description: "Planlegg lading av bilen på Zaptec-laderen",
+    description: "Planlegg lading av bilen på laderen hjemme",
     lang: "nb",
     start_url: "/",
     display: "standalone",

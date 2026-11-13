@@ -159,6 +159,14 @@ export function formatNumber(value: number, fractionDigits: number): string {
   }).format(value);
 }
 
+/** Narrow no-break space (U+202F) + "%": the only way a percent is written (owner, 2026-11-13). */
+export const PERCENT = " %";
+
+/** "80 %" with U+202F between the number and %. */
+export function formatPercent(value: number | string): string {
+  return `${value}${PERCENT}`;
+}
+
 /** "7,1 kW" */
 export function formatKw(kw: number): string {
   return `${formatNumber(kw, 1)} kW`;

@@ -70,7 +70,7 @@ describe("estimateBattery", () => {
     expect(result.targetPercent).toBe(80);
   });
 
-  it("never goes above 100 %", () => {
+  it("never goes above 100\u202F%", () => {
     const result = estimateBattery({
       ...base,
       charging: true,

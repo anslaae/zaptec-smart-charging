@@ -51,7 +51,7 @@ function tickPosition(percent: number) {
   };
 }
 
-const formatPercent = (value: number) => `${Math.round(value)} %`;
+const formatPercent = (value: number) => `${Math.round(value)}\u202F%`;
 
 /**
  * charging: a light highlight sweeps along the filled arc (use-case doc,

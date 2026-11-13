@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysInMonth, monthInsights, shiftMonth } from "./insights";
+import { daysInMonth, monthInsights, shiftMonth, yearInsights } from "./insights";
 import type { SessionRecord } from "./history";
 
 const rec = (iso: string, kwh: number | null, tag: SessionRecord["tag"], userId: string | null): SessionRecord => ({
@@ -57,5 +57,50 @@ describe("monthInsights", () => {
     expect(m.days).toBe(31);
     expect(m.totalKwh).toBe(80);
     expect(m.changePercent).toBeNull();
+  });
+});
+
+describe("yearInsights (§6d)", () => {
+  const records = [
+    rec("2026-01-15T03:00:00Z", 20, "plan", "roger"),
+    rec("2026-03-02T03:00:00Z", 10, "manual", "astrid"),
+    rec("2026-06-06T13:00:00Z", 8, "guest", "roger"),
+    rec("2026-09-07T17:00:00Z", 4, "smart", null),
+    rec("2026-11-03T03:00:00Z", 12, "plan", "astrid"),
+    rec("2025-02-10T03:00:00Z", 30, "plan", "roger"), // same period last year
+    rec("2025-11-08T03:00:00Z", 6, "plan", "roger"), // inside 1–10 Nov 2025
+    rec("2025-11-20T03:00:00Z", 100, "plan", "roger"), // after the same day: outside
+    rec("2025-12-05T03:00:00Z", 50, "plan", "roger"), // outside
+  ];
+
+  it("is the sum of its months, with future months empty", () => {
+    const y = yearInsights(records, 2026, now);
+    expect(y.lastMonth).toBe(11);
+    expect(y.partialMonth).toBe(11);
+    expect(y.months[11]).toBeNull();
+    const months = y.months.filter((m) => m != null);
+    expect(months).toHaveLength(11);
+    expect(y.totalKwh).toBe(54);
+    expect(y.totalKwh).toBe(months.reduce((s, m) => s + m.totalKwh, 0));
+    expect(y.totalCostNok).toBe(months.reduce((s, m) => s + m.totalCostNok, 0));
+    expect(y.perPerson).toEqual([
+      { userId: "astrid", kwh: 22, costNok: 22 },
+      { userId: "roger", kwh: 20, costNok: 20 },
+    ]);
+    expect(y.guestKwh).toBe(8);
+    expect(y.smartKwh).toBe(4);
+  });
+
+  it("compares with the same period last year, up to the same day", () => {
+    // 2025-01-01..2025-11-10 = 30 + 6 = 36 kWh; 54 vs 36 = +50 %
+    expect(yearInsights(records, 2026, now).changePercent).toBe(50);
+  });
+
+  it("compares a past year with the whole previous year, and hides it without data", () => {
+    const y = yearInsights(records, 2025, now);
+    expect(y.lastMonth).toBe(12);
+    expect(y.partialMonth).toBeNull();
+    expect(y.totalKwh).toBe(186);
+    expect(y.changePercent).toBeNull(); // nothing in 2024
   });
 });
