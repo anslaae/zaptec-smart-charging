@@ -2,8 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Lading",
-    short_name: "Lading",
+    // HANDOFF §6f: "Smart lading" is exactly 12 characters, so it fits under the icon.
+    name: "Smart lading",
+    short_name: "Smart lading",
     description: "Planlegg lading av bilen på laderen hjemme",
     lang: "nb",
     start_url: "/",

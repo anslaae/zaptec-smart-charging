@@ -57,7 +57,7 @@ self.addEventListener("push", (event) => {
     options.renotify = false;
   }
 
-  event.waitUntil(self.registration.showNotification(data.title || "Lading", options));
+  event.waitUntil(self.registration.showNotification(data.title || "Smart lading", options));
 });
 
 // Tapping opens the action's URL (or the notification's own URL), reusing an

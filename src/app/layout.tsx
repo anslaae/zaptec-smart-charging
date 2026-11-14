@@ -5,6 +5,7 @@ import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { TabBar } from "@/components/TabBar";
 import { MockBanner } from "@/components/MockBanner";
 import { PendingProvider, ScreenSwap } from "@/components/Pending";
+import { Splash, SPLASH_SCRIPT } from "@/components/Splash";
 import { nb } from "@/lib/i18n/nb";
 import "./globals.css";
 
@@ -41,13 +42,17 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    // The splash script sets data-splash on <html> before React hydrates.
     <html
+      suppressHydrationWarning
       lang="nb"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       {/* The translucent status bar + viewport-fit=cover draw the page from the very top
           of the screen on iOS: keep content below the clock/notch (0 elsewhere). */}
       <body className="min-h-full flex flex-col pt-[env(safe-area-inset-top)]">
+        <script dangerouslySetInnerHTML={{ __html: SPLASH_SCRIPT }} />
+        <Splash />
         <PendingProvider>
           <ConfirmProvider>
             <MockBanner />

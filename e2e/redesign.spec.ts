@@ -378,9 +378,9 @@ test("UC14: 'Lad med en gang' lets an unplanned session run", async ({ page }) =
 test("UC16: Smart lading plans the night on plug-in and shows it on Hjem", async ({ page }) => {
   await preset(page, "Smart lading – venter");
   // The real tick planned it and sent smart_planned
-  await expect(page.getByText(/Smart lading i natt — Lader til 80\s% \d\d:\d\d–\d\d:\d\d · ca\. \d+ kr\./)).toBeVisible();
+  await expect(page.getByText(/Planlagt i natt — Lader til 80\s% \d\d:\d\d–\d\d:\d\d · ca\. \d+ kr\./)).toBeVisible();
   await page.goto("/");
-  await expect(page.getByText("Smart lading", { exact: true })).toBeVisible();
+  await expect(page.getByText("Smart", { exact: true })).toBeVisible();
   await expect(page.getByText(/^Lader (i natt )?\d\d:\d\d–\d\d:\d\d$/)).toBeVisible();
   await expect(page.getByText(/^Klar til \d\d:\d\d .+ · \+[\d,]+ kWh$/)).toBeVisible();
   await expect(page.getByText("Kveldstopp", { exact: true })).toBeVisible();
@@ -398,14 +398,14 @@ test("UC16: Smart lading plans the night on plug-in and shows it on Hjem", async
   await expect(page.getByText("Lading startet")).toBeVisible();
   await expect(page.getByRole("button", { name: "Stopp lading" })).toBeVisible();
   await page.goto("/history?tab=activity");
-  await expect(page.getByText("Smart lading avbrutt for denne ladingen").first()).toBeVisible();
-  await expect(page.getByText("Smart lading planlagt").first()).toBeVisible();
+  await expect(page.getByText("Smart slått av for denne ladingen").first()).toBeVisible();
+  await expect(page.getByText("Lading planlagt (Smart)").first()).toBeVisible();
 });
 
 test("UC16: Avbryt for i natt stops Smart lading for this plug-in", async ({ page }) => {
   await preset(page, "Smart lading – lader");
   await page.goto("/");
-  await expect(page.getByText("Smart lading", { exact: true })).toBeVisible();
+  await expect(page.getByText("Smart", { exact: true })).toBeVisible();
   await expect(page.getByText(/^Lader – ferdig ca\. \d\d:\d\d$/)).toBeVisible();
   await page.getByRole("button", { name: "Avbryt for i natt" }).click();
   await page.getByRole("alertdialog", { name: "Avbryte planen?" }).getByRole("button", { name: "Avbryt plan" }).click();
@@ -421,13 +421,13 @@ test("UC16: Smart lading settings in the Når bilen kobles til sheet", async ({ 
   await page.goto("/settings");
   await page.getByRole("button", { name: /Når bilen kobles til/ }).click();
   const sheet = page.getByRole("dialog", { name: "Når bilen kobles til" });
-  await sheet.getByRole("radio", { name: /Smart lading/ }).check();
+  await sheet.getByRole("radio", { name: /^Smart/ }).check();
   await expect(sheet.getByText("Billigst: natt 22–06 og helg · 81 øre/kWh")).toBeVisible();
   await expect(sheet.getByText("Dyrest: hverdager 06–22 · 96 øre/kWh")).toBeVisible();
   await sheet.getByRole("button", { name: "90\u202F%" }).click();
   await sheet.getByLabel("Klar til, hverdager").selectOption("07:00");
   await sheet.getByRole("button", { name: "Lagre" }).click();
-  await expect(page.getByText("Smart lading · 90\u202F% innen 07:00 ›")).toBeVisible();
+  await expect(page.getByText("Smart · 90\u202F% innen 07:00 ›")).toBeVisible();
 });
 
 test("Innstillinger: price sources and the location name from Zaptec", async ({ page }) => {

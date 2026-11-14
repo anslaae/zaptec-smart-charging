@@ -5,7 +5,10 @@
 
 export const nb = {
   app: {
-    name: "Lading",
+    name: "Smart lading",
+    // HANDOFF §6f start-up animation
+    splashLabel: "Starter Smart lading",
+    splashSlow: "Henter status…",
     greeting: {
       morning: "God morgen, {name}",
       day: "God dag, {name}",
@@ -100,7 +103,7 @@ export const nb = {
     },
     // Smart lading (UC16, HANDOFF §6b)
     smart: {
-      pill: "Smart lading",
+      pill: "Smart",
       status: "Lader i natt {start}–{end}",
       statusDay: "Lader {start}–{end}",
       sub: "Klar til {readyBy} {day} · +{kwh} kWh",
@@ -365,7 +368,7 @@ export const nb = {
     noComparison: "Ingen lading i {month} å sammenligne med",
     personRow: "{kwh} kWh · {kr} kr",
     automatic: "Automatisk",
-    smart: "Smart lading",
+    smart: "Smart",
     // D70: Zaptec sessions from before the app -- no person to count them for
     imported: "Importert fra Zaptec (ingen person)",
     empty: "Ingen lading registrert denne måneden.",
@@ -539,8 +542,8 @@ export const nb = {
     automatic_allowed: "Automatisk lading slått på",
     automatic_disallowed: "Automatisk lading slått av",
     automatic_completed: "Automatisk lading nådde målet",
-    smart_planned: "Smart lading planlagt",
-    smart_cancelled: "Smart lading avbrutt for denne ladingen",
+    smart_planned: "Lading planlagt (Smart)",
+    smart_cancelled: "Smart slått av for denne ladingen",
     // (app) Innstillinger → "Når bilen kobles til"; detail = the new choice
     on_plugin_mode_changed: "Når bilen kobles til: endret",
     // D65 / D75 "locked": the loop guard tripped
@@ -592,7 +595,7 @@ export const nb = {
     planLateKwh: "Bilen blir ikke helt ferdig {readyBy}. Jeg lader videre til målet.",
     planWaitingForCar: { title: "Planen venter på bilen", body: "Koble til innen {latestStart} for å være klar {readyBy}." },
     smartPlanned: {
-      title: "Smart lading i natt",
+      title: "Planlagt i natt",
       body: "Lader til {targetPercent} % {start}–{end} · ca. {cost} kr.",
       chargeNowInstead: "Lad nå i stedet",
     },
@@ -613,7 +616,7 @@ export const nb = {
     title: "Når bilen kobles til",
     intro: "Gjelder når det ikke finnes en plan. En plan, lading du starter selv eller forvarming overstyrer for den ladingen.",
     settingsRow: "Når bilen kobles til",
-    settingsRowSmart: "Smart lading · {percent} % innen {time}",
+    settingsRowSmart: "Smart · {percent} % innen {time}",
     wait: {
       title: "Vent på plan",
       sub: "Lader ikke før noen planlegger eller trykker Lad nå"
@@ -623,7 +626,7 @@ export const nb = {
       sub: "Lader til fullt med en gang («Automatisk»)"
     },
     smart: {
-      title: "Smart lading",
+      title: "Smart",
       sub: "Billigst mulig til {percent} % innen klar-tid"
     },
     target: "Lad til",

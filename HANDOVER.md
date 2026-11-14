@@ -79,6 +79,7 @@ src/app/
 src/components/Freshness.tsx         Hjem's FreshnessProvider (replaced AutoRefresh): 60 s refresh, "Oppdaterer…" lock on a stale render, poll after a command (D71); refreshes feed the top bar (D80)
 src/components/Pending.tsx           One loading pattern (D80): PendingProvider + top bar, PendingLink (spinner on the tapped link), PendingArea (dims content while new data loads), ScreenSwap (a tab's placeholder at once)
 src/components/Skeletons.tsx         Each screen's placeholder outline, shared by loading.tsx and ScreenSwap (D80)
+src/components/Splash.tsx            Start-up animation on a cold start of the installed app; `?splash` to try it in a browser (D82)
 src/lib/scheduler/completedSessions(.server).ts  stores ended Zaptec sessions (zaptec_sessions) and corrects row energy (D72)
 src/lib/incidents/                   D75 unexpected stops: rules.ts (pure: which incident, when it shows/pushes), sync.server.ts (the tick keeps charge_incidents and sends the one push; Hjem reads it), actions.ts (Prøv igjen); Hjem: src/lib/ui/incidentView.ts + src/components/IncidentCard.tsx
 src/components/                      ChargerCard (the big one — status pills, live summary, Details<collapsible>, actions), ManualChargeButton, PreheatButton (see "Preheat" below), DebugProvider (?debug=1 + scenario picker), NotificationToggle, SchedulerStatusBadge, AutoRefresh (pauses when tab hidden), DeleteScheduleButton, various toasts
