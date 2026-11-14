@@ -4,6 +4,7 @@ import { AppToaster } from "@/components/AppToaster";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { TabBar } from "@/components/TabBar";
 import { MockBanner } from "@/components/MockBanner";
+import { PendingProvider, ScreenSwap } from "@/components/Pending";
 import { nb } from "@/lib/i18n/nb";
 import "./globals.css";
 
@@ -47,11 +48,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       {/* The translucent status bar + viewport-fit=cover draw the page from the very top
           of the screen on iOS: keep content below the clock/notch (0 elsewhere). */}
       <body className="min-h-full flex flex-col pt-[env(safe-area-inset-top)]">
-        <ConfirmProvider>
-          <MockBanner />
-          {children}
-          <TabBar />
-        </ConfirmProvider>
+        <PendingProvider>
+          <ConfirmProvider>
+            <MockBanner />
+            <ScreenSwap>{children}</ScreenSwap>
+            <TabBar />
+          </ConfirmProvider>
+        </PendingProvider>
         <AppToaster />
       </body>
     </html>

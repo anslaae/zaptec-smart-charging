@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { PendingLink } from "@/components/Pending";
 import { formatNumber } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
 
@@ -121,12 +121,12 @@ export function InsightsHeader({
         )}
       </div>
       <nav aria-label={t.periodLabel} className="grid grid-cols-2 gap-1 rounded-[var(--radius-chip)] bg-surface-2 p-1">
-        <Link href={monthHref} aria-current={period === "month" ? "page" : undefined} className={segment(period === "month")}>
+        <PendingLink href={monthHref} aria-current={period === "month" ? "page" : undefined} className={segment(period === "month")}>
           {t.periodMonth}
-        </Link>
-        <Link href={yearHref} aria-current={period === "year" ? "page" : undefined} className={segment(period === "year")}>
+        </PendingLink>
+        <PendingLink href={yearHref} aria-current={period === "year" ? "page" : undefined} className={segment(period === "year")}>
           {t.periodYear}
-        </Link>
+        </PendingLink>
       </nav>
     </div>
   );
@@ -149,14 +149,14 @@ export function PeriodNav({
   const arrow = "flex h-11 w-11 items-center justify-center rounded-full text-xl text-text-2";
   return (
     <nav className="flex items-center justify-between">
-      <Link href={prevHref} aria-label={prevLabel} className={arrow}>
+      <PendingLink href={prevHref} aria-label={prevLabel} className={arrow}>
         ‹
-      </Link>
+      </PendingLink>
       <span className="text-[17px] font-semibold">{label}</span>
       {nextHref ? (
-        <Link href={nextHref} aria-label={nextLabel} className={arrow}>
+        <PendingLink href={nextHref} aria-label={nextLabel} className={arrow}>
           ›
-        </Link>
+        </PendingLink>
       ) : (
         <span className="h-11 w-11" aria-hidden />
       )}
@@ -168,9 +168,9 @@ export function PriceNote({ grid }: { grid: boolean }) {
   return (
     <p className="px-1 text-xs text-muted">
       {grid ? t.priceNoteGrid : t.priceNoteNoGrid}{" "}
-      <Link href="/settings#price" className="font-semibold text-accent">
+      <PendingLink href="/settings#price" hint="inline" className="inline-flex items-center gap-1 font-semibold text-accent">
         {t.changePriceLink}
-      </Link>
+      </PendingLink>
     </p>
   );
 }

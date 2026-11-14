@@ -5,6 +5,21 @@
 // on the runtime default.
 export const HOUSEHOLD_TIME_ZONE = "Europe/Oslo";
 
+// Building an Intl formatter costs far more than using one (tens of µs, more
+// with a time zone), and Innsikt's year view formats thousands of dates per
+// render (D80). Formatters are immutable, so one per option set is shared.
+const dateFormatters = new Map<string, Intl.DateTimeFormat>();
+function dateFormatter(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = locale + JSON.stringify(options);
+  let formatter = dateFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    dateFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+const numberFormatters = new Map<number, Intl.NumberFormat>();
+
 // datetime-local inputs/values are naive "wall clock" strings with no
 // timezone attached. Converting one to a real UTC instant requires knowing
 // the zone's UTC offset *on that date* (Oslo swings between UTC+1 and UTC+2
@@ -17,7 +32,7 @@ export function zonedDateTimeToUtc(dateTimeLocal: string, timeZone: string): Dat
 
   const utcGuess = Date.UTC(year, month - 1, day, hour, minute);
 
-  const formatter = new Intl.DateTimeFormat("en-US", {
+  const formatter = dateFormatter("en-US", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -45,7 +60,7 @@ export function zonedDateTimeToUtc(dateTimeLocal: string, timeZone: string): Dat
 // A date's calendar day as seen in `timeZone`, e.g. "2026-10-05" — used to
 // bucket timestamps by local day regardless of the server's own timezone.
 export function zonedDateKey(date: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
+  return dateFormatter("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -59,7 +74,7 @@ export function zonedDateKey(date: Date, timeZone: string): string {
 // the exact same text -- a runtime-default locale differed between them and
 // caused hydration mismatches.
 export function formatOsloDateTime(date: string | Date): string {
-  return new Intl.DateTimeFormat(LOCALE, {
+  return dateFormatter(LOCALE, {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: HOUSEHOLD_TIME_ZONE,
@@ -71,7 +86,7 @@ const LOCALE = "nb-NO";
 
 /** "07:30" -- 24h wall-clock time in Oslo. */
 export function formatTime(date: string | Date): string {
-  return new Intl.DateTimeFormat(LOCALE, {
+  return dateFormatter(LOCALE, {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
@@ -81,7 +96,7 @@ export function formatTime(date: string | Date): string {
 
 /** "tir. 10. nov." -- short weekday + day + month in Oslo. */
 export function formatShortDate(date: string | Date): string {
-  return new Intl.DateTimeFormat(LOCALE, {
+  return dateFormatter(LOCALE, {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -109,7 +124,7 @@ export function formatPastDayAndTime(date: string | Date, now: Date = new Date()
       : offset === -1
         ? "i går"
         : offset >= -6 && offset < 0
-          ? new Intl.DateTimeFormat(LOCALE, { weekday: "short", timeZone: HOUSEHOLD_TIME_ZONE }).format(d)
+          ? dateFormatter(LOCALE, { weekday: "short", timeZone: HOUSEHOLD_TIME_ZONE }).format(d)
           : formatShortDate(d);
   return `${day} ${formatTime(d)}`;
 }
@@ -147,16 +162,18 @@ export function formatDayAndTime(date: string | Date, now: Date = new Date()): s
 /** Hour of day (0-23) on the Oslo wall clock. */
 export function osloHour(date: Date = new Date()): number {
   return Number(
-    new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: HOUSEHOLD_TIME_ZONE }).format(date),
+    dateFormatter("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: HOUSEHOLD_TIME_ZONE }).format(date),
   );
 }
 
 /** "7,1" -- a plain number with a fixed number of decimals, for templates that add their own unit. */
 export function formatNumber(value: number, fractionDigits: number): string {
-  return new Intl.NumberFormat(LOCALE, {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  }).format(value);
+  let formatter = numberFormatters.get(fractionDigits);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(LOCALE, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
+    numberFormatters.set(fractionDigits, formatter);
+  }
+  return formatter.format(value);
 }
 
 /** Narrow no-break space (U+202F) + "%": the only way a percent is written (owner, 2026-11-13). */

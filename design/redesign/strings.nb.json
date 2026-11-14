@@ -1,7 +1,8 @@
 {
   "$description": "Norwegian (nb) UI copy for the Lading redesign. {placeholders} are filled at runtime. Formats: percent with a narrow no-break space U+202F ('80 %'), 24h time (07:30), decimal comma (7,2 kW), '123,40 kr', dates like 'tir. 10. nov.', relative words i dag / i morgen / i går.",
   "app": {
-    "name": "Lading",
+    "name": "Smart lading",
+    "splashLabel": "Starter Smart lading",
     "greeting": {
       "morning": "God morgen, {name}",
       "day": "God dag, {name}",
@@ -117,7 +118,7 @@
       "seeAll": "Se alle"
     },
     "smart": {
-      "pill": "Smart lading",
+      "pill": "Smart",
       "status": "Lader i natt {start}–{end}",
       "statusDay": "Lader {start}–{end}",
       "sub": "Klar til {readyBy} {day} · +{kwh} kWh",
@@ -437,8 +438,8 @@
     "guest_ended": "Gjestelading avsluttet",
     "automatic_allowed": "Automatisk lading slått på",
     "automatic_disallowed": "Automatisk lading slått av",
-    "smart_planned": "Smart lading planlagt",
-    "smart_cancelled": "Smart lading avbrutt for denne ladingen",
+    "smart_planned": "Lading planlagt (Smart)",
+    "smart_cancelled": "Smart slått av for denne ladingen",
     "car_stopped_full": "Bilen sluttet å lade – trolig full",
     "car_stopped": "Bilen sluttet å lade – {percent} %",
     "car_never_started": "Bilen begynte ikke å lade",
@@ -454,7 +455,7 @@
     "title": "Når bilen kobles til",
     "intro": "Gjelder når det ikke finnes en plan. En plan, Lad nå eller forvarming overstyrer for den ladingen.",
     "settingsRow": "Når bilen kobles til",
-    "settingsRowSmart": "Smart lading · {percent} % innen {time}",
+    "settingsRowSmart": "Smart · {percent} % innen {time}",
     "wait": {
       "title": "Vent på plan",
       "sub": "Lader ikke før noen planlegger eller trykker Lad nå"
@@ -464,7 +465,7 @@
       "sub": "Lader til fullt med en gang («Automatisk»)"
     },
     "smart": {
-      "title": "Smart lading",
+      "title": "Smart",
       "sub": "Billigst mulig til {percent} % innen klar-tid"
     },
     "target": "Lad til",

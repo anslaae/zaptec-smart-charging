@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect } from "react";
-import Link from "next/link";
+import { PendingLink } from "@/components/Pending";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { BatteryRing, type RingBadge, type RingMode } from "@/components/BatteryRing";
@@ -565,15 +565,15 @@ export function HomeCard({ data }: { data: HomeCardData }) {
   useEffect(() => {
     if (settled) endSettling();
   }, [settled, endSettling]);
-  const freshnessLine = scenario
-    ? null
-    : freshness.settling && !settled
-      ? freshness.settling === "charging"
+  const settlingLine =
+    scenario || !freshness.settling || settled
+      ? null
+      : freshness.settling === "charging"
         ? nb.freshness.waitingStart
-        : nb.freshness.waitingStop
-      : freshness.stale
-        ? nb.freshness.updating
-        : null;
+        : nb.freshness.waitingStop;
+  // An old copy shown again (D71) stays in place, dimmed, while the fresh one
+  // loads (D80 rule 3): no line pushed in above the ring, so no jump.
+  const showingStale = !scenario && !settlingLine && freshness.stale;
 
   // With an open plan, Lad nå / Forvarm cancel it (after asking) -- the
   // scheduler would otherwise pause them again within a minute.
@@ -621,9 +621,9 @@ export function HomeCard({ data }: { data: HomeCardData }) {
   // D67: while charging, Forvarm only opens the sheet -- the power is already
   // on, so there is nothing to start and nothing to cancel.
   const preheatLink = (
-    <Link href="/?sheet=preheat" scroll={false} className={secondaryClass}>
+    <PendingLink href="/?sheet=preheat" scroll={false} className={secondaryClass}>
       {nb.home.connected.preheat}
-    </Link>
+    </PendingLink>
   );
   const cancelPlan = (className: string, label: string = nb.planSheet.cancel) =>
     schedule && (
@@ -656,9 +656,9 @@ export function HomeCard({ data }: { data: HomeCardData }) {
     />
   );
   const planLink = (label: string) => (
-    <Link href={planHref} scroll={false} className={primaryClass}>
+    <PendingLink href={planHref} scroll={false} className={primaryClass}>
       {label}
-    </Link>
+    </PendingLink>
   );
 
   let actions: React.ReactNode = null;
@@ -774,13 +774,17 @@ export function HomeCard({ data }: { data: HomeCardData }) {
         <div className="rounded-[var(--radius-card)] border border-amber-border bg-amber-bg p-4">
           <p className="text-[15px] font-semibold text-amber">{nb.home.noControl.title}</p>
           <p className="mt-1 text-sm text-text-2">{nb.home.noControl.body}</p>
-          <Link href="/settings" className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-amber">
+          <PendingLink href="/settings" hint="inline" className="mt-2 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-amber">
             {nb.home.noControl.link}
-          </Link>
+          </PendingLink>
         </div>
       )}
 
-      <section className="flex flex-col gap-4 rounded-[var(--radius-hero)] border border-border bg-surface p-5">
+      <section
+        data-stale={showingStale ? "true" : undefined}
+        aria-busy={showingStale || undefined}
+        className="stale-dim relative flex flex-col gap-4 rounded-[var(--radius-hero)] border border-border bg-surface p-5"
+      >
         {scenario && (
           <p className="rounded-[var(--radius-chip)] bg-amber-bg px-3 py-1.5 text-xs font-semibold text-amber">
             {fill(nb.debug.preview, { label: scenario.label })}
@@ -789,9 +793,19 @@ export function HomeCard({ data }: { data: HomeCardData }) {
         {!effective.state.isOnline && effective.incident?.kind !== "offline" && (
           <p className="text-sm font-semibold text-amber">{nb.home.offline}</p>
         )}
-        {freshnessLine && (
+        {settlingLine && (
           <p role="status" aria-live="polite" data-testid="freshness" className="text-center text-sm font-semibold text-muted">
-            {freshnessLine}
+            {settlingLine}
+          </p>
+        )}
+        {showingStale && (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="freshness"
+            className="absolute inset-x-0 top-1 text-center text-xs font-semibold text-muted"
+          >
+            {nb.freshness.updating}
           </p>
         )}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { PendingLink } from "./Pending";
 import { usePathname } from "next/navigation";
 import { nb } from "@/lib/i18n/nb";
 
@@ -46,10 +46,10 @@ function SettingsIcon({ className }: IconProps) {
 }
 
 const TABS = [
-  { href: "/", label: nb.nav.home, Icon: HomeIcon },
-  { href: "/history", label: nb.nav.history, Icon: HistoryIcon },
-  { href: "/insights", label: nb.nav.insights, Icon: InsightsIcon },
-  { href: "/settings", label: nb.nav.settings, Icon: SettingsIcon },
+  { href: "/", label: nb.nav.home, Icon: HomeIcon, screen: "home" },
+  { href: "/history", label: nb.nav.history, Icon: HistoryIcon, screen: "history" },
+  { href: "/insights", label: nb.nav.insights, Icon: InsightsIcon, screen: "insights" },
+  { href: "/settings", label: nb.nav.settings, Icon: SettingsIcon, screen: "settings" },
 ] as const;
 
 // 84 px tall plus the iOS home-indicator inset (design/redesign/HANDOFF.md §2).
@@ -75,12 +75,13 @@ export function TabBar() {
         style={{ height: BAR_HEIGHT, paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <ul className="mx-auto flex h-[84px] max-w-lg">
-          {TABS.map(({ href, label, Icon }) => {
+          {TABS.map(({ href, label, Icon, screen }) => {
             const active = isActive(href);
             return (
               <li key={href} className="flex-1">
-                <Link
+                <PendingLink
                   href={href}
+                  screen={screen}
                   // Full prefetch, so switching tabs shows the page at once (staleTimes in next.config.ts).
                   prefetch={true}
                   aria-current={active ? "page" : undefined}
@@ -90,7 +91,7 @@ export function TabBar() {
                 >
                   <Icon className="h-6 w-6" />
                   {label}
-                </Link>
+                </PendingLink>
               </li>
             );
           })}

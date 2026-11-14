@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { and, desc, gte, inArray } from "drizzle-orm";
 import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
@@ -21,6 +20,7 @@ import { fill, nb } from "@/lib/i18n/nb";
 import { carShortName } from "@/lib/ui/cars";
 import { activityText, shownDetail, visibleActivity } from "@/lib/ui/activity";
 import { DebugOnly } from "@/components/DebugOnly";
+import { PendingArea, PendingLink } from "@/components/Pending";
 
 const t = nb.history;
 type Tab = "sessions" | "plans" | "activity";
@@ -33,7 +33,7 @@ function Segments({ active }: { active: Tab }) {
   return (
     <nav aria-label={t.title} className="grid grid-cols-3 gap-1 rounded-[var(--radius-chip)] bg-surface-2 p-1">
       {TABS.map((tab) => (
-        <Link
+        <PendingLink
           key={tab}
           href={tab === "sessions" ? "/history" : `/history?tab=${tab}`}
           aria-current={tab === active ? "page" : undefined}
@@ -42,7 +42,7 @@ function Segments({ active }: { active: Tab }) {
           }`}
         >
           {t.tabs[tab]}
-        </Link>
+        </PendingLink>
       ))}
     </nav>
   );
@@ -325,9 +325,11 @@ export default async function HistoryPage({ searchParams }: PageProps<"/history"
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 pt-6 pb-4">
       <h1 className="text-[28px] font-semibold">{t.title}</h1>
       <Segments active={tab} />
-      {tab === "sessions" && <SessionsTab now={now} />}
-      {tab === "plans" && <PlansTab now={now} />}
-      {tab === "activity" && <ActivityTab now={now} />}
+      <PendingArea>
+        {tab === "sessions" && <SessionsTab now={now} />}
+        {tab === "plans" && <PlansTab now={now} />}
+        {tab === "activity" && <ActivityTab now={now} />}
+      </PendingArea>
     </main>
   );
 }

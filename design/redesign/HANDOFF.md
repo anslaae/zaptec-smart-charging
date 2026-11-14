@@ -36,11 +36,11 @@ All numbers in the mockups are sample data. The real battery capacity is 46 kWh 
     - short dates such as "tir. 10. nov.";
     - `formatKw(7.1) → "7,1 kW"`, `formatKwh`, `formatKr(123.4) → "123,40 kr"` via `Intl.NumberFormat("nb-NO")`.
    Always pass `timeZone: HOUSEHOLD_TIME_ZONE`, and never `toLocaleString(undefined)`.
-3. **Manifest and metadata:** `name`/`short_name` "Lading". `theme_color` `#0E0F0D`, `background_color` `#0E0F0D`. List the icons:
+3. **Manifest and metadata:** `name`/`short_name` "Smart lading" (renamed 2026-11-14, see §6f). `theme_color` `#0E0F0D`, `background_color` `#0E0F0D`. List the icons:
     - `/icons/icon-192.png` (192×192, any);
     - `/icons/icon-512.png` (512×512, any);
     - `/icons/icon-maskable-512.png` (512×512, maskable).
-   In `layout.tsx`, set `viewport.themeColor` to an array with `media` for light `#F3F5EF` and dark `#0E0F0D`. Set the title to "Lading".
+   In `layout.tsx`, set `viewport.themeColor` to an array with `media` for light `#F3F5EF` and dark `#0E0F0D`. Set the title to "Smart lading".
 4. **Copy:** move every user-facing string to the `nb` object from `strings.nb.json`. `ACTIVITY_LABEL` in `src/lib/activity/log.ts` uses `activity.*`.
 
 ## 2. Layout and navigation
@@ -307,6 +307,25 @@ Lad nå:
 - **Push:** exactly one per incident, both levels (owner decided). The flag is saved before sending. Every household device gets it.
 - **Trace:** one activity line per incident (`activity.car_stopped*`, `start_failed`, `charger_offline`, `charger_locked`, `charger_warning`), plus "Laderen er tilbake" when an offline incident clears. Pauses (case 3 under 30 min) get no line. So a fault in the night is still visible in Siste hendelser in the morning.
 - The state lives on the server; both phones show the same thing. No local dismiss.
+
+## 6f. App name and start-up animation (design update 2026-11-14)
+
+**Name (owner):** the app is called **"Smart lading"** ("Smart lader" was the alternative; the splash artboard has it as a prop). Change `manifest` `name`/`short_name`, `<title>`, `apple-mobile-web-app-title` and the push app label. `short_name` is exactly 12 characters, so it fits under the icon on iOS and Android.
+
+**The mode "Smart lading" is now just "Smart"** (owner): `onPlugin.smart.title` "Smart", Hjem pill "Smart", the Innstillinger row "Smart · {percent} % innen {time}", activity "Lading planlagt (Smart)" / "Smart slått av for denne ladingen". The Historikk tag was already "Smart". The `smart_planned` push title is now "Planlagt i natt", because the app label above it already says "Smart lading". Code identifiers (`on_plugin_mode = smart`, UC16) are unchanged.
+
+**Start-up animation** (artboards `Oppstart.dc.html`, animated, and `Oppstart-trinn.dc.html`, four still frames):
+
+- **What it is:** an in-app splash, shown on a cold start of the PWA (no cached render, or first open after install) until the first Hjem render is ready. The OS splash (manifest `background_color` `#0E0F0D` + icon) shows first. The in-app splash starts from the same colour and the same ring, so the hand-over is seamless. It stays dark in light mode too, to match that OS splash and the icon.
+- **Layout:** `#0E0F0D` full screen. The ring + bolt from `icon.svg` at 168 px (no rounded square), centred, with "Smart lading" (Inter 30/700, `#F1F3EE`) 28 px below.
+- **Timeline (played once, 1.8 s in total):**
+  - 0–0.2 s: the track ring (`#2A3122`) fades in.
+  - 0.2–1.3 s: the arc fills clockwise from 12 o'clock to a full circle, ease-in-out. Its colour goes red `#E5484D` → amber `#F5B544` (at about a third) → lime `#8FCB3A` (full), like a battery filling.
+  - 1.2–1.5 s: the bolt scales 0.6 → 1.08 → 1 and fades in. A soft lime glow behind the ring flashes once (opacity 0 → 0.55 → 0).
+  - 1.4–1.8 s: the name fades in and moves up 8 px.
+- **Exit:** when Hjem is ready, cross-fade to Hjem in 200 ms. If Hjem is ready before 1.8 s, finish the animation first (never cut it off half-way). If it takes longer, hold the final frame; after 8 s, show "Henter status…" in muted 13 px under the name. Don't show the splash on a warm start (resume or tab switch), and never more than once per app start.
+- **Reduced motion:** with `prefers-reduced-motion: reduce`, show the final frame straight away (full lime ring, bolt, name) with no animation.
+- **Implementation:** pure CSS keyframes on SVG `stroke-dashoffset` (circumference 1885 at r=300 in the 1024 viewBox) and `stroke`. No JS animation library and no Lottie. The keyframes are in `Oppstart.dc.html` (the canvas version loops every 3.2 s; the app plays it once). Screen readers get `role="status"` with `aria-label` from `app.splashLabel` ("Starter Smart lading").
 
 ## 7. Data model (prepare for multiple chargers and cars, show nothing extra yet)
 

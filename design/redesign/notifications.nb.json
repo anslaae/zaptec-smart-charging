@@ -46,7 +46,7 @@
       "status": "new (UC16)",
       "trigger": "Plug-in observed, on_plugin_mode = smart, no user plan; sent once the planner has made blocks",
       "payload": {
-        "title": "Smart lading i natt",
+        "title": "Planlagt i natt",
         "body": "Lader til {targetPercent} % {start}–{end} · ca. {cost} kr.",
         "tag": "smart-{scheduleId}",
         "url": "/",
@@ -139,7 +139,7 @@
     {
       "id": "car_declined_plan",
       "status": "decided (D75), level: car declined",
-      "trigger": "A plan or Smart lading inside its window, or an automatic session; the car stopped drawing (mode 5 at once, or 2 min with no power) before the target. Not when the target is reached. One push per incident.",
+      "trigger": "A plan or Smart inside its window, or an automatic session; the car stopped drawing (mode 5 at once, or 2 min with no power) before the target. Not when the target is reached. One push per incident.",
       "payload": {
         "title": "Bilen sluttet å lade",
         "body": "Stoppet ved {percent} %, før målet. Sjekk bilens ladegrense eller timer.",

@@ -233,3 +233,28 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .ring-sweep { display: none; }
 }
+
+/* D80 loading pattern (src/components/Pending.tsx). */
+.pending-link:has(> [data-pending="true"]) > .pending-content > * {
+  visibility: hidden;
+}
+.pending-link:has(> [data-pending="true"]) > .pending-content {
+  color: transparent;
+}
+@keyframes progress-run {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+.progress-bar-runner {
+  animation: progress-run 1.1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar-runner { animation: none; width: 100%; opacity: 0.6; }
+}
+/* Hjem's old copy while the fresh one loads (D80 rule 3). */
+.stale-dim > :not([data-testid="freshness"]) {
+  transition: opacity 200ms;
+}
+.stale-dim[data-stale="true"] > :not([data-testid="freshness"]) {
+  opacity: 0.5;
+}

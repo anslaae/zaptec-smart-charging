@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { PendingLink } from "@/components/Pending";
 import { ACTIVITY_LABEL } from "@/lib/activity/log";
 import { formatDayAndTime } from "@/lib/datetime";
 import { nb } from "@/lib/i18n/nb";
@@ -17,9 +17,9 @@ export function RecentActivity({
       <div className="flex items-center justify-between">
         <h2 className="text-[13px] font-semibold uppercase tracking-[0.04em] text-muted">{nb.home.recent.title}</h2>
         {/* "Se alle" opens Aktivitet: this card lists events, not sessions. */}
-        <Link href="/history?tab=activity" className="flex min-h-11 items-center text-sm font-semibold text-accent">
+        <PendingLink href="/history?tab=activity" hint="inline" className="flex min-h-11 items-center gap-1 text-sm font-semibold text-accent">
           {nb.home.recent.seeAll}
-        </Link>
+        </PendingLink>
       </div>
       {events.length === 0 ? (
         <p className="text-sm text-muted">{nb.home.recent.empty}</p>

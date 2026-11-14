@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { PendingLink } from "@/components/Pending";
 import type { YearDriving } from "@/lib/ui/driving";
 import type { YearInsights } from "@/lib/ui/insights";
 import { capitalize, monthName } from "@/lib/ui/history";
@@ -51,13 +51,13 @@ function MonthBars({ y, currentMonthKey }: { y: YearInsights; currentMonthKey: s
         const cell = "flex min-w-0 flex-1 flex-col items-center gap-1";
         return m ? (
           <div key={key} role="listitem" className="flex min-w-0 flex-1">
-            <Link
+            <PendingLink
               href={key === currentMonthKey ? "/insights" : `/insights?month=${key}`}
               aria-label={fill(ty.barLabel, { month: capitalize(monthName(key)), kwh: formatNumber(value, 1) })}
               className={`${cell} rounded-[4px]`}
             >
               {bar}
-            </Link>
+            </PendingLink>
           </div>
         ) : (
           <div key={key} role="listitem" aria-label={capitalize(monthName(key))} className={cell}>

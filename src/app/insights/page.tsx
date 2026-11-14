@@ -12,6 +12,7 @@ import { formatNumber, formatPastDayAndTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
 import { DriveFigure, InsightsHeader, Kpi, PerPersonCard, PeriodNav, PriceNote, signedPercent } from "./parts";
 import { YearView } from "./YearView";
+import { PendingArea } from "@/components/Pending";
 
 const t = nb.insights;
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -156,16 +157,18 @@ export default async function InsightsPage({ searchParams }: PageProps<"/insight
           nextHref={year < currentYear ? `/insights?year=${year + 1}` : null}
           nextLabel={t.year.nextYear}
         />
-        <YearView
-          y={y}
-          drive={drive}
-          odometer={latestOdometer(readings, `${year}-12`)}
-          nameById={nameById}
-          currentMonthKey={current}
-          fallbackPrice={settings.energyPriceNokPerKwh}
-          now={now}
-        />
-        <PriceNote grid={grid} />
+        <PendingArea>
+          <YearView
+            y={y}
+            drive={drive}
+            odometer={latestOdometer(readings, `${year}-12`)}
+            nameById={nameById}
+            currentMonthKey={current}
+            fallbackPrice={settings.energyPriceNokPerKwh}
+            now={now}
+          />
+          <PriceNote grid={grid} />
+        </PendingArea>
       </main>
     );
   }
@@ -205,40 +208,42 @@ export default async function InsightsPage({ searchParams }: PageProps<"/insight
         nextLabel={t.nextMonth}
       />
 
-      <div className="grid grid-cols-2 gap-3">
-        <Kpi label={t.energySoFar} value={`${formatNumber(m.totalKwh, 1)} kWh`} sub={change} />
-        <Kpi
-          label={t.costSoFar}
-          value={`${formatNumber(Math.round(m.totalCostNok), 0)} kr`}
-          sub={
-            m.gridNok != null && m.totalKwh > 0
-              ? fill(t.costSplit, {
-                  energy: formatNumber(Math.round(m.totalCostNok - m.gridNok), 0),
-                  grid: formatNumber(Math.round(m.gridNok), 0),
-                })
-              : fill(t.avgPrice, {
-                  price: formatNumber(m.totalKwh > 0 ? m.totalCostNok / m.totalKwh : settings.energyPriceNokPerKwh, 2),
-                })
-          }
-        />
-      </div>
+      <PendingArea>
+        <div className="grid grid-cols-2 gap-3">
+          <Kpi label={t.energySoFar} value={`${formatNumber(m.totalKwh, 1)} kWh`} sub={change} />
+          <Kpi
+            label={t.costSoFar}
+            value={`${formatNumber(Math.round(m.totalCostNok), 0)} kr`}
+            sub={
+              m.gridNok != null && m.totalKwh > 0
+                ? fill(t.costSplit, {
+                    energy: formatNumber(Math.round(m.totalCostNok - m.gridNok), 0),
+                    grid: formatNumber(Math.round(m.gridNok), 0),
+                  })
+                : fill(t.avgPrice, {
+                    price: formatNumber(m.totalKwh > 0 ? m.totalCostNok / m.totalKwh : settings.energyPriceNokPerKwh, 2),
+                  })
+            }
+          />
+        </div>
 
-      <section className="rounded-[var(--radius-card)] border border-border bg-surface p-4">
-        <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.04em] text-muted">{t.perDay}</h2>
-        {m.totalKwh > 0 ? (
-          <DayBars perDay={m.perDay} label={fill(t.chartLabel, { month: monthName(month) })} />
-        ) : (
-          <p className="text-sm text-muted">{t.empty}</p>
+        <section className="rounded-[var(--radius-card)] border border-border bg-surface p-4">
+          <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.04em] text-muted">{t.perDay}</h2>
+          {m.totalKwh > 0 ? (
+            <DayBars perDay={m.perDay} label={fill(t.chartLabel, { month: monthName(month) })} />
+          ) : (
+            <p className="text-sm text-muted">{t.empty}</p>
+          )}
+        </section>
+
+        <PerPersonCard split={m} nameById={nameById} />
+
+        {(drive.km != null || odometer) && (
+          <DriveCard d={drive} prev={drivePrev} monthLabel={monthName(month)} odometer={odometer} now={now} />
         )}
-      </section>
 
-      <PerPersonCard split={m} nameById={nameById} />
-
-      {(drive.km != null || odometer) && (
-        <DriveCard d={drive} prev={drivePrev} monthLabel={monthName(month)} odometer={odometer} now={now} />
-      )}
-
-      <PriceNote grid={grid} />
+        <PriceNote grid={grid} />
+      </PendingArea>
     </main>
   );
 }

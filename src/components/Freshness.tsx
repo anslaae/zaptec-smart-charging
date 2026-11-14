@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { usePending } from "./Pending";
 
 // Keeps Hjem's status honest (D71; replaces AutoRefresh):
 //
@@ -15,6 +16,8 @@ import { useRouter } from "next/navigation";
 // - After a charger command, `settle()` refreshes every SETTLE_POLL_MS for
 //   up to SETTLE_MAX_MS until the screen shows the change (Zaptec's /state
 //   lags a command by some seconds); buttons stay locked meanwhile.
+// - Every refresh runs in a transition and shows in the top bar while it's
+//   under way (D80), so a status that changes a second later isn't a surprise.
 
 export const STALE_MS = 10_000;
 export const LOCK_MAX_MS = 15_000;
@@ -84,6 +87,10 @@ export function FreshnessProvider({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const { begin } = usePending();
+  const [refreshing, startRefresh] = useTransition();
+  const refresh = useCallback(() => startRefresh(() => router.refresh()), [router]);
+  useEffect(() => (refreshing ? begin("refresh") : undefined), [refreshing, begin]);
   // The render that was found stale; any newer render clears it by itself.
   const [staleRender, setStaleRender] = useState<string | null>(null);
   const [settling, setSettling] = useState<{ target: SettleTarget; id: number } | null>(null);
@@ -99,9 +106,9 @@ export function FreshnessProvider({
     const iso = renderedAt.current;
     if (renderAgeMs(iso) <= STALE_MS) return false;
     setStaleRender(iso);
-    router.refresh();
+    refresh();
     return true;
-  }, [router]);
+  }, [refresh]);
 
   // When the page is shown (mounted: a load, or a cached copy on client-side
   // navigation). Only then, and on re-show events below -- never for a render
@@ -123,7 +130,7 @@ export function FreshnessProvider({
   useEffect(() => {
     let id: ReturnType<typeof setInterval> | undefined;
     const start = () => {
-      if (id == null) id = setInterval(() => router.refresh(), refreshMs);
+      if (id == null) id = setInterval(refresh, refreshMs);
     };
     const stop = () => {
       if (id != null) clearInterval(id);
@@ -131,7 +138,7 @@ export function FreshnessProvider({
     };
     const resume = () => {
       // A render that isn't stale yet still gets refreshed, without a lock.
-      if (!checkStale()) router.refresh();
+      if (!checkStale()) refresh();
     };
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
@@ -153,18 +160,18 @@ export function FreshnessProvider({
       window.removeEventListener("pageshow", onPageShow);
       stop();
     };
-  }, [router, checkStale, refreshMs]);
+  }, [refresh, checkStale, refreshMs]);
 
   // After a command: poll until the page shows it, or give up after SETTLE_MAX_MS.
   useEffect(() => {
     if (!settling) return;
-    const poll = setInterval(() => router.refresh(), SETTLE_POLL_MS);
+    const poll = setInterval(refresh, SETTLE_POLL_MS);
     const giveUp = setTimeout(() => setSettling((s) => (s?.id === settling.id ? null : s)), SETTLE_MAX_MS);
     return () => {
       clearInterval(poll);
       clearTimeout(giveUp);
     };
-  }, [settling, router]);
+  }, [settling, refresh]);
 
   const settle = useCallback((target: SettleTarget) => setSettling({ target, id: Date.now() }), []);
   const endSettling = useCallback(() => setSettling(null), []);

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { PendingLink } from "@/components/Pending";
 import type { HomeCardData } from "@/lib/ui/homeData";
 import { formatDuration, formatKr, formatNumber, formatPastDayAndTime } from "@/lib/datetime";
 import { fill, nb } from "@/lib/i18n/nb";
@@ -106,9 +106,9 @@ export function LastSessionCard({ plan }: { plan: NonNullable<HomeCardData["last
     <section className="rounded-[var(--radius-card)] bg-surface-2 px-4 py-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xs font-semibold uppercase tracking-[0.04em] text-muted">{r.lastSession}</h3>
-        <Link href={`/history#session-${plan.id}`} className="flex min-h-11 items-center text-sm font-semibold text-accent">
+        <PendingLink href={`/history#session-${plan.id}`} hint="inline" className="flex min-h-11 items-center gap-1 text-sm font-semibold text-accent">
           {r.details}
-        </Link>
+        </PendingLink>
       </div>
       <dl className="grid grid-cols-4 gap-2">
         <Stat label={r.from} value={plan.startPercent != null ? `${plan.startPercent}\u202F%` : "–"} />

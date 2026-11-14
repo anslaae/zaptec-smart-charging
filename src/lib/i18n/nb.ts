@@ -744,6 +744,8 @@ export const nb = {
     warningDetail: "Feil: {what} ({codes})",
     label: "Laderen",
   },
+  // D80: one loading pattern -- the top bar's screen-reader text.
+  pending: { loading: "Henter…" },
   // D71: a command from a screen that may be out of date.
   freshness: {
     alreadyCharging: "Lader allerede ({by})",

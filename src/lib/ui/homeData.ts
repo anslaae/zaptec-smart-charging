@@ -6,7 +6,7 @@ import type { IncidentData } from "@/lib/ui/incidentView";
 /**
  * Everything the Hjem card needs for one charger, as plain serialisable data
  * (dates as ISO strings) so it can cross the server -> client boundary.
- * Built by src/app/page.tsx; replaced wholesale by a debug scenario in preview.
+ * Built by src/app/(home)/page.tsx; replaced wholesale by a debug scenario in preview.
  */
 export interface HomeCardData {
   chargerId: string;
