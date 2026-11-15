@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { isNorwegianHoliday } from "../src/lib/holidays";
 
 // End-to-end checks of the redesigned screens (design/redesign/HANDOFF.md),
 // run against mock mode -- nothing here can reach a real charger.
@@ -385,9 +386,15 @@ test("UC16: Smart lading plans the night on plug-in and shows it on Hjem", async
   await expect(page.getByText(/^Klar til \d\d:\d\d .+ · \+[\d,]+ kWh$/)).toBeVisible();
   await expect(page.getByText("Kveldstopp", { exact: true })).toBeVisible();
   // The saving vs charging now only exists while "now" is daytime rate; late in the
-  // evening charging now is nearly all night rate, so the line is (rightly) hidden.
-  const osloHour = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: "Europe/Oslo" }).format(new Date()));
-  if (osloHour >= 6 && osloHour < 20) await expect(page.getByText(/sparer ca\. \d+ kr og kveldstoppen/)).toBeVisible();
+  // evening, at weekends (and on holidays) charging now is night rate, so the line
+  // is (rightly) hidden.
+  const oslo = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", weekday: "short", timeZone: "Europe/Oslo" }).formatToParts(new Date());
+  const osloHour = Number(oslo.find((p) => p.type === "hour")!.value);
+  const weekend = ["Sat", "Sun"].includes(oslo.find((p) => p.type === "weekday")!.value);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Oslo" }).format(new Date());
+  if (!weekend && !isNorwegianHoliday(today) && osloHour >= 6 && osloHour < 20) {
+    await expect(page.getByText(/sparer ca\. \d+ kr og kveldstoppen/)).toBeVisible();
+  }
   await expect(page.getByText(/^ca\. \d+ kr$/)).toBeVisible();
   // "Endre for i natt" opens the plan sheet for this row
   await page.getByRole("link", { name: "Endre for i natt" }).click();

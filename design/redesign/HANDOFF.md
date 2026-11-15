@@ -19,7 +19,8 @@ All numbers in the mockups are sample data. The real battery capacity is 46 kWh 
 | `favicon.ico` | 16/32/48 ICO | `src/app/favicon.ico` (replace) |
 | `apple-icon.png` | 180², opaque | `src/app/apple-icon.png` (replace) |
 | `icon-192.png`, `icon-512.png` | PWA icons, purpose `any` | `public/icons/` |
-| `icon-maskable-512.png` | PWA icon, purpose `maskable` (art sits inside the 80 % safe zone) | `public/icons/` |
+| `icon-maskable-512.png`, `icon-maskable-192.png` | PWA icons, purpose `maskable`. The ring and bolt are scaled to 68 % so they sit well inside the part Android shows (the middle 2/3 of the image). The old file was a copy of `icon-512.png`, so Android cropped the ring to the edge. | `public/icons/` (replace) |
+| `icon-maskable.svg` | Master for the maskable icons | reference |
 | `badge-96.png`, `badge.svg` | Android notification badge, white on transparent | `public/icons/` |
 | `favicon-32.png` | Spare PNG favicon | optional |
 | `tokens.json` | Colour, radius, type and size tokens for both themes | reference |
@@ -39,7 +40,9 @@ All numbers in the mockups are sample data. The real battery capacity is 46 kWh 
 3. **Manifest and metadata:** `name`/`short_name` "Smart lading" (renamed 2026-11-14, see §6f). `theme_color` `#0E0F0D`, `background_color` `#0E0F0D`. List the icons:
     - `/icons/icon-192.png` (192×192, any);
     - `/icons/icon-512.png` (512×512, any);
+    - `/icons/icon-maskable-192.png` (192×192, maskable);
     - `/icons/icon-maskable-512.png` (512×512, maskable).
+   Keep `any` and `maskable` as separate entries; never `"purpose": "any maskable"` on one file. Android caches the home-screen icon: after deploying, remove and re-add the app (or wait for the WebAPK update) to see the new one.
    In `layout.tsx`, set `viewport.themeColor` to an array with `media` for light `#F3F5EF` and dark `#0E0F0D`. Set the title to "Smart lading".
 4. **Copy:** move every user-facing string to the `nb` object from `strings.nb.json`. `ACTIVITY_LABEL` in `src/lib/activity/log.ts` uses `activity.*`.
 

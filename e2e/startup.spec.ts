@@ -22,6 +22,11 @@ test("§6f: the app is called Smart lading (title, manifest)", async ({ page, re
   const manifest = await (await request.get("/manifest.webmanifest")).json();
   expect(manifest).toMatchObject({ name: "Smart lading", short_name: "Smart lading", background_color: "#0E0F0D" });
   expect(manifest.short_name.length).toBeLessThanOrEqual(12);
+  // Maskable icons are their own entries, at 192 and 512, and actually served.
+  const maskable = manifest.icons.filter((i: { purpose: string }) => i.purpose === "maskable");
+  expect(maskable.map((i: { sizes: string }) => i.sizes)).toEqual(["192x192", "512x512"]);
+  expect(manifest.icons.every((i: { purpose: string }) => i.purpose === "any" || i.purpose === "maskable")).toBe(true);
+  for (const icon of manifest.icons) expect((await request.get(icon.src)).status()).toBe(200);
 });
 
 test("§6f: no splash in a browser tab, or on a warm start", async ({ page }) => {
