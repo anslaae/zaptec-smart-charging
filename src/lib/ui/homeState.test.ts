@@ -132,8 +132,18 @@ describe("homeState", () => {
       homeState(input({ openSession: { kind: "guest" } })),
       homeState(input({ schedule: { status: "pending", source: "smart" } })),
       homeState(input({ state: charger(charging), schedule: { status: "active", source: "smart" } })),
+      homeState(input({ state: charger(disconnected), smartOn: true })),
     ]);
     expect([...reached].sort()).toEqual([...HOME_STATES].sort());
+  });
+
+  it("smartIdle (§6g): Smart on and no car; a user plan waiting for the car stays planWaiting", () => {
+    expect(homeState(input({ state: charger(disconnected), smartOn: true }))).toBe("smartIdle");
+    expect(homeState(input({ state: charger(disconnected), smartOn: false }))).toBe("noCar");
+    expect(homeState(input({ state: charger(disconnected), smartOn: true, schedule: { status: "pending" } }))).toBe("planWaiting");
+    expect(homeState(input({ state: charger(disconnected), smartOn: true, schedule: { status: "pending", source: "smart" } }))).toBe("smartIdle");
+    expect(homeState(input({ state: charger(disconnected), smartOn: true, openSession: { kind: "guest" } }))).toBe("guest");
+    expect(homeState(input({ smartOn: true }))).toBe("connected");
   });
 
   it("guest window wins while open, connected or not", () => {

@@ -60,6 +60,17 @@
       }
     },
     {
+      "id": "smart_started",
+      "status": "decided (D87)",
+      "trigger": "First ResumeCharging for a Smart row (its first planned block starts). Once per row; smart_planned at plug-in is unchanged. finishTime = end of the last planned block.",
+      "payload": {
+        "title": "Smart lading har startet",
+        "body": "Lader til {targetPercent} %, ferdig ca. {finishTime}.",
+        "tag": "smart-{scheduleId}",
+        "url": "/"
+      }
+    },
+    {
       "id": "plan_started",
       "status": "exists – new copy",
       "trigger": "First ResumeCharging for a schedule (PlanChargingStarted)",
@@ -73,13 +84,14 @@
     {
       "id": "plan_completed",
       "status": "exists – new copy",
-      "trigger": "Target energy reached (PlanCompleted)",
+      "trigger": "Target energy reached (PlanCompleted), for user plans and Smart rows; or (D86) a fresh battery reading from the car at/over the target %",
       "payload": {
         "title": "Bilen er klar",
         "body": "Ladet til ca. {targetPercent} % · {kwh} kWh · ca. {cost} kr.",
         "tag": "plan-{scheduleId}",
         "url": "/history"
-      }
+      },
+      "bodyMeasured": "Bilen meldte {percent} % · {kwh} kWh · ca. {cost} kr."
     },
     {
       "id": "plan_late",

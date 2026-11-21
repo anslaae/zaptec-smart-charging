@@ -50,7 +50,8 @@ const BAND_CLASS: Record<Band, string> = {
   normal: "bg-surface",
 };
 
-export function SmartTimeline({ data }: { data: SmartTimelineData }) {
+/** compact: only the bar and its hours (smartIdle's "Kobler du til nå" preview, HANDOFF §6g). */
+export function SmartTimeline({ data, compact = false }: { data: SmartTimelineData; compact?: boolean }) {
   const s = nb.home.smart;
   const from = Date.parse(data.nowIso);
   const to = Date.parse(data.readyByIso);
@@ -59,8 +60,8 @@ export function SmartTimeline({ data }: { data: SmartTimelineData }) {
   const width = (a: number, b: number) => `${((Math.max(0, Math.min(b, to) - Math.max(a, from)) / span) * 100).toFixed(2)}%`;
   const saving = Math.round(data.nowCostNok - data.costNok);
 
-  return (
-    <section className="rounded-[var(--radius-card)] bg-surface-2 px-4 py-3" aria-label={s.pill}>
+  const bar = (
+    <>
       <div className="relative mt-1 h-9 overflow-hidden rounded-[10px] border border-border">
         {bands(from, to).map((b) => (
           <div
@@ -87,6 +88,13 @@ export function SmartTimeline({ data }: { data: SmartTimelineData }) {
           </span>
         ))}
       </div>
+    </>
+  );
+  if (compact) return <div aria-hidden>{bar}</div>;
+
+  return (
+    <section className="rounded-[var(--radius-card)] bg-surface-2 px-4 py-3" aria-label={s.pill}>
+      {bar}
 
       <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
         <li className="flex items-center gap-1.5">

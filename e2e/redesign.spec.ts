@@ -381,7 +381,8 @@ test("UC16: Smart lading plans the night on plug-in and shows it on Hjem", async
   // The real tick planned it and sent smart_planned
   await expect(page.getByText(/Planlagt i natt — Lader til 80\s% \d\d:\d\d–\d\d:\d\d · ca\. \d+ kr\./)).toBeVisible();
   await page.goto("/");
-  await expect(page.getByText("Smart", { exact: true })).toBeVisible();
+  // HANDOFF §6g: waiting reads "Smart er på"
+  await expect(page.getByText("Smart er på", { exact: true })).toBeVisible();
   await expect(page.getByText(/^Lader (i natt )?\d\d:\d\d–\d\d:\d\d$/)).toBeVisible();
   await expect(page.getByText(/^Klar til \d\d:\d\d .+ · \+[\d,]+ kWh$/)).toBeVisible();
   await expect(page.getByText("Kveldstopp", { exact: true })).toBeVisible();
@@ -396,8 +397,8 @@ test("UC16: Smart lading plans the night on plug-in and shows it on Hjem", async
     await expect(page.getByText(/sparer ca\. \d+ kr og kveldstoppen/)).toBeVisible();
   }
   await expect(page.getByText(/^ca\. \d+ kr$/)).toBeVisible();
-  // "Endre for i natt" opens the plan sheet for this row
-  await page.getByRole("link", { name: "Endre for i natt" }).click();
+  // "Egen plan" (Overstyr for i natt, §6g) opens the plan sheet for this row
+  await page.getByRole("group", { name: "Overstyr for i natt" }).getByRole("link", { name: "Egen plan" }).click();
   await expect(page.getByRole("dialog", { name: "Endre plan" })).toBeVisible();
   await page.getByRole("dialog", { name: "Endre plan" }).getByRole("button", { name: "Lukk" }).click();
   // Lad nå takes over without asking
@@ -556,7 +557,8 @@ test("nettleie: Elvia rates by default, editable, and can be left out", async ({
 test("Fullfør plan in the mock panel ends in the ready state with the push", async ({ page }) => {
   await preset(page, "Lader etter plan");
   await mockButton(page, "Fullfør plan");
-  await expect(page.getByText(/Bilen er klar — Ladet til ca\. \d+\s%/)).toBeVisible();
+  // D86 (scheduler lane): a plan ended by the car's own reading says "Bilen meldte …".
+  await expect(page.getByText(/Bilen er klar — (Ladet til ca\.|Bilen meldte) \d+\s%/)).toBeVisible();
   await page.goto("/");
   // HANDOFF §3 ready: status without the %, ring at the reached %, "Siste lading"
   // (also listed in Siste hendelser, so take the status line, which comes first)
@@ -962,13 +964,14 @@ test("D71: a screen shown again after 10 s says it's updating and locks buttons 
 
 test("D73/D75: a charger warning stays in Innstillinger, and is a fault card on Hjem while charging is wanted", async ({ page }) => {
   await preset(page, "Tilkoblet – ingen plan");
-  await page.goto("/settings");
+  // §6g: the health line lives on Innstillinger → Lader
+  await page.goto("/settings/charger");
   await expect(page.getByText("Tilkoblet · ingen feil · signal -71 dBm")).toBeVisible();
 
   await page.goto("/dev/mock");
   await page.getByLabel("Laderen melder").selectOption("2");
   await expect(page.getByText("Laderen melder advarsel 2")).toBeVisible();
-  await page.goto("/settings");
+  await page.goto("/settings/charger");
   await expect(page.getByText(/^Feil: høy temperatur.*WARNING_TEMPERATURE/)).toBeVisible();
   await page.goto("/");
   await expect(page.getByTestId("incident-card")).toHaveCount(0);

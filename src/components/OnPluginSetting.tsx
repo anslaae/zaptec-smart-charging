@@ -66,6 +66,19 @@ export function OnPluginSetting({ data }: { data: OnPluginSettingData }) {
   );
 }
 
+/** Hjem smartIdle's "Endre ›" (HANDOFF §6g): opens the same Smart sheet as Innstillinger. */
+export function SmartSheetButton({ data, label, ariaLabel, className }: { data: OnPluginSettingData; label: string; ariaLabel: string; className: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-label={ariaLabel} className={className}>
+        {label}
+      </button>
+      {open && <OnPluginSheet data={data} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 function OnPluginSheet({ data, onClose }: { data: OnPluginSettingData; onClose: () => void }) {
   const [mode, setMode] = useState<OnPluginMode>(data.mode);
   const [target, setTarget] = useState(data.smartTargetPercent);

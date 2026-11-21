@@ -50,6 +50,7 @@ export function planStarted(input: {
         ? fill(t.planStarted.body, { targetPercent: input.targetPercent, finishTime })
         : fill(t.planStartedKwh, { kwh: formatNumber(input.targetKwh, 1), finishTime }),
     tag: `plan-${input.scheduleId}`,
+    event: "plan_started",
     url: "/",
   };
 }
@@ -59,16 +60,21 @@ export function planCompleted(input: {
   targetPercent: number | null;
   deliveredKwh: number;
   costNok: number;
+  /** D86: the car's own reading that ended the plan, stated instead of the estimate. */
+  measuredPercent?: number | null;
 }): PushPayload {
   const kwh = formatNumber(input.deliveredKwh, 1);
   const cost = formatNumber(Math.round(input.costNok), 0);
   return {
     title: t.planCompleted.title,
     body:
-      input.targetPercent != null
-        ? fill(t.planCompleted.body, { targetPercent: input.targetPercent, kwh, cost })
-        : fill(t.planCompletedKwh, { kwh, cost }),
+      input.measuredPercent != null
+        ? fill(nb.schedulerPush.planCompletedMeasured, { percent: Math.round(input.measuredPercent), kwh, cost })
+        : input.targetPercent != null
+          ? fill(t.planCompleted.body, { targetPercent: input.targetPercent, kwh, cost })
+          : fill(t.planCompletedKwh, { kwh, cost }),
     tag: `plan-${input.scheduleId}`,
+    event: "plan_completed",
     url: "/history",
   };
 }
@@ -137,8 +143,24 @@ export function smartPlanned(input: {
       cost: formatNumber(Math.round(input.costNok), 0),
     }),
     tag: `smart-${input.scheduleId}`,
+    event: "smart_planned",
     url: "/",
     actions: [{ action: "charge-now", title: t.smartPlanned.chargeNowInstead, url: "/?action=charge-now" }],
+  };
+}
+
+// D87: a Smart row's charging has started (its first ResumeCharging). Once
+// per row -- the tick only sends it on the first resume (startedAt unset).
+export function smartStarted(input: { scheduleId: string; targetPercent: number; finishTime: Date }): PushPayload {
+  return {
+    title: nb.schedulerPush.smartStarted.title,
+    body: fill(nb.schedulerPush.smartStarted.body, {
+      targetPercent: input.targetPercent,
+      finishTime: formatTime(input.finishTime),
+    }),
+    tag: `smart-${input.scheduleId}`,
+    event: "smart_started",
+    url: "/",
   };
 }
 
@@ -209,7 +231,7 @@ export type IncidentPushInput =
 const percentOrDash = (percent: number | null) => (percent != null ? String(Math.round(percent)) : "–");
 
 export function incidentPush(input: IncidentPushInput): PushPayload {
-  const base = { tag: `incident-${input.incidentId}`, url: "/" };
+  const base = { tag: `incident-${input.incidentId}`, event: `incident_${input.kind}`, url: "/" };
   const text = (copy: { title: string; body: string }, values: Record<string, string | number> = {}) => ({
     ...base,
     title: copy.title,

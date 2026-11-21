@@ -10,6 +10,7 @@ describe("debug scenarios", () => {
         schedule: scenario.schedule,
         openSession: scenario.openSession,
         lastCompletedPlanSessionId: scenario.lastCompletedPlanSessionId,
+        smartOn: scenario.smartOn,
       }),
     ).toBe(scenario.homeState);
   });

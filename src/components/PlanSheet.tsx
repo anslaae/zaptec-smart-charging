@@ -30,6 +30,8 @@ export interface PlanSheetData {
   /** Best estimate of the battery now (Smartcar reading + energy since). */
   battery: { percent: number; measuredAtIso: string; approx: boolean } | null;
   capacityKwh: number;
+  /** D86: 100 × the learned kWh per % (wall energy), for the % → kWh step. Falls back to capacityKwh. */
+  planningCapacityKwh?: number;
   /** kW the estimate uses: learned rate, else the circuit max. */
   powerKw: number;
   /** Set when a pending/active plan exists -- the sheet edits it (cancel + create). */
@@ -85,7 +87,7 @@ export function PlanSheet({ data }: { data: PlanSheetData }) {
   const dateKey = day === "today" ? todayKey : day === "tomorrow" ? tomorrowKey : pickedDate;
   const readyByLocal = `${dateKey}T${time}`;
   const readyBy = zonedDateTimeToUtc(readyByLocal, HOUSEHOLD_TIME_ZONE);
-  const kwh = Math.max(0, Math.round(((target - batteryNow) / 100) * data.capacityKwh * 10) / 10);
+  const kwh = Math.max(0, Math.round(((target - batteryNow) / 100) * (data.planningCapacityKwh ?? data.capacityKwh) * 10) / 10);
   const start = latestStartFor(kwh, data.powerKw, readyBy);
 
   const targetTooLow = target <= batteryNow;

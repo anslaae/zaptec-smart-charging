@@ -38,6 +38,7 @@ const ALL_TABLES = [
   "charger_state_log",
   "zaptec_sessions",
   "charge_incidents",
+  "push_log",
   "users",
 ];
 

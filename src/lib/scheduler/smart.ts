@@ -181,3 +181,36 @@ export function decideSmart(input: {
   const afterLast = t >= Date.parse(input.blocks[input.blocks.length - 1].end);
   return inBlock || afterLast ? "charge" : "wait";
 }
+
+/** H2: after a kW re-plan, charging isn't switched on for this long. */
+export const REPLAN_HOLD_MS = 30 * 60_000;
+
+const inside = (b: SmartBlock, t: number) => Date.parse(b.start) <= t && t < Date.parse(b.end);
+
+/**
+ * The blocks a re-plan may store without flipping the charger (H2, the
+ * D64/D65 lesson): the block in progress is kept as it was (so a re-plan
+ * never switches charging off), and the new plan only fills the time after
+ * it. Outside a block, a kW re-plan (`holdOff`) also doesn't start a block
+ * within REPLAN_HOLD_MS. So the "in a block now" answer a re-plan leaves
+ * behind is the one it found, for at least the next 30 min.
+ */
+export function keepCurrentBlock(
+  oldBlocks: SmartBlock[],
+  newBlocks: SmartBlock[],
+  now: Date,
+  holdOff: boolean,
+  chargingNow = false,
+): SmartBlock[] {
+  const t = now.getTime();
+  const current = oldBlocks.find((b) => inside(b, t));
+  // Charging outside every block (past the last one, still short of the
+  // target): keep the old blocks so decideSmart's answer stays "charge". A
+  // re-plan must never be what switches charging off.
+  if (!current && chargingNow) return oldBlocks;
+  const notBefore = current ? Date.parse(current.end) : holdOff ? t + REPLAN_HOLD_MS : t;
+  const future = newBlocks
+    .filter((b) => Date.parse(b.end) > notBefore)
+    .map((b) => (Date.parse(b.start) < notBefore ? { start: new Date(notBefore).toISOString(), end: b.end } : b));
+  return current ? [current, ...future] : future;
+}

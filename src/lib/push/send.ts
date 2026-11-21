@@ -2,7 +2,7 @@ import "server-only";
 import webpush from "web-push";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { pushSubscriptions } from "@/lib/db/schema";
+import { pushLog, pushSubscriptions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { MOCK_MODE } from "@/lib/mock/mode";
 import { mockLog } from "@/lib/mock/store";
@@ -34,6 +34,8 @@ export interface PushPayload {
   tag?: string;
   url?: string;
   actions?: PushAction[];
+  /** notifications.nb.json event id, recorded in push_log (D87); the service worker ignores it. */
+  event?: string;
 }
 
 // Sends to every subscribed device, household-wide -- there's no per-event
@@ -55,15 +57,24 @@ async function sendPush(payload: PushPayload, userId: string | null): Promise<{ 
   // Mock mode: nothing leaves the machine; the payload shows up in /dev/mock.
   if (MOCK_MODE) {
     mockLog("push", `${userId ? "(én bruker) " : ""}${payload.title} — ${payload.body}${payload.tag ? ` [tag ${payload.tag}]` : ""}${payload.url ? ` → ${payload.url}` : ""}`);
+    await recordPush(payload, userId, { attempted: 1, ok: 1, errors: [] });
     return { devices: 1 };
   }
-  if (!vapidConfigured) return { devices: 0 };
+  if (!vapidConfigured) {
+    await recordPush(payload, userId, { attempted: 0, ok: 0, errors: ["VAPID not configured"] });
+    return { devices: 0 };
+  }
 
   const subscriptions = userId
     ? await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId))
     : await db.select().from(pushSubscriptions);
-  if (subscriptions.length === 0) return { devices: 0 };
+  if (subscriptions.length === 0) {
+    await recordPush(payload, userId, { attempted: 0, ok: 0, errors: [] });
+    return { devices: 0 };
+  }
 
+  const errors: string[] = [];
+  let ok = 0;
   await Promise.all(
     subscriptions.map(async (sub) => {
       try {
@@ -74,17 +85,41 @@ async function sendPush(payload: PushPayload, userId: string | null): Promise<{ 
           },
           JSON.stringify(payload),
         );
+        ok++;
       } catch (error) {
         const statusCode = (error as { statusCode?: number }).statusCode;
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${sub.id}: ${statusCode ?? "-"} ${message}`.slice(0, 500));
         if (statusCode === 404 || statusCode === 410) {
           await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id));
         } else {
-          console.error(
-            `[push] failed to send to subscription ${sub.id}: ${error instanceof Error ? error.message : error}`,
-          );
+          console.error(`[push] failed to send to subscription ${sub.id}: ${message}`);
         }
       }
     }),
   );
+  await recordPush(payload, userId, { attempted: subscriptions.length, ok, errors });
   return { devices: subscriptions.length };
+}
+
+// D87: one push_log row per send. Bookkeeping only -- a failure here is
+// logged and swallowed, never thrown into the send or the tick.
+async function recordPush(
+  payload: PushPayload,
+  userId: string | null,
+  result: { attempted: number; ok: number; errors: string[] },
+): Promise<void> {
+  try {
+    await db.insert(pushLog).values({
+      title: payload.title,
+      tag: payload.tag ?? null,
+      event: payload.event ?? null,
+      userId,
+      devicesAttempted: result.attempted,
+      devicesOk: result.ok,
+      errors: result.errors.length ? result.errors.join("\n") : null,
+    });
+  } catch (error) {
+    console.error("[push] push_log write failed:", error instanceof Error ? error.message : error);
+  }
 }

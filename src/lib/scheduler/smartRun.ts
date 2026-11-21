@@ -1,12 +1,10 @@
 import "server-only";
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chargeSchedules, manualChargeSessions, vehicleTelemetry } from "@/lib/db/schema";
+import { chargeSchedules, manualChargeSessions } from "@/lib/db/schema";
 import type { ChargerState, ZaptecCharger } from "@/lib/zaptec/types";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
 import { isCurrentlyCharging } from "@/lib/zaptec/state";
-import { getStateOfCharge } from "@/lib/smartcar/client";
-import { newerReading } from "@/lib/smartcar/state";
 import { estimateBattery } from "@/lib/ui/battery";
 import { effectivePluginMode, pricesOf, type HouseholdSettings } from "@/lib/settings";
 import { priceAt } from "@/lib/pricing";
@@ -16,7 +14,8 @@ import { smartPlanned } from "@/lib/push/notifications";
 import { formatTime } from "@/lib/datetime";
 import { defaultCarId } from "@/lib/cars";
 import { planDeliveredNow, plannedPowerKw, type SchedulerDecision } from "./engine";
-import { decideSmart, nextSmartReadyBy, planSmartCharge, type SmartBlock, type SmartPlan } from "./smart";
+import { latestBatteryReading } from "./socTarget.server";
+import { decideSmart, keepCurrentBlock, nextSmartReadyBy, planSmartCharge, type SmartBlock, type SmartPlan } from "./smart";
 
 // Smart lading in the tick (HANDOFF §6b "Execution"). One charge_schedules
 // row with source = 'smart' per plug-in session, holding the planned blocks;
@@ -91,17 +90,8 @@ export async function resolveSocPercent(
   capacityKwh: number,
   now: Date,
 ): Promise<{ percent: number; measuredAt: Date } | null> {
-  const [api, [row]] = await Promise.all([
-    getStateOfCharge().catch(() => null),
-    db
-      .select({ percent: vehicleTelemetry.batteryPercent, at: vehicleTelemetry.batteryReportedAt })
-      .from(vehicleTelemetry)
-      .where(isNotNull(vehicleTelemetry.batteryPercent))
-      .orderBy(desc(vehicleTelemetry.batteryReportedAt))
-      .limit(1),
-  ]);
   // Same rule as Hjem: the newer of the live reading and the latest webhook row.
-  const reading = newerReading(api, row?.percent != null && row.at ? { percent: row.percent, oemUpdatedAt: row.at } : null);
+  const reading = await latestBatteryReading();
   if (!reading) return null;
   const battery = estimateBattery({
     reading,
@@ -126,6 +116,9 @@ export async function automaticTargetKwh(
   if (!soc) return null;
   return Math.max(0, Math.round(((settings.smartTargetPercent - soc.percent) / 100) * capacityKwh * 100) / 100);
 }
+
+// capacityKwh in this file is the tick's planning capacity: 100 x the learned
+// kWh per % (D86, getPlanningCapacityKwh), used for every % <-> kWh step.
 
 /**
  * Runs before enforcement each full tick. Returns the open smart rows after
@@ -282,7 +275,8 @@ async function maybeReplan(
   let powerKw = plan.powerKw;
   let reason: string | null = null;
 
-  const reading = await getStateOfCharge().catch(() => null);
+  // D86: the newer of the API and the webhook rows, as everywhere else.
+  const reading = await latestBatteryReading();
   if (reading && reading.oemUpdatedAt.getTime() > Date.parse(plan.plannedAt)) {
     if (Math.abs(reading.percent - expectedPercent) > REPLAN_SOC_POINTS) {
       socPercent = reading.percent;
@@ -301,7 +295,8 @@ async function maybeReplan(
   await db
     .update(chargeSchedules)
     .set({
-      blocks: { ...stored(next, now), socAtPlan: socPercent, deliveredAtPlan: delivered },
+      // H2: never switches the block in progress off; a kW re-plan never switches one on within 30 min.
+      blocks: { ...stored(next, now), blocks: keepCurrentBlock(plan.blocks, next.blocks, now, reason === "kw", isCurrentlyCharging(state)), socAtPlan: socPercent, deliveredAtPlan: delivered },
       targetEnergyKwh: (delivered + next.neededKwh).toFixed(2),
       updatedAt: now,
     })

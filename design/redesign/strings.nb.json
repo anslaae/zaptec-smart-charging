@@ -133,6 +133,25 @@
       "primaryCharging": "Avbryt for i natt",
       "charging": "Lader – ferdig ca. {time}"
     },
+    "smartIdle": {
+      "$note": "Hjem when the mode is Smart and no car is connected (HANDOFF §6g).",
+      "pill": "Smart er på",
+      "title": "Lader automatisk når bilen kobles til",
+      "body": "Til {percent} % innen {readyBy} {day}, i de billigste timene. Aldri 16–21.",
+      "previewLabel": "Kobler du til nå",
+      "previewWindow": "ca. {start}–{end}",
+      "previewMeta": "ca. {cost} kr · klar {readyBy}",
+      "edit": "Endre ›",
+      "overrideLabel": "Trenger du noe annet i natt?",
+      "overridePlan": "Lag egen plan",
+      "disconnectedLine": "Koblet fra {when} · ca. {km} km siden"
+    },
+    "smartOverride": {
+      "label": "Overstyr for i natt",
+      "plan": "Egen plan",
+      "chargeNow": "Lad nå",
+      "preheat": "Forvarm"
+    },
     "incident": {
       "$voice": "Trial (owner, 2026-11-13): the system speaks as \"jeg\", never \"Appen\" or \"Lading\". Open: find a better term for the part of the system doing the orchestration. Older \"vi\" strings (planned.timelineNote, plan_late push) not changed yet.",
       "$note": "D75 warning family. One card under the battery ring; tone 'fault' (danger) or 'declined' (amber). See HANDOFF §6e.",
@@ -319,6 +338,53 @@
       "allowAutomaticSub": "Alle som kobler til får lade uten plan",
       "lend": "Lån ut laderen",
       "lendSub": "Gjest lader til bilen kobles fra"
+    },
+    "carAndCharger": {
+      "section": "Bil og lader",
+      "carRowSub": "{percent} % · {connection} · data {time}",
+      "chargerRowSub": "{health} · regner med {kw} kW i planer"
+    },
+    "car": {
+      "back": "Innstillinger",
+      "capacity": "batteri {kwh} kWh",
+      "fromCar": "Fra bilen",
+      "odometer": "Km-stand",
+      "drivenSinceCharge": "Kjørt siden lading",
+      "smartcar": "Smartcar",
+      "smartcarConnected": "Tilkoblet",
+      "smartcarDisconnected": "Ikke tilkoblet",
+      "updated": "sist oppdatert {when}",
+      "atCharger": "Ved laderen",
+      "lastConnected": "Sist tilkoblet",
+      "lastConnectedSub": "koblet fra · var tilkoblet {duration}",
+      "connectedNow": "Tilkoblet nå",
+      "connectedNowSub": "siden {when}",
+      "lastCharge": "Siste lading",
+      "lastChargeSub": "{kwh} kWh · {kind} · ca. {cost} kr",
+      "thisMonth": "Denne måneden",
+      "thisMonthValue": "{count} ladinger",
+      "thisMonthSub": "{kwh} kWh · ca. {cost} kr",
+      "footnote": "Batteri og km-stand kommer fra bilen via Smartcar og kan være noen minutter gamle. Tilkobling og lading kommer fra laderen."
+    },
+    "charger": {
+      "estimateTitle": "Regner med",
+      "estimateSub": "når en plan skal starte",
+      "estimateRange": "median {kw} kW",
+      "estimateBasis": "Median av de {count} siste planene som ladet uten pause: energi levert ÷ tid. Sist oppdatert {when}.",
+      "estimateNoHistory": "For lite historikk ennå – bruker kursens maks.",
+      "chainTitle": "Slik velges effekten",
+      "chainObserved": "Målt nå",
+      "chainObservedSub": "når laderen lader",
+      "chainLearned": "Lært fra planer",
+      "chainLearnedSub": "median, se over",
+      "chainCircuit": "Kursens maks",
+      "chainCircuitSub": "{amps} A · {phases} faser",
+      "chainDefault": "Standard",
+      "chainDefaultSub": "hvis alt annet mangler",
+      "chainNote": "Jeg bruker den første som finnes.",
+      "status": "Status",
+      "lastPower": "Siste effekt målt",
+      "lastPowerSub": "{when} · {context}"
     },
     "system": {
       "section": "System",

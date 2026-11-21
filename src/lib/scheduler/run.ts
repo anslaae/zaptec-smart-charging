@@ -28,7 +28,7 @@ import { sendPushToAllSubscribers } from "@/lib/push/send";
 import * as push from "@/lib/push/notifications";
 import { getStateOfCharge } from "@/lib/smartcar/client";
 import { afterPluginModeChange, effectivePluginMode, getSettings, pricesOf, saveSettings, type HouseholdSettings } from "@/lib/settings";
-import { automaticTargetKwh, isSmart, manageSmartRows, smartDecision } from "./smartRun";
+import { automaticTargetKwh, isSmart, manageSmartRows, smartDecision, type SmartBlocks } from "./smartRun";
 import { sessionCost } from "@/lib/pricing";
 import { getDefaultCar } from "@/lib/places";
 import { closeSession, deliveredKwh, endsOnDisconnect, openSession, trackSession, type SessionRow } from "@/lib/sessions";
@@ -41,6 +41,7 @@ import { recordCompletedSessions } from "./completedSessions.server";
 import { loadLoopGuard, NEW_SESSION_ACTION } from "./loopGuard.server";
 import { syncIncidents } from "@/lib/incidents/sync.server";
 import { planDeliveredNow } from "./engine";
+import { checkPlanReading, checkSessionReading, getPlanningCapacityKwh, latestBatteryReading, type CarReading } from "./socTarget.server";
 
 type Schedule = typeof chargeSchedules.$inferSelect;
 
@@ -257,6 +258,7 @@ async function enforceAuthorizedCharging(
   previousModes: Map<string, number | null>,
   capacityKwh: number,
   pausedChargerIds: Set<string>,
+  tickReading: () => Promise<CarReading | null>,
 ): Promise<{ anyOpenSessionsRemain: boolean; guestChargerIds: Set<string> }> {
   const now0 = new Date();
   const openSessions = await db
@@ -299,15 +301,33 @@ async function enforceAuthorizedCharging(
         if (row.kind === "guest") await logActivity(charger.id, charger.name, ActivityType.GuestEnded);
         continue;
       }
-      const tracked = await trackSession(row, state);
+      let tracked = await trackSession(row, state);
       // D68: a Forvarm whose car stopped drawing power warms on the battery -- say so (no command).
       if (tracked.kind === "preheat") await checkPreheatSessionPower(tracked, state, now0);
       // "Lad med en gang" stops at its target % (HANDOFF §6b, owner decision D51).
+      // D86: the car's own reading after it started can end it at the target
+      // %, or move its target kWh (rate-limited, no command).
+      let readingPercent: number | null = null;
+      if (tracked.kind === "automatic") {
+        const check = await checkSessionReading({
+          row: tracked,
+          state,
+          deliveredKwh: deliveredKwh(tracked) ?? 0,
+          targetPercent: settings.smartTargetPercent,
+          reading: await tickReading(),
+          kwhPerPercent: capacityKwh / 100,
+          now: now0,
+        });
+        if (check.kind === "complete") readingPercent = check.percent;
+        if (check.kind === "retarget") tracked = { ...tracked, targetKwh: check.targetKwh.toFixed(2), socAdjust: check.adjust };
+      }
       const target = tracked.kind === "automatic" && tracked.targetKwh != null ? Number(tracked.targetKwh) : null;
-      if (target != null && (deliveredKwh(tracked) ?? 0) >= target) {
+      if (readingPercent != null || (target != null && (deliveredKwh(tracked) ?? 0) >= target)) {
         await sendChargerCommand(charger.id, ZaptecCommand.StopChargingFinal).catch(() => undefined);
         await closeSession(tracked);
-        await logActivity(charger.id, charger.name, ActivityType.AutomaticCompleted);
+        await logActivity(charger.id, charger.name, ActivityType.AutomaticCompleted, {
+          detail: readingPercent != null ? JSON.stringify({ percent: readingPercent }) : undefined,
+        });
         continue;
       }
       const guestJustArrived = row.kind === "guest" && row.zaptecSessionId == null && tracked.zaptecSessionId != null;
@@ -408,7 +428,12 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
   // Smart lading (UC16): plan new plug-ins, drop rows whose car left,
   // re-plan when reality drifts. New rows join this tick's schedules.
   const car = await getDefaultCar(null);
-  const capacityKwh = car?.batteryCapacityKwh ?? 46;
+  // D86: every % <-> kWh conversion in the tick uses the learned kWh per %
+  // (as a "capacity" of 100 x that), falling back to the car's capacity.
+  const capacityKwh = await getPlanningCapacityKwh(car?.batteryCapacityKwh ?? 46);
+  // D86: the car's latest battery reading, fetched at most once per tick and only when something needs it.
+  let readingOnce: Promise<CarReading | null> | null = null;
+  const tickReading = () => (readingOnce ??= latestBatteryReading().catch(() => null));
   const smart = await manageSmartRows({ chargers, stateCache, schedules: openRows, settings, learnedPowerKw, capacityKwh, now: now0 });
   const schedules = [...openRows.filter((s) => !smart.cancelledIds.has(s.id)), ...smart.created];
   const previousModes = new Map(
@@ -449,6 +474,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
     previousModes,
     capacityKwh,
     pausedChargerIds,
+    tickReading,
   );
   await logStateTransitions(chargers, stateCache, schedules, guestChargerIds, settings, learnedPowerKw, previousModes, capacityKwh);
 
@@ -535,10 +561,27 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
           .values({ scheduleId: schedule.id, chargerId: schedule.chargerId, action: NEW_SESSION_ACTION, commandId: 0 });
       }
 
-      const targetKwh = Number(schedule.targetEnergyKwh);
-      let decision: SchedulerDecision = isSmart(schedule)
-        ? smartDecision(schedule, effectiveState, now)
-        : decideNextAction(
+      // D86: a fresh reading from the car (after this plan started charging)
+      // at/over the target % completes the plan; for user plans, one that's
+      // more than 5 points off what we expected moves the target kWh (at
+      // most once per 10 min). Neither sends anything but the completion's
+      // one final stop below.
+      let targetKwh = Number(schedule.targetEnergyKwh);
+      const readingCheck = await checkPlanReading({
+        schedule,
+        state,
+        deliveredKwh: effectiveState.sessionEnergyKwh ?? 0,
+        reading: schedule.startedAt != null ? await tickReading() : null,
+        kwhPerPercent: capacityKwh / 100,
+        now,
+      });
+      if (readingCheck.kind === "retarget") targetKwh = readingCheck.targetKwh;
+      let decision: SchedulerDecision =
+        readingCheck.kind === "complete"
+          ? { action: "complete" }
+          : isSmart(schedule)
+            ? smartDecision(schedule, effectiveState, now)
+            : decideNextAction(
             { targetEnergyKwh: targetKwh, readyBy: schedule.readyBy, started: schedule.startedAt != null },
             effectiveState,
             now,
@@ -582,6 +625,9 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         `[scheduler] schedule ${schedule.id} (charger ${schedule.chargerId}): ${decision.action}${decisionDetail}`,
       );
 
+      // The car's own reading ended it: the push states that reading.
+      const measuredPercent = decision.action === "complete" && readingCheck.kind === "complete" ? readingCheck.percent : null;
+
       if (decision.action === "complete") {
         await applyCommand(schedule, "complete", ZaptecCommand.StopChargingFinal).catch(
           () => undefined,
@@ -616,12 +662,16 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
         await notify(
           push.planCompleted({
             scheduleId: schedule.id,
-            targetPercent: push.reachedPercent({
-              startPercent: schedule.startPercent,
-              targetPercent: schedule.targetPercent,
-              deliveredKwh: delivered,
-              capacityKwh,
-            }),
+            targetPercent:
+              readingCheck.kind === "complete"
+                ? readingCheck.percent
+                : push.reachedPercent({
+                    startPercent: schedule.startPercent,
+                    targetPercent: schedule.targetPercent,
+                    deliveredKwh: delivered,
+                    capacityKwh,
+                  }),
+            measuredPercent,
             deliveredKwh: delivered,
             costNok: sessionCost(delivered, schedule.startedAt ?? now, now, pricesOf(settings)).totalNok,
           }),
@@ -663,7 +713,6 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
           : null;
         if (isFirstResume) {
           await logActivity(schedule.chargerId, schedule.chargerName, ActivityType.PlanChargingStarted);
-          // Smart lading already told everyone its window (smart_planned).
           if (firstResumeEstimate && !isSmart(schedule)) {
             await notify(
               push.planStarted({
@@ -677,7 +726,7 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
             );
           }
         }
-        await db
+        const startedRows = await db
           .update(chargeSchedules)
           .set({
             status: "active",
@@ -686,9 +735,10 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
             lastEvaluatedAt: now,
             lastError: null,
             updatedAt: now,
+            // startedAt even without an estimate, so the next resume isn't "first" again (L2).
+            ...(isFirstResume && { startedAt: now }),
             ...(isFirstResume &&
               firstResumeEstimate && {
-                startedAt: now,
                 estimatedDurationMinutes: Math.round(
                   (firstResumeEstimate.remainingKwh / firstResumeEstimate.powerKw) * 60,
                 ),
@@ -705,7 +755,18 @@ export async function runSchedulerTick(): Promise<{ processed: number; skipped?:
               }),
             ...(!isFirstResume && sessionEnergyUpdate),
           })
-          .where(stillOpen(schedule.id));
+          // L2: the first resume only counts once -- startedAt is set by
+          // exactly one update, and only that one sends smart_started.
+          .where(isFirstResume ? and(stillOpen(schedule.id), isNull(chargeSchedules.startedAt)) : stillOpen(schedule.id))
+          .returning({ id: chargeSchedules.id });
+        // D87: Smart lading says once that it has started, with its target
+        // and the end of its last planned block.
+        const lastBlock = isSmart(schedule) ? (schedule.blocks as SmartBlocks | null)?.blocks.at(-1) : undefined;
+        if (isFirstResume && startedRows.length > 0 && isSmart(schedule) && schedule.targetPercent != null && lastBlock) {
+          await notify(
+            push.smartStarted({ scheduleId: schedule.id, targetPercent: schedule.targetPercent, finishTime: new Date(lastBlock.end) }),
+          );
+        }
         continue;
       }
 

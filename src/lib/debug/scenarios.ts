@@ -62,6 +62,7 @@ function baseSchedule(overrides: Partial<Schedule>): Schedule {
     carId: null,
     lateNotifiedAt: null,
     waitingNotifiedAt: null,
+    socAdjust: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -86,6 +87,8 @@ export interface DebugScenario {
   stateOfCharge: { percent: number; oemUpdatedAt: Date } | null;
   /** D65 banner preview. */
   automationPaused?: boolean;
+  /** HANDOFF §6g: Smart is the plug-in mode (no car reads as smartIdle). */
+  smartOn?: boolean;
 }
 
 // Pure front-end previews -- never touch the real charger, DB, or Zaptec
@@ -245,6 +248,17 @@ export const DEBUG_SCENARIOS: Record<string, DebugScenario> = {
     openSession: { kind: "guest", startedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString() },
     lastCompletedPlanSessionId: null,
     stateOfCharge: null,
+  },
+  smartIdle: {
+    label: "Smart på – ingen bil",
+    homeState: "smartIdle",
+    state: baseState({ operationMode: ChargerOperationMode.Disconnected, sessionId: null }),
+    schedule: null,
+    startTime: null,
+    openSession: null,
+    lastCompletedPlanSessionId: null,
+    stateOfCharge: freshReading(62, 300),
+    smartOn: true,
   },
   smartWaiting: {
     label: "Smart lading – venter på natten",

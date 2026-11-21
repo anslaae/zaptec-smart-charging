@@ -4,7 +4,8 @@ import { useActionState, useEffect } from "react";
 import { PendingLink } from "@/components/Pending";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BatteryRing, type RingBadge, type RingMode } from "@/components/BatteryRing";
+import { BatteryRing, MiniRing, type RingBadge, type RingMode } from "@/components/BatteryRing";
+import { SmartSheetButton } from "@/components/OnPluginSetting";
 import { MyOpelLink } from "@/components/MyOpelLink";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ActionButton } from "@/components/ActionButton";
@@ -31,7 +32,7 @@ import { sessionCost } from "@/lib/pricing";
 import type { HomeCardData } from "@/lib/ui/homeData";
 import { isCurrentlyCharging } from "@/lib/zaptec/state";
 import { ChargerOperationMode } from "@/lib/zaptec/constants";
-import { relativeDay, osloHour, formatDayLabel, formatDayAndTime, formatDuration, formatKr, formatKwh, formatNumber, formatTime } from "@/lib/datetime";
+import { relativeDay, osloHour, formatDayLabel, formatDayAndTime, formatPastDayAndTime, formatDuration, formatKr, formatKwh, formatNumber, formatTime } from "@/lib/datetime";
 import { nb, fill } from "@/lib/i18n/nb";
 import { endLending, startChargingNow, startPreheat, stopChargingNow } from "@/lib/zaptec/actions";
 import { cancelSchedule, createSchedule, restoreSchedule, type CreateScheduleState } from "@/lib/schedules/actions";
@@ -47,6 +48,11 @@ const primaryClass =
   "flex h-[52px] w-full items-center justify-center rounded-[var(--radius-button)] bg-accent px-4 text-base font-semibold text-on-accent";
 const secondaryClass =
   "flex h-12 w-full items-center justify-center rounded-[var(--radius-button)] border border-border bg-surface px-4 text-[15px] font-semibold text-text";
+// HANDOFF §6g: the small outline buttons (44 px, 14/500) for overrides with Smart on.
+const smallOutlineClass =
+  "flex h-11 w-full min-w-0 items-center justify-center rounded-[var(--radius-button)] border border-border bg-surface px-2 text-sm font-medium text-text";
+// HANDOFF §6g: the Smart card with Smart on -- accent tint and a 1.5 px accent border.
+const smartCardClass = "border-[1.5px] border-accent bg-accent-tint";
 
 // Engine reasons are stored in English (they double as log text); the one a
 // household member can see on Hjem gets a Norwegian line.
@@ -151,6 +157,7 @@ function stateView(data: HomeCardData): View {
     schedule,
     openSession: data.openSession,
     lastCompletedPlanSessionId: data.lastCompletedPlanSessionId,
+    smartOn: data.smartMode != null,
   });
   // D75: a plan whose car stopped taking power still reads as charging by
   // plan -- the plan row and "Avbryt plan" stay (HANDOFF §6e).
@@ -250,6 +257,7 @@ function stateView(data: HomeCardData): View {
         sub: nb.home.noControl.sub,
         ring: percentRing(),
       };
+    case "smartIdle":
     case "noCar": {
       // HANDOFF §3: the car's battery is known even unplugged (Smartcar), so the
       // ring shows the last reading with "målt" and an unplugged badge, and the
@@ -373,7 +381,8 @@ function stateView(data: HomeCardData): View {
       const night = first ? !isDaytime(first.start) : true;
       return {
         ...base,
-        pill: nb.home.smart.pill,
+        // HANDOFF §6g: waiting reads "Smart er på" on the tinted card.
+        pill: state_ === "smartWaiting" ? nb.home.smartIdle.pill : nb.home.smart.pill,
         status:
           state_ === "smartCharging"
             ? finish
@@ -527,6 +536,15 @@ export function HomeCard({ data }: { data: HomeCardData }) {
           : null,
         lastCompletedPlanSessionId: scenario.lastCompletedPlanSessionId,
         automationPaused: scenario.automationPaused ?? false,
+        // §6g: the Smart card without its sheet or preview (made-up data).
+        smartMode: scenario.smartOn
+          ? {
+              sheet: null,
+              targetPercent: data.smartMode?.targetPercent ?? 80,
+              readyByIso: data.smartMode?.readyByIso ?? new Date(Date.parse(data.nowIso) + 12 * 3_600_000).toISOString(),
+              preview: null,
+            }
+          : null,
         // D75: the loop guard and a stuck plan preview as their incident cards.
         incident: scenario.automationPaused
           ? previewIncident("locked", data.nowIso)
@@ -594,30 +612,32 @@ export function HomeCard({ data }: { data: HomeCardData }) {
     return fd;
   };
   const planReadyBy = openPlan ? formatDayAndTime(openPlan.readyByIso, new Date(effective.nowIso)) : "";
-  const chargeNow = (
+  const chargeNowButton = (label: string, className: string) => (
     <ActionButton
       action={() => startChargingNow(chargerId, chargerName, {}, startForm())}
       confirm={openPlan ? planConflictDialog(nb.actions.chargeNowCancelsPlan, planReadyBy) : undefined}
-      label={nb.home.connected.chargeNow}
-      className={secondaryClass}
+      label={label}
+      className={className}
       success={nb.toasts.chargingStarted.title}
       errorMessage={nb.actions.chargeStartFailed}
       settle="charging"
     />
   );
-  const preheat = (
+  const chargeNow = chargeNowButton(nb.home.connected.chargeNow, secondaryClass);
+  const preheatButton = (label: string, className: string, pendingLabel: string = nb.preheatSheet.starting) => (
     <ActionButton
       action={() => startPreheat(chargerId, chargerName, {}, startForm())}
       confirm={openPlan ? planConflictDialog(nb.actions.preheatCancelsPlan, planReadyBy) : undefined}
-      label={nb.home.connected.preheat}
-      pendingLabel={nb.preheatSheet.starting}
-      className={secondaryClass}
+      label={label}
+      pendingLabel={pendingLabel}
+      className={className}
       success={nb.actions.preheatStarted}
       errorMessage={nb.actions.preheatFailed}
       onSuccess={() => router.push("/?sheet=preheat", { scroll: false })}
       settle="charging"
     />
   );
+  const preheat = preheatButton(nb.home.connected.preheat, secondaryClass);
   // D67: while charging, Forvarm only opens the sheet -- the power is already
   // on, so there is nothing to start and nothing to cancel.
   const preheatLink = (
@@ -697,15 +717,24 @@ export function HomeCard({ data }: { data: HomeCardData }) {
       );
       break;
     case "smartWaiting":
+      // HANDOFF §6g: no filled button; the overrides are one row of small outline buttons.
       actions = (
-        <>
-          {planLink(nb.home.smart.primary)}
-          <div className="grid grid-cols-2 gap-2">
-            {chargeNow}
-            {preheat}
+        <div role="group" aria-labelledby={`override-${chargerId}`} className="flex flex-col gap-2">
+          <p id={`override-${chargerId}`} className="text-xs font-semibold uppercase tracking-[0.04em] text-muted">
+            {nb.home.smartOverride.label}
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <PendingLink href={planHref} scroll={false} className={smallOutlineClass}>
+              {nb.home.smartOverride.plan}
+            </PendingLink>
+            {chargeNowButton(nb.home.smartOverride.chargeNow, smallOutlineClass)}
+            {preheatButton(nb.home.smartOverride.preheat, smallOutlineClass, nb.actions.working)}
           </div>
-        </>
+        </div>
       );
+      break;
+    case "smartIdle":
+      actions = null;
       break;
     case "smartCharging":
       actions = (
@@ -768,6 +797,19 @@ export function HomeCard({ data }: { data: HomeCardData }) {
       break;
   }
 
+  if (view.homeState === "smartIdle" && effective.smartMode) {
+    return (
+      <SmartIdleCards
+        data={effective}
+        smart={effective.smartMode}
+        view={view}
+        previewLabel={scenario?.label ?? null}
+        stale={showingStale}
+        settlingLine={settlingLine}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {view.homeState === "noControl" && (
@@ -783,7 +825,9 @@ export function HomeCard({ data }: { data: HomeCardData }) {
       <section
         data-stale={showingStale ? "true" : undefined}
         aria-busy={showingStale || undefined}
-        className="stale-dim relative flex flex-col gap-4 rounded-[var(--radius-hero)] border border-border bg-surface p-5"
+        className={`stale-dim relative flex flex-col gap-4 rounded-[var(--radius-hero)] p-5 ${
+          view.homeState === "smartWaiting" ? smartCardClass : "border border-border bg-surface"
+        }`}
       >
         {scenario && (
           <p className="rounded-[var(--radius-chip)] bg-amber-bg px-3 py-1.5 text-xs font-semibold text-amber">
@@ -931,6 +975,146 @@ export function HomeCard({ data }: { data: HomeCardData }) {
           actions && <div className="flex flex-col gap-2">{actions}</div>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Hjem with Smart on and no car (HANDOFF §6g, smartIdle): a compact battery
+ * row, then the Smart card as the hero with "Kobler du til nå" (the window
+ * the planner would pick now), and one small "Lag egen plan". No filled
+ * button: nothing is needed from the person.
+ */
+function SmartIdleCards({
+  data,
+  smart,
+  view,
+  previewLabel,
+  stale,
+  settlingLine,
+}: {
+  data: HomeCardData;
+  smart: NonNullable<HomeCardData["smartMode"]>;
+  view: View;
+  previewLabel: string | null;
+  stale: boolean;
+  settlingLine: string | null;
+}) {
+  const t = nb.home.smartIdle;
+  const preview = previewLabel != null;
+  const now = new Date(data.nowIso);
+  const percent = view.batteryPercent;
+  const reading = data.stateOfCharge;
+  const measured =
+    percent != null && reading
+      ? fill(nb.battery.measured, {
+          time:
+            relativeDay(reading.oemUpdatedAtIso, now) === "i dag"
+              ? formatTime(reading.oemUpdatedAtIso)
+              : formatDayAndTime(reading.oemUpdatedAtIso, now),
+        })
+      : null;
+  const since = data.sinceUnplug;
+  const unplugLine =
+    percent != null && since
+      ? since.drivenKm != null
+        ? fill(t.disconnectedLine, { when: formatPastDayAndTime(since.unpluggedAtIso, now), km: formatNumber(since.drivenKm, 0) })
+        : fill(t.disconnectedLineNoKm, { when: formatPastDayAndTime(since.unpluggedAtIso, now) })
+      : null;
+  const readyBy = smart.readyByIso;
+  const window = smart.preview?.window ?? null;
+
+  return (
+    <div className="flex flex-col gap-3" data-testid="smart-idle">
+      <section
+        data-stale={stale ? "true" : undefined}
+        aria-busy={stale || undefined}
+        className="stale-dim relative flex items-center gap-4 rounded-[var(--radius-hero)] border border-border bg-surface p-4"
+      >
+        {stale && (
+          <p role="status" aria-live="polite" data-testid="freshness" className="absolute inset-x-0 top-1 text-center text-xs font-semibold text-muted">
+            {nb.freshness.updating}
+          </p>
+        )}
+        <div className="flex shrink-0 flex-col items-center gap-1">
+          <MiniRing percent={percent} unplugged label={view.ringLabel} />
+          {measured && <span className="text-xs text-muted">{measured}</span>}
+        </div>
+        <div className="min-w-0">
+          {preview && (
+            <p className="mb-1 rounded-[var(--radius-chip)] bg-amber-bg px-2 py-1 text-xs font-semibold text-amber">{fill(nb.debug.preview, { label: previewLabel })}</p>
+          )}
+          {!data.state.isOnline && <p className="text-sm font-semibold text-amber">{nb.home.offline}</p>}
+          {settlingLine && <p role="status" className="text-sm font-semibold text-muted">{settlingLine}</p>}
+          <p className="text-[17px] font-semibold">{view.status}</p>
+          {view.sub && <p className="text-sm text-muted">{view.sub}</p>}
+          {unplugLine && <p className="mt-1 text-xs text-muted">{unplugLine}</p>}
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="smart-idle-title"
+        data-testid="smart-card"
+        data-stale={stale ? "true" : undefined}
+        className={`stale-dim flex flex-col gap-2 rounded-[var(--radius-hero)] p-5 ${smartCardClass}`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <span className="inline-flex items-center rounded-full bg-accent-tag px-2.5 py-0.5 text-xs font-semibold text-accent">
+            {t.pill}
+          </span>
+          {smart.sheet && !preview && (
+            <SmartSheetButton
+              data={smart.sheet}
+              label={t.edit}
+              ariaLabel={t.editLabel}
+              className="-mr-2 flex min-h-11 items-center px-2 text-sm font-semibold text-accent"
+            />
+          )}
+        </div>
+        <h2 id="smart-idle-title" className="text-[22px] leading-tight font-bold">
+          {t.title}
+        </h2>
+        <p className="text-[15px] text-text-2">
+          {fill(t.body, { percent: smart.targetPercent, readyBy: formatTime(readyBy), day: formatDayLabel(readyBy, now) })}
+        </p>
+        {window && smart.preview && (
+          <div data-testid="smart-preview" className="mt-2 border-t border-accent-tint-border pt-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.04em] text-muted">{t.previewLabel}</p>
+              <p className="text-[15px] font-semibold tabular-nums">
+                {fill(t.previewWindow, { start: formatTime(window.startIso), end: formatTime(window.endIso) })}
+              </p>
+            </div>
+            <SmartTimeline
+              compact
+              data={{
+                nowIso: data.nowIso,
+                readyByIso: smart.preview.readyByIso,
+                blocks: window.blocks,
+                costNok: window.costNok,
+                nowCostNok: window.nowCostNok,
+              }}
+            />
+            <p className="text-sm text-muted">
+              {fill(t.previewMeta, {
+                cost: formatNumber(Math.round(window.costNok), 0),
+                readyBy: formatTime(smart.preview.readyByIso),
+              })}
+            </p>
+          </div>
+        )}
+      </section>
+
+      {preview ? (
+        <p className="text-center text-xs text-muted">{nb.actions.previewNote}</p>
+      ) : (
+        <div className="flex items-center justify-between gap-3 px-1">
+          <p className="text-sm text-muted">{t.overrideLabel}</p>
+          <PendingLink href="/?sheet=plan" scroll={false} className="flex h-11 shrink-0 items-center justify-center rounded-[var(--radius-button)] border border-border bg-surface px-4 text-sm font-medium text-text">
+            {t.overridePlan}
+          </PendingLink>
+        </div>
+      )}
     </div>
   );
 }

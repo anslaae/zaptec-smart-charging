@@ -4,6 +4,9 @@ import { getCurrentUser, verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { chargeSchedules, manualChargeSessions, schedulerHeartbeat } from "@/lib/db/schema";
 import { getLearnedPowerKw } from "@/lib/scheduler/powerHistory.server";
+import { plannedPowerKw } from "@/lib/scheduler/engine";
+import { loadBatteryReading, loadCarConnection } from "@/lib/ui/carCharger.server";
+import { LinkRow } from "@/components/SettingsDetail";
 import { STALE_AFTER_SECONDS } from "@/lib/scheduler/heartbeat";
 import { effectivePluginMode, getSettings } from "@/lib/settings";
 import { OnPluginSetting } from "@/components/OnPluginSetting";
@@ -20,7 +23,7 @@ import {
   PriceRow,
   TestNotificationButton,
 } from "@/components/SettingsControls";
-import { formatDayAndTime, formatKw, formatTime } from "@/lib/datetime";
+import { formatDayAndTime, formatNumber, formatPastDayAndTime, formatTime, relativeDay } from "@/lib/datetime";
 import { nb, fill } from "@/lib/i18n/nb";
 
 function Section({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
@@ -41,12 +44,12 @@ function Row({ label, value, amber }: { label: string; value: string; amber?: bo
   );
 }
 
-// Innstillinger (design/redesign/HANDOFF.md §5): Varsler, Strømpris, Lading,
+// Innstillinger (design/redesign/HANDOFF.md §5, §6g): Bil og lader, Varsler, Strømpris, Lading,
 // System, Konto. Household-wide settings live in the settings table; the
 // notification switch and debug mode are per device.
 export default async function SettingsPage() {
   await verifySession();
-  const [user, heartbeat, learnedPowerKw, settings, chargers, openGuests, openPlans] = await Promise.all([
+  const [user, heartbeat, learnedPowerKw, settings, chargers, openGuests, openPlans, battery, connection] = await Promise.all([
     getCurrentUser(),
     db
       .select({ lastTickAt: schedulerHeartbeat.lastTickAt })
@@ -64,6 +67,8 @@ export default async function SettingsPage() {
       .select({ chargerId: chargeSchedules.chargerId, readyBy: chargeSchedules.readyBy })
       .from(chargeSchedules)
       .where(inArray(chargeSchedules.status, ["pending", "active"])),
+    loadBatteryReading(),
+    loadCarConnection(),
   ]);
   const charger = chargers[0];
   // D73: one /state read for the charger health row (Settings is opened rarely).
@@ -85,6 +90,25 @@ export default async function SettingsPage() {
   const openGuest = charger ? openGuests.find((g) => g.chargerId === charger.id) : undefined;
 
   const now = new Date();
+  // HANDOFF §6g: "Bil og lader" rows. Times today are bare, older ones get a day word.
+  const when = (d: Date) => (relativeDay(d, now) === "i dag" ? formatTime(d) : formatPastDayAndTime(d, now));
+  const cc = nb.settings.carAndCharger;
+  const reading = battery.reading;
+  const connectionText = connection.connected
+    ? connection.pluggedInAt
+      ? fill(cc.connectedSince, { when: when(connection.pluggedInAt) })
+      : nb.settings.car.connectedNow.toLowerCase()
+    : connection.unpluggedAt
+      ? fill(cc.disconnectedAt, { when: formatPastDayAndTime(connection.unpluggedAt, now) })
+      : cc.notConnected;
+  const carRowSub = reading
+    ? fill(cc.carRowSub, { percent: reading.percent, connection: connectionText, time: when(reading.oemUpdatedAt) })
+    : `${connectionText} · ${cc.noData}`;
+  const healthShort = !health ? null : health.level === "ok" ? cc.healthOk : health.level === "offline" ? cc.healthOffline : cc.healthWarning;
+  const chargerRowSub = fill(cc.chargerRowSub, {
+    health: healthShort ?? "–",
+    kw: formatNumber(plannedPowerKw(learnedPowerKw, chargerState?.maxPowerKw), 1),
+  });
   const lastTickAt = heartbeat?.lastTickAt ?? null;
   const stale = !lastTickAt || (now.getTime() - lastTickAt.getTime()) / 1000 > STALE_AFTER_SECONDS;
   const schedulerValue = lastTickAt
@@ -96,6 +120,16 @@ export default async function SettingsPage() {
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 pt-6 pb-4">
       <h1 className="text-[28px] font-bold">{nb.settings.title}</h1>
+
+      <section className="flex flex-col gap-2" aria-labelledby="car-and-charger">
+        <h2 id="car-and-charger" className="px-1 text-[13px] font-semibold uppercase tracking-[0.04em] text-muted">
+          {cc.section}
+        </h2>
+        <div className="flex flex-col divide-y divide-divider rounded-[var(--radius-card)] border border-border bg-surface px-4">
+          <LinkRow href="/settings/car" title={home.car?.name ?? nb.settings.car.fromCar} sub={carRowSub} />
+          {charger && <LinkRow href="/settings/charger" title={charger.name} sub={chargerRowSub} />}
+        </div>
+      </section>
 
       <Section title={nb.settings.notifications.section}>
         <NotificationToggle />
@@ -168,8 +202,6 @@ export default async function SettingsPage() {
 
       <Section title={nb.settings.system.section}>
         <Row label={nb.settings.system.scheduler} value={schedulerValue} amber={stale} />
-        {health && <Row label={nb.health.label} value={health.detail} amber={health.level !== "ok"} />}
-        <Row label={nb.settings.system.learnedRate} value={learnedPowerKw != null ? formatKw(learnedPowerKw) : "–"} />
         <Row
           label={nb.settings.system.version}
           value={`${process.env.BUILD_SHA ?? "unknown"} · ${process.env.BUILD_ENV ?? "unknown"}`}

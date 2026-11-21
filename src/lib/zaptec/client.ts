@@ -22,6 +22,7 @@ import type {
   ZaptecInstallationApiResponse,
 } from "./types";
 import { parseCompletedSession } from "./ocmf";
+import { fillChargeDuration } from "@/lib/scheduler/chargingSince.server";
 
 export { isCurrentlyCharging, isPausedAndResumable } from "./state";
 
@@ -152,7 +153,7 @@ export async function getChargerState(
   circuitId: string,
   installationId: string,
 ): Promise<ChargerState> {
-  if (MOCK_MODE) return mockGetChargerState(chargerId);
+  if (MOCK_MODE) return fillChargeDuration(mockGetChargerState(chargerId), new Date());
   // Independent requests -- fetched together rather than one after the
   // other. The circuit and installation lookups are both cached, so this
   // only matters on a cache miss, but it's free to do regardless.
@@ -213,7 +214,9 @@ export async function getChargerState(
       ? (effectiveMaxCurrentAmps * phases * NOMINAL_VOLTAGE) / 1000
       : null;
 
-  return {
+  // D84: this charger never reports ChargeDuration (701); fillChargeDuration
+  // derives it from the state log while charging, for every caller at once.
+  return fillChargeDuration({
     chargerId,
     isOnline,
     operationMode: operationModeObs?.valueAsString
@@ -246,7 +249,7 @@ export async function getChargerState(
       signalDbm: numberOf(findObservation(observations, ObservationId.CommunicationSignalStrength)?.valueAsString),
     },
     rawObservations: Object.fromEntries(observations.map((o) => [String(o.stateId), o.valueAsString ?? null])),
-  };
+  }, new Date());
 }
 
 export async function sendChargerCommand(

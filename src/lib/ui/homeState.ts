@@ -17,7 +17,8 @@ export type HomeState =
   | "ready"
   | "guest"
   | "smartWaiting"
-  | "smartCharging";
+  | "smartCharging"
+  | "smartIdle";
 
 export const HOME_STATES: readonly HomeState[] = [
   "noControl",
@@ -32,6 +33,7 @@ export const HOME_STATES: readonly HomeState[] = [
   "guest",
   "smartWaiting",
   "smartCharging",
+  "smartIdle",
 ];
 
 export interface HomeStateInput {
@@ -42,9 +44,17 @@ export interface HomeStateInput {
   openSession: { kind: "manual" | "preheat" | "guest" | "automatic" } | null;
   /** zaptec_session_id of the most recently completed plan, to recognise "just finished, still plugged in". */
   lastCompletedPlanSessionId: string | null;
+  /** Smart is the plug-in mode in force (HANDOFF §6g): no car reads as smartIdle, not noCar. */
+  smartOn?: boolean;
 }
 
-export function homeState({ state, schedule, openSession, lastCompletedPlanSessionId }: HomeStateInput): HomeState {
+export function homeState({
+  state,
+  schedule,
+  openSession,
+  lastCompletedPlanSessionId,
+  smartOn = false,
+}: HomeStateInput): HomeState {
   if (!appHasControl(state)) return "noControl";
 
   const disconnected = state.operationMode === ChargerOperationMode.Disconnected;
@@ -62,7 +72,7 @@ export function homeState({ state, schedule, openSession, lastCompletedPlanSessi
   const openPlan = schedule && (schedule.status === "pending" || schedule.status === "active") ? schedule : null;
   if (openPlan?.source === "smart") {
     // Smart lading (UC16): one row per plug-in session, gone when unplugged.
-    if (disconnected) return "noCar";
+    if (disconnected) return smartOn ? "smartIdle" : "noCar";
     return openPlan.status === "active" && charging ? "smartCharging" : "smartWaiting";
   }
   if (openPlan) {
@@ -72,7 +82,8 @@ export function homeState({ state, schedule, openSession, lastCompletedPlanSessi
     return openPlan.status === "active" && charging ? "chargingPlan" : "planned";
   }
 
-  if (disconnected) return "noCar";
+  // "Vent på plan" without a car is unchanged; Smart on gets its own state (§6g).
+  if (disconnected) return smartOn ? "smartIdle" : "noCar";
 
   // Same physical plug-in as the plan that just completed -> the car is ready.
   if (lastCompletedPlanSessionId != null && state.sessionId != null && lastCompletedPlanSessionId === state.sessionId) {

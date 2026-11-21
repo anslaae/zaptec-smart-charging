@@ -1,13 +1,15 @@
 import "server-only";
 import { desc, eq, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chargerStateLog } from "@/lib/db/schema";
+import { chargerStateLog, pushLog } from "@/lib/db/schema";
 import type { ChargerState } from "@/lib/zaptec/types";
 import { STATE_LOG_RETENTION_MS, stateLogChanged, toLoggedState, type LoggedState } from "./stateLog";
 
 // D69, the tick's side: one row per charger whenever its state changed
 // meaningfully (stateLogChanged), compared with that charger's last row; then
 // a cheap prune of rows older than 30 days. Returns how many rows it wrote.
+const PUSH_LOG_RETENTION_MS = 90 * 24 * 3_600_000;
+
 export async function logChargerStates(states: ChargerState[], now: Date): Promise<number> {
   let written = 0;
   for (const state of states) {
@@ -43,5 +45,7 @@ export async function logChargerStates(states: ChargerState[], now: Date): Promi
     written++;
   }
   await db.delete(chargerStateLog).where(lt(chargerStateLog.observedAt, new Date(now.getTime() - STATE_LOG_RETENTION_MS)));
+  // L3 (D87): push_log keeps 90 days.
+  await db.delete(pushLog).where(lt(pushLog.createdAt, new Date(now.getTime() - PUSH_LOG_RETENTION_MS)));
   return written;
 }

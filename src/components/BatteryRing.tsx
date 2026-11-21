@@ -220,3 +220,49 @@ export function BatteryRing({
     </div>
   );
 }
+
+/**
+ * The compact ring (HANDOFF §6g): 112 px, the % only inside. Hjem smartIdle's
+ * battery row and the Bil page header. Muted (dashed track, grey arc) while
+ * the car is unplugged, like the big ring's noCar mode; a plug without a reading.
+ */
+export function MiniRing({ percent, label, unplugged = false, size = 112 }: { percent: number | null; label: string; unplugged?: boolean; size?: number }) {
+  const stroke = 9;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const fraction = percent != null ? Math.max(0, Math.min(1, percent / 100)) : 0;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }} role="img" aria-label={label}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth={stroke} strokeDasharray={unplugged ? "5 6" : undefined} />
+        {fraction > 0 && (
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke={unplugged ? "var(--ring-muted)" : "var(--accent)"}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={`${c * fraction} ${c}`}
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        )}
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        {percent != null ? (
+          <span
+            className={`font-bold leading-none tracking-[-0.02em] ${unplugged ? "text-text-2" : "text-text"}`}
+            style={{ fontSize: Math.round(size * 0.23) }}
+          >
+            {formatPercent(percent)}
+          </span>
+        ) : (
+          <span className="text-muted">
+            <PlugIcon />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}

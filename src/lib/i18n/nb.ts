@@ -118,6 +118,30 @@ export const nb = {
       primaryCharging: "Avbryt for i natt",
       charging: "Lader – ferdig ca. {time}"
     },
+    // HANDOFF §6g: Smart on, no car connected (smartIdle)
+    smartIdle: {
+      pill: "Smart er på",
+      title: "Lader automatisk når bilen kobles til",
+      body: "Til {percent} % innen {readyBy} {day}, i de billigste timene. Aldri 16–21.",
+      previewLabel: "Kobler du til nå",
+      previewWindow: "ca. {start}–{end}",
+      previewMeta: "ca. {cost} kr · klar {readyBy}",
+      edit: "Endre ›",
+      overrideLabel: "Trenger du noe annet i natt?",
+      overridePlan: "Lag egen plan",
+      disconnectedLine: "Koblet fra {when} · ca. {km} km siden",
+      // (app) without an odometer change
+      disconnectedLineNoKm: "Koblet fra {when}",
+      // (app) the "Endre" button's accessible name
+      editLabel: "Endre Smart",
+    },
+    // HANDOFF §6g: Smart waiting with the car connected
+    smartOverride: {
+      label: "Overstyr for i natt",
+      plan: "Egen plan",
+      chargeNow: "Lad nå",
+      preheat: "Forvarm",
+    },
     // (app) UC15 / UC14 on Hjem
     guest: {
       statusWaiting: "Lånt ut – venter på gjesten",
@@ -501,6 +525,86 @@ export const nb = {
       },
       saveFailed: "Klarte ikke å lagre",
     },
+    // HANDOFF §6g: Bil og lader, and its two detail pages
+    carAndCharger: {
+      section: "Bil og lader",
+      carRowSub: "{percent} % · {connection} · data {time}",
+      chargerRowSub: "{health} · regner med {kw} kW i planer",
+      // (app) the {connection} and {health} parts
+      connectedSince: "tilkoblet siden {when}",
+      disconnectedAt: "koblet fra {when}",
+      notConnected: "ikke tilkoblet",
+      noData: "ingen batteridata",
+      healthOk: "Ingen feil",
+      healthWarning: "Melder en feil",
+      healthOffline: "Ingen kontakt",
+    },
+    car: {
+      back: "Innstillinger",
+      capacity: "batteri {kwh} kWh",
+      fromCar: "Fra bilen",
+      odometer: "Km-stand",
+      drivenSinceCharge: "Kjørt siden lading",
+      smartcar: "Smartcar",
+      smartcarConnected: "Tilkoblet",
+      smartcarDisconnected: "Ikke tilkoblet",
+      updated: "sist oppdatert {when}",
+      atCharger: "Ved laderen",
+      lastConnected: "Sist tilkoblet",
+      lastConnectedSub: "koblet fra · var tilkoblet {duration}",
+      connectedNow: "Tilkoblet nå",
+      connectedNowSub: "siden {when}",
+      lastCharge: "Siste lading",
+      lastChargeSub: "{kwh} kWh · {kind} · ca. {cost} kr",
+      thisMonth: "Denne måneden",
+      thisMonthValue: "{count} ladinger",
+      thisMonthSub: "{kwh} kWh · ca. {cost} kr",
+      footnote:
+        "Batteri og km-stand kommer fra bilen via Smartcar og kan være noen minutter gamle. Tilkobling og lading kommer fra laderen.",
+      // (app)
+      measured: "målt {when}",
+      kwhLeft: "ca. {kwh} kWh igjen",
+      kmValue: "{km} km",
+      drivenValue: "ca. {km} km",
+      thisMonthValueOne: "1 lading",
+      lastChargeSubNoCost: "{kwh} kWh · {kind}",
+      none: "–",
+    },
+    charger: {
+      estimateTitle: "Regner med",
+      estimateSub: "når en plan skal starte",
+      estimateRange: "median {kw} kW",
+      estimateBasis:
+        "Median av de {count} siste planene som ladet uten pause: energi levert ÷ tid. Sist oppdatert {when}.",
+      estimateNoHistory: "For lite historikk ennå – bruker kursens maks.",
+      chainTitle: "Slik velges effekten",
+      chainObserved: "Målt nå",
+      chainObservedSub: "når laderen lader",
+      chainLearned: "Lært fra planer",
+      chainLearnedSub: "median, se over",
+      chainCircuit: "Kursens maks",
+      chainCircuitSub: "{amps} A · {phases} faser",
+      chainDefault: "Standard",
+      chainDefaultSub: "hvis alt annet mangler",
+      chainNote: "Jeg bruker den første som finnes.",
+      status: "Status",
+      lastPower: "Siste effekt målt",
+      lastPowerSub: "{when} · {context}",
+      // (app) the reason line under the chain, and other gaps design left open
+      estimateBasisOne: "Den siste planen som ladet uten pause: energi levert ÷ tid. Sist oppdatert {when}.",
+      chainCircuitUnknown: "ikke oppgitt av laderen",
+      chainCircuitNoPhases: "laderens og kursens strømgrense",
+      reasonObserved: "Nå: laderen lader, så den målte effekten brukes.",
+      reasonLearnedNoCar: "Nå: ingen bil tilkoblet, så den lærte effekten brukes.",
+      reasonLearned: "Nå: bilen lader ikke, så den lærte effekten brukes.",
+      reasonCircuit: "Nå: for lite historikk, så kursens maks brukes.",
+      reasonDefault: "Nå: verken historikk eller kursens maks er kjent, så standard 7 kW brukes.",
+      lastPowerCharging: "lader nå",
+      lastPowerSession: "under lading",
+      lastPowerNone: "Ikke målt de siste 30 dagene",
+      inUse: "i bruk",
+      plotLabel: "Effekt per plan, {min}–{max} kW, median {kw} kW",
+    },
     system: {
       section: "System",
       scheduler: "Planlegging",
@@ -601,6 +705,12 @@ export const nb = {
     },
     // (app) Innstillinger "Send testvarsel"
     test: { title: "Testvarsel", body: "Varsler virker på denne enheten." },
+  },
+  // (app) scheduler lane, D86/D87 (design/redesign/notifications.nb.json smart_started, plan_completed bodyMeasured)
+  schedulerPush: {
+    smartStarted: { title: "Smart lading har startet", body: "Lader til {targetPercent} %, ferdig ca. {finishTime}." },
+    // plan_completed when the car's own reading ended the plan
+    planCompletedMeasured: "Bilen meldte {percent} % · {kwh} kWh · ca. {cost} kr.",
   },
   // (app) the "did we estimate well" note on plan_completed in Aktivitet
   accuracy: {

@@ -1,5 +1,6 @@
 import "server-only";
 import { env } from "@/lib/env";
+import { carIdForVehicle } from "@/lib/cars";
 import { getSmartcarAccessToken } from "./auth";
 import { MOCK_MODE } from "@/lib/mock/mode";
 import { mockGetStateOfCharge } from "@/lib/mock/smartcar";
@@ -54,4 +55,9 @@ export async function getStateOfCharge(): Promise<StateOfCharge | null> {
     console.warn("[smartcar] state of charge failed:", error instanceof Error ? error.message : error);
     return null;
   }
+}
+
+/** The car getStateOfCharge() reports for (M1, D86): SMARTCAR_VEHICLE_ID's car, else the default car. */
+export async function stateOfChargeCarId(): Promise<string | null> {
+  return carIdForVehicle(env.SMARTCAR_VEHICLE_ID);
 }

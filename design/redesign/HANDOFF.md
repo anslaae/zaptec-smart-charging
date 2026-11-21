@@ -330,6 +330,45 @@ Lad nå:
 - **Reduced motion:** with `prefers-reduced-motion: reduce`, show the final frame straight away (full lime ring, bolt, name) with no animation.
 - **Implementation:** pure CSS keyframes on SVG `stroke-dashoffset` (circumference 1885 at r=300 in the 1024 viewBox) and `stroke`. No JS animation library and no Lottie. The keyframes are in `Oppstart.dc.html` (the canvas version loops every 3.2 s; the app plays it once). Screen readers get `role="status"` with `aria-label` from `app.splashLabel` ("Starter Smart lading").
 
+## 6g. Smart on Hjem, and car and charger details in Innstillinger (design update 2026-11-21)
+
+Artboards: `Hjem-smart-ingen-bil.dc.html` (+ `Lys-smart-ingen-bil`), the updated `Hjem-smart.dc.html`, `Innstillinger.dc.html`, `Innstillinger-bil.dc.html` and `Innstillinger-lader.dc.html` (+ light wrappers). Copy: `strings.nb.json` → `home.smartIdle`, `home.smartOverride`, `settings.carAndCharger`, `settings.car`, `settings.charger`.
+
+**Goal (owner):** with Smart on, Hjem should look clearly different from "Vent på plan". Smart is the main thing; the overrides (own plan, Lad nå, Forvarm) are always there but small.
+
+### Hjem, Smart on, no car connected (new state `smartIdle`)
+
+- **Battery card shrinks** to a compact row: a 112 px ring (the % only in the ring, "målt hh:mm" under it), "Ikke tilkoblet", "ca. N kWh igjen", and one line "Koblet fra {when} · ca. {km} km siden" (replaces the bigger "Koblet fra" card in this state).
+- **Smart card is the hero:** tinted background (`--accent-tint`, about 8 %) with a 1.5 px accent border, pill "Smart er på", "Endre ›" (opens the Smart sheet). Title "Lader automatisk når bilen kobles til" (22/700), and the target line from the Smart settings. Below a divider, "Kobler du til nå": the same night bar as the Smart Hjem card, showing the window the planner *would* pick if the car were plugged in now, with "ca. 22:00–00:30" and "ca. {cost} kr · klar {readyBy}". This is a preview: compute it with the same planner and the latest battery reading. If there's no battery reading, hide the preview row.
+- **No filled button in this state** (nothing is needed from the person). One small outline button, "Lag egen plan" (44 px high, 14/500), after "Trenger du noe annet i natt?". Lad nå and Forvarm need a car, so they're not shown here.
+- "Vent på plan" mode without a car is unchanged (big filled "Planlegg lading"), so the two modes now look clearly different.
+
+### Hjem, Smart waiting with the car connected (`Hjem-smart`)
+
+- The Smart card gets the same tint and accent border, and the pill reads "Smart er på".
+- The filled "Endre for i natt" and the two big outline buttons are replaced by one row under the small label "Overstyr for i natt": three equal outline buttons, 44 px high, 14/500: "Egen plan" (plan sheet), "Lad nå", "Forvarm". Still at most one filled button per state (here: none).
+
+### Innstillinger
+
+- New first section **"Bil og lader"**, with two rows that open detail pages:
+  - "Opel Mokka-e": "62 % · koblet fra i går 18:40 · data 15:58" (`settings.carAndCharger.carRowSub`; when connected: "tilkoblet siden …").
+  - "Zaptec Go": "Ingen feil · regner med 7,1 kW i planer" (health from D73).
+- "Lært ladeeffekt" moves out of System into the charger page. The board is now 960 px tall (the page scrolls).
+
+### Bil page (`Innstillinger-bil`)
+
+- Header: small battery ring (% inside), connection state, "målt … · ca. N kWh igjen", model and battery capacity (the capacity used for % ↔ kWh).
+- **Fra bilen** (Smartcar): Km-stand with when it was measured; Kjørt siden lading (odometer now − odometer at the last unplug, "ca."); Smartcar status with a dot and "sist oppdatert {when}" (the newest of the API read and the webhook).
+- **Ved laderen:** Sist tilkoblet (or "Tilkoblet nå · siden …"), with how long it was connected; Siste lading (kWh, kind, cost); Denne måneden (count, kWh, cost, the same as Innsikt).
+- A footnote says which data comes from the car and which from the charger. Times use day words, never bare times older than today.
+
+### Lader page (`Innstillinger-lader`)
+
+- **"Regner med 7,1 kW"**: the learned rate from `getLearnedPowerKw()` (median realised kW = `remainingKwhAtStart / actual duration` over the last 10 completed, never-paused schedules). Below it, a dot plot of those 10 values with the min–max band and the median marked, and "Median av de 10 siste planene som ladet uten pause …". With fewer than 10, use the count. With none, show `estimateNoHistory`.
+- **"Slik velges effekten"**: the fallback chain as four numbered rows: Målt nå → Lært fra planer → Kursens maks (from the charger's max current and phases) → Standard 7 kW (`DEFAULT_ASSUMED_POWER_KW`). Highlight the one in use right now (filled number, bold), and say why under the list ("Nå: ingen bil tilkoblet, så den lærte effekten brukes.").
+- Status (D73 health line, moved here from System) and "Siste effekt målt" (the last observed power, with when).
+- These are read-only. The numbers come from data the server already has; no new Zaptec calls beyond the existing /state read (cache it as D73 does).
+
 ## 7. Data model (prepare for multiple chargers and cars, show nothing extra yet)
 
 - `locations` (id, name, address, zaptec_installation_id). Seed: "Konvallveien 1" from the Zaptec installation address.

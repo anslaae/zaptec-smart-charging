@@ -15,7 +15,10 @@ import { getStateOfCharge } from "@/lib/smartcar/client";
 import { estimateChargingPlan, planDeliveredNow, plannedPowerKw } from "@/lib/scheduler/engine";
 import { getLearnedPowerKw } from "@/lib/scheduler/powerHistory.server";
 import { HOUSEHOLD_TIME_ZONE, formatDayAndTime, formatTime, tomorrowAtLocalValue, zonedDateTimeToUtc } from "@/lib/datetime";
-import { getSettings, pricesOf } from "@/lib/settings";
+import { effectivePluginMode, getSettings, pricesOf } from "@/lib/settings";
+import { smartPreview } from "@/lib/ui/smartPreview";
+import { nextSmartReadyBy } from "@/lib/scheduler/smart";
+import { getPlanningCapacityKwh } from "@/lib/scheduler/socTarget.server";
 import { getHomeContext } from "@/lib/places";
 import { estimateBattery } from "@/lib/ui/battery";
 import { buildSuggestion } from "@/lib/ui/suggestion";
@@ -125,6 +128,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   ]);
   const guards = await Promise.all(chargers.map((c, i) => loadLoopGuard(c.id, now, chargerStates[i].sessionId)));
   const capacityKwh = home.car?.batteryCapacityKwh ?? 46;
+  // D86: 100 x the learned kWh per %, once per render (cached server-side ~10 min).
+  const planningCapacityKwh = await getPlanningCapacityKwh(capacityKwh).catch(() => capacityKwh);
   // D75: the open incident, read with the tick's own rules on the live state.
   const incidents: (IncidentData | null)[] = await Promise.all(
     chargers.map(async (c, i) => {
@@ -150,6 +155,26 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       };
     }),
   );
+
+  // HANDOFF §6g: with Smart on, Hjem without a car shows the Smart card, its
+  // sheet ("Endre ›") and what Smart would plan if the car were plugged in now.
+  const smartOn = effectivePluginMode(settings, now) === "smart";
+  const smartSheet = smartOn
+    ? {
+        mode: "smart" as const,
+        untilIso: settings.onPluginModeUntil?.toISOString() ?? null,
+        smartTargetPercent: settings.smartTargetPercent,
+        smartReadyByWeekday: settings.smartReadyByWeekday,
+        smartReadyByWeekend: settings.smartReadyByWeekend,
+        location: home.location?.name ?? nb.app.name,
+        cheapestNokPerKwh:
+          settings.gridNightNokPerKwh != null ? settings.energyPriceNokPerKwh + settings.gridNightNokPerKwh : null,
+        dearestNokPerKwh:
+          settings.gridDayNokPerKwh != null ? settings.energyPriceNokPerKwh + settings.gridDayNokPerKwh : null,
+      }
+    : null;
+  // The tick plans Smart with the learned kWh per % (D86); the preview does too.
+  const smartCapacityKwh = smartOn ? planningCapacityKwh : capacityKwh;
 
   const cards: HomeCardData[] = chargers.map((charger, index) => {
     const state = chargerStates[index];
@@ -235,10 +260,44 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
           })
         : null;
 
+    let smartMode: HomeCardData["smartMode"] = null;
+    if (smartSheet) {
+      // The tick plans from the latest reading of any age (resolveSocPercent); so does the preview.
+      const soc = estimateBattery({
+        reading: stateOfCharge,
+        capacityKwh,
+        now,
+        charging: false,
+        sessionEnergyKwh: null,
+        chargeDurationSeconds: null,
+        remainingPlanKwh: null,
+      }).percent;
+      smartMode = {
+        sheet: smartSheet,
+        targetPercent: settings.smartTargetPercent,
+        readyByIso: nextSmartReadyBy(now, settings.smartReadyByWeekday, settings.smartReadyByWeekend).toISOString(),
+        preview:
+          soc != null
+            ? smartPreview({
+                now,
+                socPercent: soc,
+                targetPercent: settings.smartTargetPercent,
+                readyByWeekday: settings.smartReadyByWeekday,
+                readyByWeekend: settings.smartReadyByWeekend,
+                capacityKwh: smartCapacityKwh,
+                learnedPowerKw,
+                maxPowerKw: state.maxPowerKw,
+                prices: pricesOf(settings),
+              })
+            : null,
+      };
+    }
+
     return {
       chargerId: charger.id,
       chargerName: charger.name,
       nowIso: now.toISOString(),
+      smartMode,
       state,
       schedule: schedule
         ? {
@@ -371,6 +430,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
           ? { percent: battery.percent, measuredAtIso: stateOfCharge.oemUpdatedAt.toISOString(), approx: battery.approx }
           : null,
       capacityKwh,
+      // D86: % -> kWh uses the learned kWh per % (same as the tick).
+      planningCapacityKwh,
       powerKw: plannedPowerKw(learnedPowerKw, state.maxPowerKw),
       plan: first.schedule
         ? {

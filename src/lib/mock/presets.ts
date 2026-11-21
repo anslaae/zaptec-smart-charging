@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chargeSchedules, manualChargeSessions, activityEvents, vehicleTelemetry } from "@/lib/db/schema";
 import { saveSettings, type HouseholdSettings } from "@/lib/settings";
@@ -26,6 +26,8 @@ export const PRESETS = {
   automatic: "Lader automatisk (tillatt)",
   smartWaiting: "Smart lading – venter",
   smartCharging: "Smart lading – lader",
+  smartIdle: "Smart på – ingen bil",
+  smartIdleNoReading: "Smart på – ingen bil, ingen batteridata",
   guestWaiting: "Lånt ut – venter på gjest",
   guestCharging: "Lånt ut – gjest lader",
   noControl: "Laderen krever innlogging",
@@ -122,7 +124,18 @@ export async function applyPreset(key: PresetKey): Promise<void> {
   };
 
   switch (key) {
+    case "smartIdleNoReading": {
+      // HANDOFF §6g without any battery reading: the preview row is hidden.
+      // Clears the battery from the stored readings (Nullstill alt brings them back).
+      await setPluginMode("smart", { smartTargetPercent: 80 });
+      sim.settings.smartcarDown = true;
+      await db.update(vehicleTelemetry).set({ batteryPercent: null, batteryReportedAt: null });
+      break;
+    }
+    case "smartIdle":
     case "noCar": {
+      // HANDOFF §6g: the same unplugged car, with Smart as the plug-in mode.
+      if (key === "smartIdle") await setPluginMode("smart", { smartTargetPercent: 80 });
       // Unplugged 26 h ago at 80 % and driven 41 km since: feeds "Koblet fra"
       // (battery −18 %, ca. 41 km, always one midnight on the line).
       // A reading just before the unplug is the baseline for both figures.
@@ -142,9 +155,12 @@ export async function applyPreset(key: PresetKey): Promise<void> {
       ];
       sim.reading = { percent: 62, at: readings[2][0] };
       // This unplug must be the latest one (the seed and earlier scenarios log newer ones).
+      // Plug-ins after it too (Innstillinger → Bil og lader reads connected/unplugged from these, §6g).
       await db
         .delete(activityEvents)
-        .where(and(eq(activityEvents.type, "unplugged"), gt(activityEvents.createdAt, unplugged)));
+        .where(
+          and(inArray(activityEvents.type, ["unplugged", "plugged_in"]), gt(activityEvents.createdAt, unplugged)),
+        );
       await db.insert(activityEvents).values({
         chargerId: MOCK_CHARGER.id,
         chargerName: MOCK_CHARGER.name,

@@ -190,6 +190,13 @@
       "when": 1794586029731,
       "tag": "0026_charge_incidents",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1795257362807,
+      "tag": "0027_push_log_soc_adjust",
+      "breakpoints": true
     }
   ]
 }

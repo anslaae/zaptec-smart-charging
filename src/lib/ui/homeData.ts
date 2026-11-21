@@ -2,6 +2,8 @@ import type { ChargerState } from "@/lib/zaptec/types";
 import type { Prices } from "@/lib/pricing";
 import type { SinceUnplug } from "@/lib/ui/sinceUnplug";
 import type { IncidentData } from "@/lib/ui/incidentView";
+import type { SmartPreview } from "@/lib/ui/smartPreview";
+import type { OnPluginSettingData } from "@/components/OnPluginSetting";
 
 /**
  * Everything the Hjem card needs for one charger, as plain serialisable data
@@ -50,6 +52,19 @@ export interface HomeCardData {
   preheatOnBattery?: boolean;
   /** D75: the open incident, when the rules say it shows (src/lib/incidents/rules.ts). */
   incident?: IncidentData | null;
+  /**
+   * HANDOFF §6g: Smart is the plug-in mode in force (null otherwise). Without a
+   * car Hjem shows smartIdle: the Smart card with its settings and preview.
+   */
+  smartMode?: {
+    /** What the Smart sheet ("Endre ›") opens with; null in a debug preview (no sheet). */
+    sheet: OnPluginSettingData | null;
+    /** The Smart target and the next ready-by from its settings. */
+    targetPercent: number;
+    readyByIso: string;
+    /** "Kobler du til nå"; null without a battery reading (the row is hidden). */
+    preview: SmartPreview | null;
+  } | null;
   /** noCar: what happened since the last unplug (HANDOFF §3 "Koblet fra"); null = hide the card. */
   sinceUnplug: SinceUnplug | null;
   /** ready: the plan that just finished, for the status line and the "Siste lading" card. */

@@ -109,6 +109,10 @@ export const chargeSchedules = pgTable("charge_schedules", {
   // Once-per-plan push notifications (notifications.nb.json "proposed" events).
   lateNotifiedAt: timestamp("late_notified_at", { withTimezone: true }),
   waitingNotifiedAt: timestamp("waiting_notified_at", { withTimezone: true }),
+  // D86: the last time a fresh battery reading moved this plan's target kWh
+  // ({ at, readingAt, percent, delivered } -- see scheduler/socTarget.ts).
+  // Rate limit and drift baseline; null until the first correction.
+  socAdjust: jsonb("soc_adjust"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -298,6 +302,8 @@ export const manualChargeSessions = pgTable("manual_charge_sessions", {
   powerLostAt: timestamp("power_lost_at", { withTimezone: true }),
   powerLostNotifiedAt: timestamp("power_lost_notified_at", { withTimezone: true }),
   energyKwh: numeric("energy_kwh", { precision: 6, scale: 2 }),
+  // D86 (automatic rows): the last battery-reading correction of targetKwh, as on charge_schedules.
+  socAdjust: jsonb("soc_adjust"),
 }, (t) => [
   // D66: at most one open Lad nå / Forvarm / automatic row per charger, so two
   // taps at the same moment (two phones) can't both insert -- openSession
@@ -323,6 +329,27 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
     .notNull()
     .defaultNow(),
 });
+
+// D87: one row per push send (sendPush), so "did the push go out?" can be
+// answered later. Written after the send; a logging failure never breaks it.
+export const pushLog = pgTable(
+  "push_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    title: text("title").notNull(),
+    tag: text("tag"),
+    // notifications.nb.json event id when the builder sets one (e.g. "smart_started").
+    event: text("event"),
+    // Null = every device in the household; otherwise the one person (test push).
+    userId: uuid("user_id"),
+    devicesAttempted: integer("devices_attempted").notNull(),
+    devicesOk: integer("devices_ok").notNull(),
+    // One line per failed device ("<subscription id>: <status> <message>"), null when none failed.
+    errors: text("errors"),
+  },
+  (t) => [index("push_log_created").on(t.createdAt)],
+);
 
 // One row per genuinely new OEM reading from the Smartcar webhook (not one
 // row per delivery -- see the dedup logic in
